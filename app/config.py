@@ -73,6 +73,16 @@ def telegram_integration_enabled() -> bool:
     return bool(TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET)
 
 
+def test_imports_enabled() -> bool:
+    default_value = "0" if uses_postgresql() else "1"
+    return os.getenv("INVOICE_ENABLE_TEST_IMPORTS", default_value).strip().lower() in {"1", "true", "tak", "yes"}
+
+
+def default_login_hint_enabled() -> bool:
+    default_value = "0" if uses_postgresql() else "1"
+    return os.getenv("INVOICE_SHOW_DEFAULT_LOGIN_HINT", default_value).strip().lower() in {"1", "true", "tak", "yes"}
+
+
 def ensure_directories() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     STORAGE_ROOT.mkdir(parents=True, exist_ok=True)

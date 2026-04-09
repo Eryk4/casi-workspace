@@ -51,6 +51,11 @@ class OrganizationService:
         if self.organization_repository.get_by_slug(normalized["slug"]):
             raise OrganizationError("Organizacja o takim identyfikatorze katalogu już istnieje.")
 
+        if normalized.get("telegram_chat_id"):
+            existing_by_chat = self.organization_repository.get_by_telegram_chat_id(normalized["telegram_chat_id"])
+            if existing_by_chat:
+                raise OrganizationError("Ten kanal Telegram jest juz przypisany do innej organizacji.")
+
         organization_id = self.organization_repository.create(normalized)
         created = self.organization_repository.get_by_id(organization_id)
         assert created is not None
@@ -89,6 +94,12 @@ class OrganizationService:
             existing_by_slug = self.organization_repository.get_by_slug(normalized["slug"])
             if existing_by_slug and int(existing_by_slug["organization_id"]) != organization_id:
                 raise OrganizationError("Organizacja o takim identyfikatorze katalogu już istnieje.")
+
+        if "telegram_chat_id" in normalized and normalized["telegram_chat_id"] != (current.get("telegram_chat_id") or ""):
+            if normalized["telegram_chat_id"]:
+                existing_by_chat = self.organization_repository.get_by_telegram_chat_id(normalized["telegram_chat_id"])
+                if existing_by_chat and int(existing_by_chat["organization_id"]) != organization_id:
+                    raise OrganizationError("Ten kanal Telegram jest juz przypisany do innej organizacji.")
 
         self.organization_repository.update(organization_id, normalized)
         refreshed = self.organization_repository.get_by_id(organization_id)
@@ -165,7 +176,13 @@ class OrganizationService:
             slug = self._slugify(slug_source or name)
             if not slug:
                 raise OrganizationError("Identyfikator katalogu organizacji jest wymagany.")
-            return {"name": name, "slug": slug, "is_active": is_active}
+            return {
+                "name": name,
+                "slug": slug,
+                "telegram_chat_id": self._normalize_telegram_chat_id(payload.get("telegram_chat_id")),
+                "telegram_chat_name": self._normalize_optional_text(payload.get("telegram_chat_name")),
+                "is_active": is_active,
+            }
 
         updates: dict[str, Any] = {}
         if "name" in payload:
@@ -180,11 +197,27 @@ class OrganizationService:
             updates["slug"] = slug
         if "is_active" in payload:
             updates["is_active"] = 1 if payload.get("is_active") not in {False, 0, "0", "false"} else 0
+        if "telegram_chat_id" in payload:
+            updates["telegram_chat_id"] = self._normalize_telegram_chat_id(payload.get("telegram_chat_id"))
+        if "telegram_chat_name" in payload:
+            updates["telegram_chat_name"] = self._normalize_optional_text(payload.get("telegram_chat_name"))
         return updates
 
     def _slugify(self, value: Any) -> str:
         normalized = re.sub(r"[^A-Za-z0-9]+", "-", str(value or "").strip().lower())
         return normalized.strip("-")
+
+    def _normalize_telegram_chat_id(self, value: Any) -> str | None:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return None
+        if not re.fullmatch(r"-?\d+", normalized):
+            raise OrganizationError("ID kanalu Telegram musi byc liczba, na przyklad -1001234567890.")
+        return normalized
+
+    def _normalize_optional_text(self, value: Any) -> str | None:
+        normalized = str(value or "").strip()
+        return normalized or None
 
     def _parse_optional_id(self, value: Any) -> int | None:
         normalized = str(value or "").strip()

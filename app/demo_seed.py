@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 from app.repositories.invoice_repository import InvoiceRepository
+from app.services.auth_service import AuthService
 from app.services.invoice_service import InvoiceService
+from app.services.task_service import TaskService
 
 
 SEED_INVOICES = [
@@ -120,9 +124,66 @@ SEED_INVOICES = [
     },
 ]
 
+SEED_TASKS = [
+    {
+        "title": "Sprawdzic nowe faktury z Telegrama",
+        "task_type": "zadanie",
+        "status": "nowe",
+        "priority": "wysoki",
+        "due_at": "2026-04-09T09:00",
+        "remind_at": "2026-04-09T08:15",
+        "description": "Przejrzec dzisiejsze dokumenty i potwierdzic, czy nie ma duplikatow.",
+    },
+    {
+        "title": "Spotkanie statusowe z klientem",
+        "task_type": "wydarzenie",
+        "status": "oczekuje",
+        "priority": "normalny",
+        "due_at": "2026-04-10T13:30",
+        "remind_at": "2026-04-10T12:45",
+        "description": "Krotkie omowienie zaleglych faktur i nowych kontrahentow.",
+    },
+    {
+        "title": "Przypomnienie o backupie danych",
+        "task_type": "przypomnienie",
+        "status": "nowe",
+        "priority": "krytyczny",
+        "due_at": "2026-04-10T18:00",
+        "remind_at": "2026-04-10T17:30",
+        "description": "Zweryfikowac, czy kopia bazy i plikow wykonala sie poprawnie.",
+    },
+]
 
-def seed_demo_data(invoice_service: InvoiceService, invoice_repository: InvoiceRepository) -> None:
+
+def seed_demo_data(
+    invoice_service: InvoiceService,
+    invoice_repository: InvoiceRepository,
+    task_service: TaskService | None = None,
+    auth_service: AuthService | None = None,
+) -> None:
     if invoice_repository.count_all() > 0:
         return
     for payload in SEED_INVOICES:
         invoice_service.create_invoice(payload, actor="seed")
+
+    if not task_service or not auth_service:
+        return
+
+    users = auth_service.list_users()
+    if not users:
+        return
+    actor_user = users[0]
+    invoices = invoice_repository.list_invoices({})
+    if not invoices:
+        return
+    organization_id = invoices[0].get("organization_id")
+    if not organization_id:
+        return
+
+    for payload in SEED_TASKS:
+        task_service.create_task(
+            payload,
+            actor_user=actor_user,
+            actor=actor_user.get("display_name") or actor_user["login"],
+            organization_id=int(organization_id),
+        )

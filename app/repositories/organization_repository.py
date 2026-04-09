@@ -77,6 +77,18 @@ class OrganizationRepository:
             ).fetchone()
         return dict(row) if row else None
 
+    def get_by_telegram_chat_id(self, telegram_chat_id: str) -> dict[str, Any] | None:
+        with get_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM organizations
+                WHERE telegram_chat_id = ?
+                """,
+                (telegram_chat_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
     def create(self, payload: dict[str, Any]) -> int:
         timestamp = now_iso()
         with get_connection() as connection:
@@ -84,12 +96,14 @@ class OrganizationRepository:
                 connection,
                 """
                 INSERT INTO organizations (
-                    name, slug, is_active, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?)
+                    name, slug, telegram_chat_id, telegram_chat_name, is_active, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["name"],
                     payload["slug"],
+                    payload.get("telegram_chat_id"),
+                    payload.get("telegram_chat_name"),
                     int(payload.get("is_active", 1)),
                     timestamp,
                     timestamp,
@@ -100,7 +114,7 @@ class OrganizationRepository:
     def update(self, organization_id: int, fields: dict[str, Any]) -> None:
         if not fields:
             return
-        allowed = {"name", "slug", "is_active"}
+        allowed = {"name", "slug", "telegram_chat_id", "telegram_chat_name", "is_active"}
         update_fields = {key: value for key, value in fields.items() if key in allowed}
         if not update_fields:
             return

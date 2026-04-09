@@ -1,13 +1,16 @@
 const stan = {
   meta: null,
   faktury: [],
+  zadania: [],
   kontrahenciWszyscy: [],
   kontrahenciWidoczni: [],
   logi: [],
   organizacje: [],
   uzytkownicy: [],
+  uzytkownicyDoZadan: [],
   biezacyUzytkownik: null,
   wybranaFakturaId: null,
+  wybraneZadanieId: null,
   wybranyKontrahentId: null,
   wybranaOrganizacjaId: "",
   wybranaOrganizacjaFormularzaId: null,
@@ -30,6 +33,10 @@ const opisyWidokow = {
   invoices: {
     tytul: "Faktury",
     podtytul: "Wyszukiwanie, filtrowanie i ręczna weryfikacja dokumentów.",
+  },
+  tasks: {
+    tytul: "Asystent Szefa",
+    podtytul: "Zadania, wydarzenia, terminy i notatki dla zespolu.",
   },
   contractors: {
     tytul: "Kontrahenci",
@@ -71,12 +78,36 @@ const etykietyZdarzen = {
   user_logout: "Wylogowanie użytkownika",
   organization_created: "Utworzenie organizacji",
   organization_updated: "Aktualizacja organizacji",
+  task_created: "Dodanie zadania",
+  task_updated: "Aktualizacja zadania",
+  task_note_added: "Dodanie notatki do zadania",
 };
 
 const etykietyRol = {
   administrator: "Administrator",
   operator: "Operator",
   podglad: "Podgląd",
+};
+
+const etykietyTypowZadan = {
+  zadanie: "Zadanie",
+  wydarzenie: "Wydarzenie",
+  przypomnienie: "Przypomnienie",
+};
+
+const etykietyStatusowZadan = {
+  nowe: "Nowe",
+  w_toku: "W toku",
+  oczekuje: "Oczekuje",
+  zakonczone: "Zakonczone",
+  anulowane: "Anulowane",
+};
+
+const etykietyPriorytetowZadan = {
+  niski: "Niski",
+  normalny: "Normalny",
+  wysoki: "Wysoki",
+  krytyczny: "Krytyczny",
 };
 
 const skrotyPulpitu = {
@@ -124,6 +155,15 @@ const skrotyPulpitu = {
       document.getElementById("contractor-search").value = "";
       ustawWidok("contractors");
       await wczytajKontrahentow();
+    },
+  },
+  aktywne_przypomnienia: {
+    etykieta: "Aktywne przypomnienia",
+    zastosuj: async () => {
+      wyczyscFiltryZadan(false);
+      document.getElementById("task-filter-due-reminders").checked = true;
+      ustawWidok("tasks");
+      await wczytajZadania();
     },
   },
 };
@@ -219,15 +259,71 @@ function formatujRole(value) {
   return etykietyRol[value] || bezpiecznyTekst(value);
 }
 
+function formatujTypZadania(value) {
+  if (!value) return "-";
+  return etykietyTypowZadan[value] || bezpiecznyTekst(value);
+}
+
+function formatujStatusZadania(value) {
+  if (!value) return "-";
+  return etykietyStatusowZadan[value] || bezpiecznyTekst(value);
+}
+
+function formatujPriorytetZadania(value) {
+  if (!value) return "-";
+  return etykietyPriorytetowZadan[value] || bezpiecznyTekst(value);
+}
+
+function pobierzStanPrzypomnienia(task) {
+  if (!task?.remind_at) {
+    return { etykieta: "Brak", klasa: "status-normal" };
+  }
+  if (["zakonczone", "anulowane"].includes(task.status)) {
+    return { etykieta: "Zamkniete", klasa: "status-success" };
+  }
+  const przypomnienie = new Date(task.remind_at);
+  if (Number.isNaN(przypomnienie.getTime())) {
+    return { etykieta: "Zaplanowane", klasa: "status-normal" };
+  }
+  return przypomnienie <= new Date()
+    ? { etykieta: "Do przypomnienia", klasa: "status-warning" }
+    : { etykieta: "Zaplanowane", klasa: "status-normal" };
+}
+
+function formatujDateCzasDoInput(value) {
+  if (!value) return "";
+  const data = new Date(value);
+  if (Number.isNaN(data.getTime())) {
+    return String(value).slice(0, 16);
+  }
+  const przesunieta = new Date(data.getTime() - data.getTimezoneOffset() * 60000);
+  return przesunieta.toISOString().slice(0, 16);
+}
+
+function pobierzSzczegolyJSON(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return {};
+  }
+}
+
 function czyMaZnaczenieDlaKontekstu(value) {
   return value !== null && value !== undefined && String(value).trim() !== "";
 }
 
 function zbudujOpisKontekstuZdarzenia(event) {
   const elementy = [];
+  const szczegoly = pobierzSzczegolyJSON(event.details);
 
   if (czyMaZnaczenieDlaKontekstu(event.invoice_id)) {
     elementy.push(`Faktura #${bezpiecznyTekst(event.invoice_id)}`);
+  }
+
+  if (czyMaZnaczenieDlaKontekstu(szczegoly.task_id)) {
+    elementy.push(`Zadanie #${bezpiecznyTekst(szczegoly.task_id)}`);
   }
 
   if (czyMaZnaczenieDlaKontekstu(event.source)) {
@@ -257,6 +353,13 @@ function klasaStatusu(status, duplicateType = "") {
   if (duplicateType === "pewny" || status === "pewny_duplikat") return "status-danger";
   if (duplicateType === "podejrzenie" || status === "podejrzenie_duplikatu" || status === "weryfikacja") return "status-warning";
   if (status === "poprawna" || status === "zaksiegowana") return "status-success";
+  return "status-normal";
+}
+
+function klasaStatusuZadania(status, priority = "") {
+  if (status === "anulowane") return "status-danger";
+  if (status === "zakonczone") return "status-success";
+  if (priority === "krytyczny" || priority === "wysoki" || status === "oczekuje") return "status-warning";
   return "status-normal";
 }
 
@@ -296,10 +399,32 @@ function ustawWidok(widok) {
   document.getElementById("view-subtitle").textContent = opisyWidokow[widok].podtytul;
 }
 
+function czyImportTestowyWlaczony() {
+  return Boolean(stan.meta?.test_imports_enabled);
+}
+
+function znajdzSekcjeImportuTestowego() {
+  return document.getElementById("test-import-section");
+}
+
+function ustawWidocznoscElementowSrodowiska() {
+  const sekcjaImportu = znajdzSekcjeImportuTestowego();
+  if (sekcjaImportu) {
+    sekcjaImportu.classList.toggle("hidden", !czyImportTestowyWlaczony());
+  }
+
+  const podpowiedzLogowania =
+    document.getElementById("default-login-hint") || document.querySelector("#login-screen .subtle-note");
+  if (podpowiedzLogowania) {
+    podpowiedzLogowania.classList.toggle("hidden", !stan.meta?.default_login_hint_enabled);
+  }
+}
+
 function ustawInformacjeSystemowe() {
   const etykietaBazy = stan.meta?.database_label || "nieznana";
   const statusTelegrama = stan.meta?.telegram_enabled ? "Telegram: aktywny." : "Telegram: wyłączony.";
-  document.getElementById("system-info").textContent = `Aktywna baza danych: ${etykietaBazy}. ${statusTelegrama}`;
+  const statusImportuTestowego = czyImportTestowyWlaczony() ? "Import testowy: dostepny." : "Import testowy: wylaczony.";
+  document.getElementById("system-info").textContent = `Aktywna baza danych: ${etykietaBazy}. ${statusTelegrama} ${statusImportuTestowego}`;
   document.getElementById("sidebar-system-info").textContent =
     `Baza: ${etykietaBazy}. ${statusTelegrama} Dokumenty i pliki OCR są układane w osobnych folderach organizacji.`;
 }
@@ -309,6 +434,10 @@ function odswiezPasekSesji() {
   const navUsers = document.getElementById("users-nav-button");
   const navOrganizations = document.getElementById("organizations-nav-button");
   const switcherBox = document.getElementById("organization-switcher-box");
+  const sekcjaImportu = znajdzSekcjeImportuTestowego();
+  if (sekcjaImportu) {
+    sekcjaImportu.classList.toggle("hidden", !czyImportTestowyWlaczony());
+  }
   if (!stan.biezacyUzytkownik) {
     box.classList.add("hidden");
     navUsers.classList.add("hidden");
@@ -331,8 +460,11 @@ function odswiezPasekSesji() {
   const czyTylkoPodglad = stan.biezacyUzytkownik.role === "podglad";
   document.querySelectorAll(".action-import").forEach((button) => {
     const brakWyboruOrganizacji = czyGlobalnyAdministrator() && !stan.wybranaOrganizacjaId;
-    button.disabled = czyTylkoPodglad || brakWyboruOrganizacji;
-    if (czyTylkoPodglad) {
+    const importTestowyWylaczony = !czyImportTestowyWlaczony();
+    button.disabled = importTestowyWylaczony || czyTylkoPodglad || brakWyboruOrganizacji;
+    if (importTestowyWylaczony) {
+      button.title = "Import testowy jest wylaczony w tym srodowisku.";
+    } else if (czyTylkoPodglad) {
       button.title = "Rola podglądu nie może importować dokumentów.";
     } else if (brakWyboruOrganizacji) {
       button.title = "Wybierz konkretną organizację przed importem.";
@@ -341,6 +473,19 @@ function odswiezPasekSesji() {
     }
   });
 
+  const przyciskNowegoZadania = document.getElementById("new-task-button");
+  if (przyciskNowegoZadania) {
+    const brakWyboruOrganizacji = czyGlobalnyAdministrator() && !stan.wybranaOrganizacjaId;
+    przyciskNowegoZadania.disabled = czyTylkoPodglad || brakWyboruOrganizacji;
+    if (czyTylkoPodglad) {
+      przyciskNowegoZadania.title = "Rola podgladu nie moze dodawac zadan.";
+    } else if (brakWyboruOrganizacji) {
+      przyciskNowegoZadania.title = "Wybierz konkretna organizacje przed dodaniem zadania.";
+    } else {
+      przyciskNowegoZadania.title = "";
+    }
+  }
+
   if (!czyAdministrator() && ["users", "organizations"].includes(stan.aktywnyWidok)) {
     ustawWidok("dashboard");
   }
@@ -348,12 +493,17 @@ function odswiezPasekSesji() {
 
 function przygotujWidokPoWylogowaniu() {
   stan.biezacyUzytkownik = null;
+  stan.zadania = [];
+  stan.uzytkownicyDoZadan = [];
+  stan.wybraneZadanieId = null;
   stan.uzytkownicy = [];
   stan.wybranyUzytkownikId = null;
   document.getElementById("password-input").value = "";
   document.getElementById("global-search-results").classList.add("hidden");
   document.getElementById("global-search-results").innerHTML = "";
   document.getElementById("global-search").value = "";
+  document.getElementById("task-table-body").innerHTML = `<tr><td colspan="10">Zaloguj sie, aby zobaczyc zadania.</td></tr>`;
+  wyczyscSzczegolyZadania();
   stan.organizacje = [];
   stan.wybranaOrganizacjaId = "";
   stan.czyZakresOrganizacjiZainicjalizowany = false;
@@ -513,6 +663,312 @@ function odswiezPasekFiltrowKontrahentow() {
   });
 }
 
+function zbudujOpcjeUzytkownikowDoZadan() {
+  const select = document.getElementById("task-filter-assigned-user");
+  const obecnaWartosc = select.value;
+  const opcje = [`<option value="">Wszyscy uzytkownicy</option>`]
+    .concat(
+      stan.uzytkownicyDoZadan.map((uzytkownik) => {
+        const suffix = czyGlobalnyAdministrator() && uzytkownik.organization_name ? ` | ${uzytkownik.organization_name}` : "";
+        return `<option value="${uzytkownik.user_id}">${bezpiecznyTekst(uzytkownik.display_name)}${bezpiecznyTekst(suffix)}</option>`;
+      })
+    )
+    .join("");
+  select.innerHTML = opcje;
+  if (obecnaWartosc) {
+    select.value = obecnaWartosc;
+  }
+}
+
+function odswiezPasekFiltrowZadan() {
+  const kontener = document.getElementById("task-active-filters");
+  const formularz = document.getElementById("task-filters");
+  const dane = new FormData(formularz);
+    const etykiety = {
+      search: "Fraza",
+      task_type: "Typ",
+      status: "Status",
+      priority: "Priorytet",
+      assigned_user_id: "Przypisano",
+      due_from: "Termin od",
+      due_to: "Termin do",
+      remind_from: "Przypomnienie od",
+      remind_to: "Przypomnienie do",
+      due_reminders_only: "Widok",
+    };
+
+  const wpisy = [];
+  for (const [key, value] of dane.entries()) {
+    const wartosc = String(value).trim();
+    if (!wartosc || !etykiety[key]) {
+      continue;
+    }
+    let tekst = wartosc;
+    if (key === "task_type") tekst = formatujTypZadania(wartosc);
+    if (key === "status") tekst = formatujStatusZadania(wartosc);
+      if (key === "priority") tekst = formatujPriorytetZadania(wartosc);
+      if (key === "due_reminders_only") tekst = "Tylko aktywne przypomnienia";
+      if (key === "assigned_user_id") {
+        const uzytkownik = stan.uzytkownicyDoZadan.find((item) => Number(item.user_id) === Number(wartosc));
+        tekst = uzytkownik ? uzytkownik.display_name : wartosc;
+      }
+    wpisy.push(`<span class="filter-chip">${bezpiecznyTekst(etykiety[key])}: ${bezpiecznyTekst(tekst)}</span>`);
+  }
+
+  if (!wpisy.length) {
+    kontener.innerHTML = "";
+    kontener.classList.add("hidden");
+    return;
+  }
+
+  kontener.classList.remove("hidden");
+  kontener.innerHTML = `${wpisy.join("")}<button type="button" class="secondary" id="clear-active-task-filters">Wyczysc filtry</button>`;
+  document.getElementById("clear-active-task-filters").addEventListener("click", () => wyczyscFiltryZadan(true));
+}
+
+function wyczyscFiltryZadan(przeladuj = true) {
+  document.getElementById("task-filters").reset();
+  odswiezPasekFiltrowZadan();
+  if (przeladuj) {
+    wczytajZadania().catch((error) => pokazPowiadomienie(error.message));
+  }
+}
+
+function renderujZadania(zadania) {
+  stan.zadania = zadania;
+  document.getElementById("task-count").textContent = `${zadania.length} rekordow`;
+  odswiezPasekFiltrowZadan();
+  if (!zadania.some((task) => Number(task.task_id) === Number(stan.wybraneZadanieId))) {
+    wyczyscSzczegolyZadania();
+  }
+
+  const body = document.getElementById("task-table-body");
+  if (!zadania.length) {
+    body.innerHTML = `<tr><td colspan="10">Brak zadan dla wybranych filtrow.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = zadania
+    .map(
+      (task) => `
+        <tr class="clickable" data-task-id="${task.task_id}">
+          <td>${task.task_id}</td>
+          <td>${formatujNazweOrganizacji(task.organization_name)}</td>
+          <td>${formatujTypZadania(task.task_type)}</td>
+            <td>${formatujWartosc(task.title)}</td>
+            <td>${formatujWartosc(task.assigned_user_name)}</td>
+            <td>${formatujDateCzas(task.due_at)}</td>
+            <td>
+              ${
+                task.remind_at
+                  ? `<div>${formatujDateCzas(task.remind_at)}</div><div class="muted"><span class="status-badge ${pobierzStanPrzypomnienia(task).klasa}">${pobierzStanPrzypomnienia(task).etykieta}</span></div>`
+                  : "-"
+              }
+            </td>
+            <td><span class="status-badge ${klasaStatusuZadania(task.status, task.priority)}">${formatujPriorytetZadania(task.priority)}</span></td>
+            <td><span class="status-badge ${klasaStatusuZadania(task.status, task.priority)}">${formatujStatusZadania(task.status)}</span></td>
+            <td>${formatujDateCzas(task.updated_at)}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  body.querySelectorAll("[data-task-id]").forEach((row) => {
+    row.addEventListener("click", () => wczytajSzczegolyZadania(Number(row.dataset.taskId)));
+  });
+}
+
+function renderujHistorieZadan(items) {
+  if (!items.length) {
+    return `<div class="empty-state">Brak historii zmian dla tego zadania.</div>`;
+  }
+
+  return `
+    <div class="list">
+      ${items
+        .map(
+          (item) => `
+            <article class="list-item">
+              <strong>${formatujTypZdarzenia(item.action_type)}</strong>
+              <div class="muted">${formatujDateCzas(item.created_at)}</div>
+              <div>${formatujWartosc(item.message)}</div>
+              <div class="muted">Aktor: ${formatujWartosc(item.actor)}</div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderujNotatkiZadan(items) {
+  if (!items.length) {
+    return `<div class="empty-state">Brak notatek dla tego zadania.</div>`;
+  }
+
+  return `
+    <div class="list">
+      ${items
+        .map(
+          (item) => `
+            <article class="list-item">
+              <strong>${formatujWartosc(item.created_by_user_name)}</strong>
+              <div class="muted">${formatujDateCzas(item.created_at)}</div>
+              <div>${formatujWartosc(item.note_text)}</div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderujPanelZadania(detail = null) {
+  const task = detail?.task || null;
+  const zablokowane = !czyMoznaZapisywac();
+  const atrybutPola = zablokowane ? 'disabled aria-disabled="true"' : "";
+  const atrybutPrzycisku = zablokowane ? 'disabled title="Ta rola ma tylko podglad danych."' : "";
+  const taskId = task?.task_id || "";
+  stan.wybraneZadanieId = task ? Number(task.task_id) : null;
+
+  const opcjeUzytkownikow = [`<option value="">Bez przypisania</option>`]
+    .concat(
+      stan.uzytkownicyDoZadan.map((uzytkownik) => {
+        const zaznaczone = Number(task?.assigned_user_id) === Number(uzytkownik.user_id) ? "selected" : "";
+        const suffix = czyGlobalnyAdministrator() && uzytkownik.organization_name ? ` | ${uzytkownik.organization_name}` : "";
+        return `<option value="${uzytkownik.user_id}" ${zaznaczone}>${bezpiecznyTekst(uzytkownik.display_name)}${bezpiecznyTekst(suffix)}</option>`;
+      })
+    )
+    .join("");
+
+  document.getElementById("task-detail-empty").classList.add("hidden");
+  const container = document.getElementById("task-detail");
+  container.classList.remove("hidden");
+
+  container.innerHTML = `
+    <div class="detail-grid">
+        <div class="summary-grid">
+          <div class="summary-item"><strong>ID zadania</strong>${taskId || "Nowe zadanie"}</div>
+          <div class="summary-item"><strong>Organizacja</strong>${formatujNazweOrganizacji(task?.organization_name || pobierzAktywnaOrganizacje()?.name || stan.biezacyUzytkownik?.organization_name)}</div>
+          <div class="summary-item"><strong>Typ</strong>${task ? formatujTypZadania(task.task_type) : "-"}</div>
+          <div class="summary-item"><strong>Status</strong>${task ? `<span class="status-badge ${klasaStatusuZadania(task.status, task.priority)}">${formatujStatusZadania(task.status)}</span>` : "-"}</div>
+          <div class="summary-item"><strong>Priorytet</strong>${task ? formatujPriorytetZadania(task.priority) : "-"}</div>
+          <div class="summary-item"><strong>Termin</strong>${formatujDateCzas(task?.due_at)}</div>
+          <div class="summary-item"><strong>Przypomnienie</strong>${task?.remind_at ? `${formatujDateCzas(task.remind_at)}<div class="muted"><span class="status-badge ${pobierzStanPrzypomnienia(task).klasa}">${pobierzStanPrzypomnienia(task).etykieta}</span></div>` : "-"}</div>
+          <div class="summary-item"><strong>Przypisano</strong>${formatujWartosc(task?.assigned_user_name)}</div>
+          <div class="summary-item"><strong>Dodane przez</strong>${formatujWartosc(task?.created_by_user_name)}</div>
+        </div>
+
+      <div class="detail-actions">
+        <button id="save-task-button" ${atrybutPrzycisku}>Zapisz zadanie</button>
+        <button class="secondary" id="reset-task-button">Nowe zadanie</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header"><h3>Formularz zadania</h3></div>
+        <form id="task-form" class="field-grid">
+          <input type="hidden" id="task-id" value="${bezpiecznyTekst(taskId)}" />
+          <div class="field">
+            <label>Tytul</label>
+            <input id="task-title" name="title" value="${bezpiecznyTekst(task?.title || "")}" ${atrybutPola} />
+          </div>
+          <div class="field">
+            <label>Typ</label>
+            <select id="task-type" name="task_type" ${atrybutPola}>
+              ${stan.meta.task_types
+                .map((item) => `<option value="${item}" ${item === (task?.task_type || "zadanie") ? "selected" : ""}>${formatujTypZadania(item)}</option>`)
+                .join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>Status</label>
+            <select id="task-status" name="status" ${atrybutPola}>
+              ${stan.meta.task_statuses
+                .map((item) => `<option value="${item}" ${item === (task?.status || "nowe") ? "selected" : ""}>${formatujStatusZadania(item)}</option>`)
+                .join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>Priorytet</label>
+            <select id="task-priority" name="priority" ${atrybutPola}>
+              ${stan.meta.task_priorities
+                .map((item) => `<option value="${item}" ${item === (task?.priority || "normalny") ? "selected" : ""}>${formatujPriorytetZadania(item)}</option>`)
+                .join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>Przypisano</label>
+            <select id="task-assigned-user" name="assigned_user_id" ${atrybutPola}>${opcjeUzytkownikow}</select>
+          </div>
+            <div class="field">
+              <label>Termin</label>
+              <input id="task-due-at" name="due_at" type="datetime-local" value="${bezpiecznyTekst(formatujDateCzasDoInput(task?.due_at))}" ${atrybutPola} />
+            </div>
+            <div class="field">
+              <label>Przypomnij o</label>
+              <input id="task-remind-at" name="remind_at" type="datetime-local" value="${bezpiecznyTekst(formatujDateCzasDoInput(task?.remind_at))}" ${atrybutPola} />
+            </div>
+            <div class="field" style="grid-column: 1 / -1;">
+            <label>Opis</label>
+            <textarea id="task-description" name="description" ${atrybutPola}>${bezpiecznyTekst(task?.description || "")}</textarea>
+          </div>
+        </form>
+      </div>
+
+      <div class="detail-columns">
+        <div class="panel">
+          <div class="panel-header"><h3>Notatki</h3></div>
+          ${renderujNotatkiZadan(detail?.notes || [])}
+          ${
+            task
+              ? `
+                <div class="panel-header" style="margin-top: 16px;"><h3>Dodaj notatke</h3></div>
+                <form id="task-note-form" class="stack">
+                  <textarea id="task-note-text" placeholder="Zapisz ustalenie, komentarz albo wynik rozmowy." ${atrybutPola}></textarea>
+                  <button type="submit" ${atrybutPrzycisku}>Dodaj notatke</button>
+                </form>
+              `
+              : `<div class="empty-state">Notatki mozna dodawac po zapisaniu zadania.</div>`
+          }
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h3>Historia zadania</h3></div>
+          ${renderujHistorieZadan(detail?.history || [])}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("save-task-button").addEventListener("click", zapiszZadanie);
+  document.getElementById("reset-task-button").addEventListener("click", przygotujNoweZadanie);
+  const formularzNotatki = document.getElementById("task-note-form");
+  if (formularzNotatki) {
+    formularzNotatki.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        await dodajNotatkeDoZadania();
+      } catch (error) {
+        pokazPowiadomienie(error.message);
+      }
+    });
+  }
+}
+
+function przygotujNoweZadanie() {
+  if (czyGlobalnyAdministrator() && !stan.wybranaOrganizacjaId) {
+    pokazPowiadomienie("Wybierz organizacje przed dodaniem zadania.");
+    return;
+  }
+  renderujPanelZadania(null);
+}
+
+function wyczyscSzczegolyZadania() {
+  stan.wybraneZadanieId = null;
+  document.getElementById("task-detail").classList.add("hidden");
+  document.getElementById("task-detail").innerHTML = "";
+  document.getElementById("task-detail-empty").classList.remove("hidden");
+}
+
 function renderujPulpit(snapshot) {
   const karty = [
     ["nowe_faktury", snapshot.cards.nowe_faktury],
@@ -520,6 +976,7 @@ function renderujPulpit(snapshot) {
     ["podejrzenia_duplikatow", snapshot.cards.podejrzenia_duplikatow],
     ["pewne_duplikaty", snapshot.cards.pewne_duplikaty],
     ["nowi_kontrahenci", snapshot.cards.nowi_kontrahenci],
+    ["aktywne_przypomnienia", snapshot.cards.aktywne_przypomnienia],
   ];
 
   document.getElementById("dashboard-cards").innerHTML = karty
@@ -540,8 +997,30 @@ function renderujPulpit(snapshot) {
       } catch (error) {
         pokazPowiadomienie(error.message);
       }
+      });
     });
-  });
+
+  const kontenerPrzypomnien = document.getElementById("dashboard-reminders");
+  if (!snapshot.active_reminders?.length) {
+    kontenerPrzypomnien.innerHTML = `<div class="empty-state">Brak aktywnych przypomnien.</div>`;
+  } else {
+    kontenerPrzypomnien.innerHTML = `
+      <div class="list">
+        ${snapshot.active_reminders
+          .map(
+            (task) => `
+              <article class="list-item">
+                <strong>${formatujWartosc(task.title)}</strong>
+                <div class="muted">${formatujTypZadania(task.task_type)} | Organizacja: ${formatujNazweOrganizacji(task.organization_name)}</div>
+                <div>Przypomnienie: ${formatujDateCzas(task.remind_at)}</div>
+                <div>Status: <span class="status-badge ${pobierzStanPrzypomnienia(task).klasa}">${pobierzStanPrzypomnienia(task).etykieta}</span></div>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    `;
+  }
 
   const kontenerZdarzen = document.getElementById("dashboard-events");
   if (!snapshot.recent_events.length) {
@@ -1092,20 +1571,22 @@ function renderujOrganizacje(organizacje) {
   zbudujOpcjeOrganizacjiDlaFormularzy();
   const body = document.getElementById("organization-table-body");
   if (!organizacje.length) {
-    body.innerHTML = `<tr><td colspan="7">Brak organizacji.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9">Brak organizacji.</td></tr>`;
     return;
   }
 
   body.innerHTML = organizacje
     .map(
       (organizacja) => `
-        <tr class="clickable" data-organization-id="${organizacja.organization_id}">
-          <td>${organizacja.organization_id}</td>
-          <td>${formatujWartosc(organizacja.name)}</td>
-          <td>${formatujWartosc(organizacja.slug)}</td>
-          <td>${organizacja.is_active ? '<span class="status-badge status-success">tak</span>' : '<span class="status-badge status-danger">nie</span>'}</td>
-          <td>${formatujWartosc(organizacja.user_count)}</td>
-          <td>${formatujWartosc(organizacja.invoice_count)}</td>
+          <tr class="clickable" data-organization-id="${organizacja.organization_id}">
+            <td>${organizacja.organization_id}</td>
+            <td>${formatujWartosc(organizacja.name)}</td>
+            <td>${formatujWartosc(organizacja.slug)}</td>
+            <td>${formatujWartosc(organizacja.telegram_chat_id)}</td>
+            <td>${formatujWartosc(organizacja.telegram_chat_name)}</td>
+            <td>${organizacja.is_active ? '<span class="status-badge status-success">tak</span>' : '<span class="status-badge status-danger">nie</span>'}</td>
+            <td>${formatujWartosc(organizacja.user_count)}</td>
+            <td>${formatujWartosc(organizacja.invoice_count)}</td>
           <td>${formatujWartosc(organizacja.contractor_count)}</td>
         </tr>
       `
@@ -1129,6 +1610,8 @@ function wypelnijFormularzOrganizacji(organizacja) {
   document.getElementById("organization-id").value = String(organizacja.organization_id);
   document.getElementById("organization-name").value = organizacja.name || "";
   document.getElementById("organization-slug").value = organizacja.slug || "";
+  document.getElementById("organization-telegram-chat-id").value = organizacja.telegram_chat_id || "";
+  document.getElementById("organization-telegram-chat-name").value = organizacja.telegram_chat_name || "";
   document.getElementById("organization-active").value = organizacja.is_active ? "1" : "0";
 }
 
@@ -1137,6 +1620,8 @@ function wyczyscFormularzOrganizacji() {
   document.getElementById("organization-form-title").textContent = "Nowa organizacja";
   document.getElementById("organization-form").reset();
   document.getElementById("organization-id").value = "";
+  document.getElementById("organization-telegram-chat-id").value = "";
+  document.getElementById("organization-telegram-chat-name").value = "";
   document.getElementById("organization-active").value = "1";
 }
 
@@ -1244,9 +1729,13 @@ function renderujWynikiWyszukiwania(results) {
 
 async function wczytajMeta() {
   stan.meta = await api("/api/meta", {}, { pominWylogowanie: true });
+  ustawWidocznoscElementowSrodowiska();
   zbudujOpcje(document.querySelector('select[name="source"]'), stan.meta.sources, "Wszystkie źródła", formatujZrodlo);
   zbudujOpcje(document.querySelector('select[name="status"]'), stan.meta.statuses, "Wszystkie statusy");
   zbudujOpcje(document.querySelector('select[name="duplicate_type"]'), stan.meta.duplicate_types, "Wszystkie typy duplikatu");
+  zbudujOpcje(document.getElementById("task-filter-type"), stan.meta.task_types, "Wszystkie typy", formatujTypZadania);
+  zbudujOpcje(document.getElementById("task-filter-status"), stan.meta.task_statuses, "Wszystkie statusy", formatujStatusZadania);
+  zbudujOpcje(document.getElementById("task-filter-priority"), stan.meta.task_priorities, "Wszystkie priorytety", formatujPriorytetZadania);
 
   const sortBy = document.getElementById("sort-by");
   sortBy.innerHTML = `
@@ -1266,6 +1755,7 @@ async function wczytajMeta() {
     .join("");
 
   ustawInformacjeSystemowe();
+  zbudujOpcjeUzytkownikowDoZadan();
   wyczyscFormularzUzytkownika();
   wyczyscFormularzOrganizacji();
 }
@@ -1359,6 +1849,40 @@ async function wczytajLogi() {
   renderujLogi(logi);
 }
 
+async function wczytajUzytkownikowDoZadan() {
+  if (!stan.biezacyUzytkownik) {
+    stan.uzytkownicyDoZadan = [];
+    zbudujOpcjeUzytkownikowDoZadan();
+    return;
+  }
+  const uzytkownicy = await api(zbudujAdresZOrganizacja("/api/tasks/users"));
+  stan.uzytkownicyDoZadan = uzytkownicy;
+  zbudujOpcjeUzytkownikowDoZadan();
+}
+
+function zbudujZapytanieZadan() {
+  const form = document.getElementById("task-filters");
+  const formData = new FormData(form);
+  const params = new URLSearchParams();
+  for (const [key, value] of formData.entries()) {
+    if (String(value).trim()) {
+      params.set(key, String(value).trim());
+    }
+  }
+  return params.toString();
+}
+
+async function wczytajZadania() {
+  const query = zbudujZapytanieZadan();
+  const zadania = await api(zbudujAdresZOrganizacja(`/api/tasks${query ? `?${query}` : ""}`));
+  renderujZadania(zadania);
+}
+
+async function wczytajSzczegolyZadania(taskId) {
+  const detail = await api(zbudujAdresZOrganizacja(`/api/tasks/${taskId}`));
+  renderujPanelZadania(detail);
+}
+
 async function wczytajUzytkownikow() {
   if (!czyAdministrator()) {
     stan.uzytkownicy = [];
@@ -1380,7 +1904,15 @@ async function wczytajPanelOrganizacji() {
 
 async function odswiezDanePoZalogowaniu() {
   await wczytajOrganizacje();
-  await Promise.all([wczytajPulpit(), wczytajWszystkichKontrahentow(), wczytajKontrahentow(), wczytajFaktury(), wczytajLogi()]);
+  await Promise.all([
+    wczytajPulpit(),
+    wczytajWszystkichKontrahentow(),
+    wczytajKontrahentow(),
+    wczytajFaktury(),
+    wczytajZadania(),
+    wczytajLogi(),
+    wczytajUzytkownikowDoZadan(),
+  ]);
   if (czyAdministrator()) {
     await wczytajUzytkownikow();
   } else {
@@ -1438,6 +1970,57 @@ async function wylogujZSystemu() {
   }
 }
 
+async function zapiszZadanie() {
+  if (!czyMoznaZapisywac()) {
+    return;
+  }
+  const taskId = document.getElementById("task-id").value.trim();
+  const payload = {
+    title: document.getElementById("task-title").value.trim(),
+    task_type: document.getElementById("task-type").value,
+    status: document.getElementById("task-status").value,
+    priority: document.getElementById("task-priority").value,
+    assigned_user_id: document.getElementById("task-assigned-user").value,
+    due_at: document.getElementById("task-due-at").value,
+    remind_at: document.getElementById("task-remind-at").value,
+    description: document.getElementById("task-description").value.trim(),
+  };
+
+  let wynik;
+  if (!taskId) {
+    wynik = await api(zbudujAdresZOrganizacja("/api/tasks"), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    pokazPowiadomienie("Dodano nowe zadanie.");
+  } else {
+    wynik = await api(zbudujAdresZOrganizacja(`/api/tasks/${taskId}`), {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    pokazPowiadomienie("Zapisano zmiany zadania.");
+  }
+
+  await Promise.all([wczytajZadania(), wczytajLogi()]);
+  await wczytajSzczegolyZadania(wynik.task_id);
+}
+
+async function dodajNotatkeDoZadania() {
+  if (!stan.wybraneZadanieId || !czyMoznaZapisywac()) {
+    return;
+  }
+  const pole = document.getElementById("task-note-text");
+  const noteText = pole.value.trim();
+  const detail = await api(zbudujAdresZOrganizacja(`/api/tasks/${stan.wybraneZadanieId}/notes`), {
+    method: "POST",
+    body: JSON.stringify({ note_text: noteText }),
+  });
+  pole.value = "";
+  pokazPowiadomienie("Dodano notatke do zadania.");
+  await Promise.all([wczytajZadania(), wczytajLogi()]);
+  renderujPanelZadania(detail);
+}
+
 async function zapiszZmianyFaktury() {
   if (!stan.wybranaFakturaId || !czyMoznaZapisywac()) return;
   const form = document.getElementById("invoice-edit-form");
@@ -1474,6 +2057,10 @@ async function odrzucPodejrzenieDuplikatu() {
 }
 
 async function wykonajImportTestowy(source) {
+  if (!czyImportTestowyWlaczony()) {
+    pokazPowiadomienie("Import testowy jest wylaczony w tym srodowisku.");
+    return;
+  }
   if (!czyMoznaZapisywac()) {
     pokazPowiadomienie("Ta rola nie może dodawać dokumentów.");
     return;
@@ -1531,6 +2118,8 @@ async function zapiszOrganizacje() {
   const payload = {
     name: document.getElementById("organization-name").value.trim(),
     slug: document.getElementById("organization-slug").value.trim(),
+    telegram_chat_id: document.getElementById("organization-telegram-chat-id").value.trim(),
+    telegram_chat_name: document.getElementById("organization-telegram-chat-name").value.trim(),
     is_active: document.getElementById("organization-active").value,
   };
 
@@ -1584,6 +2173,18 @@ function podepnijZdarzenia() {
 
   document.getElementById("reset-invoice-filters").addEventListener("click", () => wyczyscFiltryFaktur(true));
   document.getElementById("toggle-invoice-filters").addEventListener("click", () => przelaczWidocznoscFiltrowFaktur());
+
+  document.getElementById("task-filters").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      await wczytajZadania();
+    } catch (error) {
+      pokazPowiadomienie(error.message);
+    }
+  });
+
+  document.getElementById("reset-task-filters").addEventListener("click", () => wyczyscFiltryZadan(true));
+  document.getElementById("new-task-button").addEventListener("click", () => przygotujNoweZadanie());
 
   document.getElementById("contractor-search").addEventListener("input", async (event) => {
     stan.filtryKontrahentow.szukaj = event.target.value.trim();
@@ -1671,6 +2272,7 @@ function podepnijZdarzenia() {
 async function start() {
   try {
     podepnijZdarzenia();
+    ustawWidocznoscElementowSrodowiska();
     ustawWidocznoscFiltrowFaktur(false);
     await wczytajMeta();
     const maSesje = await sprobujPrzywrocicSesje();

@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS organizations (
     organization_id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     slug TEXT NOT NULL UNIQUE,
+    telegram_chat_id TEXT,
+    telegram_chat_name TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -133,6 +135,61 @@ CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_source ON invoices(source);
 CREATE INDEX IF NOT EXISTS idx_invoices_organization_id ON invoices(organization_id);
 
+CREATE TABLE IF NOT EXISTS tasks (
+    task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    task_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    due_at TEXT,
+    remind_at TEXT,
+    assigned_user_id INTEGER,
+    created_by_user_id INTEGER NOT NULL,
+    completed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    FOREIGN KEY (assigned_user_id) REFERENCES users(user_id),
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_organization_id ON tasks(organization_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_due_at ON tasks(due_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_remind_at ON tasks(remind_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned_user_id ON tasks(assigned_user_id);
+
+CREATE TABLE IF NOT EXISTS task_notes (
+    task_note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    organization_id INTEGER NOT NULL,
+    note_text TEXT NOT NULL,
+    created_by_user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_notes_task_id ON task_notes(task_id);
+
+CREATE TABLE IF NOT EXISTS task_history (
+    task_history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    organization_id INTEGER NOT NULL,
+    action_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    message TEXT NOT NULL,
+    details TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_history_task_id ON task_history(task_id);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_id INTEGER NOT NULL,
@@ -172,6 +229,8 @@ CREATE TABLE IF NOT EXISTS organizations (
     organization_id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     slug TEXT NOT NULL UNIQUE,
+    telegram_chat_id TEXT,
+    telegram_chat_name TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -283,6 +342,69 @@ CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_source ON invoices(source);
 CREATE INDEX IF NOT EXISTS idx_invoices_organization_id ON invoices(organization_id);
 
+CREATE TABLE IF NOT EXISTS tasks (
+    task_id BIGSERIAL PRIMARY KEY,
+    organization_id BIGINT NOT NULL,
+    task_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    due_at TEXT,
+    remind_at TEXT,
+    assigned_user_id BIGINT,
+    created_by_user_id BIGINT NOT NULL,
+    completed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CONSTRAINT fk_tasks_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    CONSTRAINT fk_tasks_assigned_user
+        FOREIGN KEY (assigned_user_id) REFERENCES users(user_id),
+    CONSTRAINT fk_tasks_created_by_user
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_organization_id ON tasks(organization_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_due_at ON tasks(due_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_remind_at ON tasks(remind_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned_user_id ON tasks(assigned_user_id);
+
+CREATE TABLE IF NOT EXISTS task_notes (
+    task_note_id BIGSERIAL PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    organization_id BIGINT NOT NULL,
+    note_text TEXT NOT NULL,
+    created_by_user_id BIGINT NOT NULL,
+    created_at TEXT NOT NULL,
+    CONSTRAINT fk_task_notes_task
+        FOREIGN KEY (task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
+    CONSTRAINT fk_task_notes_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    CONSTRAINT fk_task_notes_created_by_user
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_notes_task_id ON task_notes(task_id);
+
+CREATE TABLE IF NOT EXISTS task_history (
+    task_history_id BIGSERIAL PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    organization_id BIGINT NOT NULL,
+    action_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    message TEXT NOT NULL,
+    details TEXT,
+    created_at TEXT NOT NULL,
+    CONSTRAINT fk_task_history_task
+        FOREIGN KEY (task_id) REFERENCES tasks(task_id) ON DELETE CASCADE,
+    CONSTRAINT fk_task_history_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_history_task_id ON task_history(task_id);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id BIGSERIAL PRIMARY KEY,
     invoice_id BIGINT NOT NULL,
@@ -324,6 +446,9 @@ CREATE INDEX IF NOT EXISTS idx_event_logs_organization_id ON event_logs(organiza
 SQLITE_RESET_SCRIPT = """
 PRAGMA foreign_keys = OFF;
 DROP TABLE IF EXISTS invoice_relations;
+DROP TABLE IF EXISTS task_history;
+DROP TABLE IF EXISTS task_notes;
+DROP TABLE IF EXISTS tasks;
 DROP TABLE IF EXISTS event_logs;
 DROP TABLE IF EXISTS user_sessions;
 DROP TABLE IF EXISTS users;
@@ -335,6 +460,9 @@ PRAGMA foreign_keys = ON;
 
 POSTGRES_RESET_SCRIPT = """
 DROP TABLE IF EXISTS invoice_relations CASCADE;
+DROP TABLE IF EXISTS task_history CASCADE;
+DROP TABLE IF EXISTS task_notes CASCADE;
+DROP TABLE IF EXISTS tasks CASCADE;
 DROP TABLE IF EXISTS event_logs CASCADE;
 DROP TABLE IF EXISTS user_sessions CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
@@ -344,6 +472,10 @@ DROP TABLE IF EXISTS organizations CASCADE;
 """
 
 ADDITIVE_COLUMNS = {
+    "organizations": {
+        "telegram_chat_id": "TEXT",
+        "telegram_chat_name": "TEXT",
+    },
     "contractors": {
         "organization_id": "INTEGER",
     },
@@ -365,14 +497,19 @@ ADDITIVE_COLUMNS = {
     "event_logs": {
         "organization_id": "INTEGER",
     },
+    "tasks": {
+        "remind_at": "TEXT",
+    },
 }
 
 ADDITIVE_INDEXES = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_telegram_chat_id ON organizations(telegram_chat_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_user_id ON users(telegram_user_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_contractors_org_nip ON contractors(organization_id, nip)",
     "CREATE INDEX IF NOT EXISTS idx_users_organization_id ON users(organization_id)",
     "CREATE INDEX IF NOT EXISTS idx_invoices_organization_id ON invoices(organization_id)",
     "CREATE INDEX IF NOT EXISTS idx_event_logs_organization_id ON event_logs(organization_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_remind_at ON tasks(remind_at)",
 )
 
 

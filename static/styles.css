@@ -312,6 +312,20 @@ textarea {
   align-items: center;
 }
 
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px;
+  color: var(--text);
+}
+
+.checkbox-inline input {
+  width: auto;
+  margin: 0;
+}
+
 .active-filters {
   display: flex;
   flex-wrap: wrap;

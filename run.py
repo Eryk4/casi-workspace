@@ -35,7 +35,12 @@ def main() -> None:
     services = build_services()
     services["auth_service"].ensure_default_admin()
     if ENABLE_DEMO_SEED:
-        seed_demo_data(services["invoice_service"], services["invoice_repository"])
+        seed_demo_data(
+            services["invoice_service"],
+            services["invoice_repository"],
+            task_service=services.get("task_service"),
+            auth_service=services["auth_service"],
+        )
     server = create_server(args.host, args.port, services)
 
     print(f"Serwer uruchomiony na http://{args.host}:{args.port}")

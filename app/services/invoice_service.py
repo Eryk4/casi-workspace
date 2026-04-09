@@ -429,8 +429,12 @@ class InvoiceService:
         if telegram_user_id:
             linked_user = self.user_repository.get_by_telegram_user_id(telegram_user_id)
 
-        resolved_organization_id = self._resolve_telegram_organization_id(linked_user)
-        invoice = self.create_invoice(payload, actor=actor, organization_id=resolved_organization_id)
+        resolved_organization = self._resolve_telegram_organization(payload, linked_user)
+        invoice = self.create_invoice(
+            payload,
+            actor=actor,
+            organization_id=int(resolved_organization["organization_id"]),
+        )
         return invoice
 
     def _ensure_contractor(self, invoice_payload: dict[str, Any], organization_id: int) -> tuple[int, bool]:
@@ -663,6 +667,47 @@ class InvoiceService:
         if actor != "system" or not linked_user:
             return actor
         return linked_user.get("display_name") or linked_user["login"]
+
+    def _resolve_telegram_organization(
+        self,
+        payload: dict[str, Any],
+        linked_user: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        incoming_chat_id = self._resolve_incoming_telegram_chat_id(payload)
+
+        if linked_user and linked_user.get("organization_id"):
+            organization = self.organization_repository.get_by_id(int(linked_user["organization_id"]))
+            if not organization:
+                raise ValueError("Nie znaleziono organizacji przypisanej do uzytkownika Telegram.")
+            if not organization.get("is_active", 1):
+                raise ValueError("Organizacja przypisana do tego uzytkownika Telegram jest nieaktywna.")
+            self._validate_telegram_chat_for_organization(organization, incoming_chat_id)
+            return organization
+
+        if incoming_chat_id:
+            organization = self.organization_repository.get_by_telegram_chat_id(incoming_chat_id)
+            if organization:
+                if not organization.get("is_active", 1):
+                    raise ValueError("Organizacja przypisana do tego kanalu Telegram jest nieaktywna.")
+                return organization
+
+        raise ValueError(
+            "Nie mozna ustalic organizacji dla dokumentu z Telegrama. "
+            "Powiaz ID uzytkownika Telegram z kontem albo ustaw ID kanalu Telegram w organizacji."
+        )
+
+    def _resolve_incoming_telegram_chat_id(self, payload: dict[str, Any]) -> str:
+        source_metadata = payload.get("source_metadata") or {}
+        return str(source_metadata.get("chat_id") or "").strip()
+
+    def _validate_telegram_chat_for_organization(
+        self,
+        organization: dict[str, Any],
+        incoming_chat_id: str,
+    ) -> None:
+        configured_chat_id = str(organization.get("telegram_chat_id") or "").strip()
+        if configured_chat_id and incoming_chat_id and configured_chat_id != incoming_chat_id:
+            raise ValueError("Wiadomosc z Telegrama przyszla z innego kanalu niz przypisany do tej organizacji.")
 
     def _resolve_telegram_organization_id(self, linked_user: dict[str, Any] | None) -> int:
         if linked_user and linked_user.get("organization_id"):

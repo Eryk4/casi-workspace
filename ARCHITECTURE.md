@@ -2,7 +2,12 @@
 
 ## Cel
 
-System ma być prostym panelem operacyjnym do obsługi faktur, ale zaprojektowanym tak, żeby później dało się go bezpiecznie rozbudować pod klientów i zespół.
+System ma byc prostym panelem operacyjnym dla firmy i klientow. Obecnie obejmuje dwa glowne obszary:
+
+- obsluge faktur
+- modul `Asystent Szefa` do zadan, wydarzen, przypomnien i notatek
+
+Architektura ma pozwolic na bezpieczna rozbudowe pod zespol, klientow, Telegram, Make i wdrozenie serwerowe.
 
 ## Warstwy
 
@@ -11,23 +16,29 @@ System ma być prostym panelem operacyjnym do obsługi faktur, ale zaprojektowan
 Warstwa HTTP i API JSON. Odpowiada za:
 
 - logowanie
-- sesję użytkownika
-- kontrolę uprawnień
-- przekazanie żądań do serwisów
-- blokadę dostępu do plików innych organizacji
-- publiczny webhook Telegram do odbioru dokumentów
+- sesje uzytkownika
+- kontrole uprawnien
+- zakres organizacji
+- przekazanie zadan do serwisow
+- blokade dostepu do plikow innych organizacji
+- publiczny webhook Telegram dla faktur
+
+Glowny punkt wejscia:
+
+- `app/api/http_server.py`
 
 ### `app/repositories`
 
-Warstwa dostępu do danych. Repozytoria wykonują odczyt i zapis do bazy, bez logiki biznesowej.
+Warstwa dostepu do danych. Repozytoria wykonuja odczyt i zapis do bazy bez logiki biznesowej.
 
-Najważniejsze repozytoria:
+Najwazniejsze repozytoria:
 
 - `organization_repository.py`
 - `user_repository.py`
 - `invoice_repository.py`
 - `contractor_repository.py`
 - `event_repository.py`
+- `task_repository.py`
 
 ### `app/services`
 
@@ -35,10 +46,12 @@ Warstwa logiki biznesowej:
 
 - `auth_service.py` - logowanie i konta
 - `organization_service.py` - organizacje i zakres danych
-- `invoice_service.py` - faktury, OCR, pliki, ręczna edycja
-- `duplicate_detector.py` - reguły duplikatów
+- `invoice_service.py` - faktury, OCR, pliki, reczna edycja
+- `duplicate_detector.py` - reguly duplikatow
 - `dashboard_service.py` - dane pulpitu
-- `notification_service.py` - przygotowanie komunikatów o duplikatach
+- `notification_service.py` - przygotowanie komunikatow o duplikatach
+- `task_service.py` - zadania, notatki, historia zmian
+- `storage_service.py` - zapis i odczyt plikow przez wspolna warstwe magazynu
 
 ### `app/integrations`
 
@@ -49,10 +62,10 @@ Integracje testowe przygotowane do podmiany:
 - `Telegram`
 - `OCR`
 
-Telegram ma już dwa tryby:
+Telegram dla faktur ma juz dwa tryby:
 
 - `import testowy` z panelu
-- prawdziwy `webhook`, który odbiera aktualizację od bota, pobiera plik i tworzy fakturę
+- prawdziwy `webhook`, ktory odbiera aktualizacje od bota, pobiera plik i tworzy fakture
 
 ### `static`
 
@@ -60,10 +73,11 @@ Panel webowy SPA po polsku:
 
 - pulpit
 - faktury
+- `Asystent Szefa`
 - kontrahenci
 - historia systemu
 - organizacje
-- użytkownicy
+- uzytkownicy
 
 ## Model danych
 
@@ -108,7 +122,7 @@ Panel webowy SPA po polsku:
 - `created_at`
 - `updated_at`
 
-Kontrahent jest unikalny w obrębie organizacji po:
+Unikalnosc w obrebie organizacji:
 
 - `organization_id + nip`
 
@@ -134,6 +148,9 @@ Kontrahent jest unikalny w obrębie organizacji po:
 - `contractor_id`
 - `file_link`
 - `ocr_link`
+- `file_storage_key`
+- `ocr_storage_key`
+- `storage_backend`
 - `source_external_id`
 - `source_sender_name`
 - `source_sender_id`
@@ -147,9 +164,11 @@ Kontrahent jest unikalny w obrębie organizacji po:
 
 ### `invoice_relations`
 
-Relacje podobieństwa i duplikatów między fakturami.
+Relacje podobienstwa i duplikatow miedzy fakturami.
 
 ### `event_logs`
+
+Ogolna historia systemowa dla wielu modulow:
 
 - `id`
 - `organization_id`
@@ -163,37 +182,102 @@ Relacje podobieństwa i duplikatów między fakturami.
 - `actor`
 - `details`
 
+### `tasks`
+
+Glowny obiekt modulu `Asystent Szefa`.
+
+- `task_id`
+- `organization_id`
+- `task_type`
+- `title`
+- `description`
+- `status`
+- `priority`
+- `due_at`
+- `assigned_user_id`
+- `created_by_user_id`
+- `completed_at`
+- `created_at`
+- `updated_at`
+
+Typy:
+
+- `zadanie`
+- `wydarzenie`
+- `przypomnienie`
+
+Statusy:
+
+- `nowe`
+- `w_toku`
+- `oczekuje`
+- `zakonczone`
+- `anulowane`
+
+Priorytety:
+
+- `niski`
+- `normalny`
+- `wysoki`
+- `krytyczny`
+
+### `task_notes`
+
+Notatki do zadania:
+
+- `task_note_id`
+- `task_id`
+- `organization_id`
+- `note_text`
+- `created_by_user_id`
+- `created_at`
+
+### `task_history`
+
+Historia zmian zadania:
+
+- `task_history_id`
+- `task_id`
+- `organization_id`
+- `action_type`
+- `actor`
+- `message`
+- `details`
+- `created_at`
+
 ## Organizacje i zakres danych
 
-To jest najważniejsza zasada architektury dla wersji klienckiej:
+To jest najwazniejsza zasada architektury dla wersji klienckiej:
 
-- użytkownik organizacji widzi tylko swoje dane
-- administrator organizacji działa tylko w swojej organizacji
-- administrator globalny może zarządzać wieloma organizacjami
-- pliki i OCR są rozdzielone na poziomie katalogów organizacji
+- uzytkownik organizacji widzi tylko swoje dane
+- administrator organizacji dziala tylko w swojej organizacji
+- administrator globalny moze zarzadzac wieloma organizacjami
+- pliki i OCR sa rozdzielone na poziomie katalogow organizacji
+- zadania, notatki i historia zadan sa rowniez odseparowane organizacjami
 
 Zakres organizacji jest sprawdzany:
 
 - przy listowaniu faktur
-- przy pobieraniu szczegółów
+- przy pobieraniu szczegolow faktur
 - przy kontrahentach
 - przy logach
-- przy wyszukiwaniu
+- przy zadaniach
+- przy notatkach do zadan
 - przy imporcie
-- przy otwieraniu plików z dysku
+- przy otwieraniu plikow z dysku
 
-## Logika duplikatów
+## Logika duplikatow faktur
 
 ### Pewny duplikat
 
-Jeżeli w tej samej organizacji istnieje już faktura z takim samym `ksef_number`, nowa faktura dostaje:
+Jezeli w tej samej organizacji istnieje juz faktura z takim samym `ksef_number`, nowa faktura dostaje:
 
 - `duplicate_type = pewny`
 - `status = pewny_duplikat`
 
 ### Podejrzenie duplikatu
 
-Jeżeli w tej samej organizacji zgadza się:
+Jezeli w tej samej organizacji zgadza sie:
 
 - `invoice_number`
 - `issuer_nip`
@@ -203,19 +287,41 @@ to faktura dostaje:
 - `duplicate_type = podejrzenie`
 - `status = podejrzenie_duplikatu`
 
-System nie blokuje faktury, tylko oznacza ją do ręcznej weryfikacji.
+System nie blokuje faktury, tylko oznacza ja do recznej weryfikacji.
 
-## Magazyn plików
+## Asystent Szefa - logika MVP
 
-Pliki są zapisywane osobno dla każdej organizacji.
+Na obecnym etapie modul zadan dziala jako osobna czesc tej samej aplikacji, a nie osobna aplikacja.
 
-Obecnie działa lokalny backend magazynu, ale zapis idzie już przez osobną warstwę usługową. To oznacza, że:
+Obslugiwane akcje:
 
-- aplikacja nie opiera się wyłącznie na zwykłych ścieżkach folderów
-- każdy artefakt ma `storage_backend` i własny klucz magazynu
-- późniejsza podmiana lokalnego dysku na zewnętrzny magazyn plików będzie prostsza
+- utworzenie zadania
+- zmiana typu, statusu, priorytetu, terminu i osoby przypisanej
+- ustawienie osobnego terminu przypomnienia
+- oznaczenie jako zakonczone
+- dodanie notatki
+- historia zmian
 
-Przykładowy układ:
+Najwazniejsze zasady:
+
+- zadanie zawsze nalezy do organizacji
+- zadanie mozna przypisac tylko do aktywnego uzytkownika tej samej organizacji
+- zadanie lub wydarzenie moze miec osobna godzine przypomnienia
+- przypomnienie nie moze byc ustawione pozniej niz termin zadania
+- notatka do zadania rowniez nalezy do tej samej organizacji
+- zmiany sa zapisywane jednoczesnie w `task_history` i w ogolnym `event_logs`
+
+## Magazyn plikow
+
+Pliki sa zapisywane osobno dla kazdej organizacji.
+
+Obecnie dziala lokalny backend magazynu, ale zapis idzie juz przez osobna warstwe uslugowa. To oznacza, ze:
+
+- aplikacja nie opiera sie wylacznie na zwyklych sciezkach folderow
+- kazdy artefakt ma `storage_backend` i wlasny klucz magazynu
+- pozniejsza podmiana lokalnego dysku na zewnetrzny magazyn plikow bedzie prostsza
+
+Przykladowy uklad:
 
 ```text
 data/
@@ -235,26 +341,39 @@ data/
         klient-beta/
 ```
 
-To daje dwie rzeczy:
+To daje:
 
-- porządek na dysku
-- prostszą kontrolę dostępu do plików
+- porzadek na dysku
+- prostsza kontrole dostepu do plikow
+- latwiejsza przyszla migracje na magazyn zewnetrzny
 
 ## Stack docelowy
 
-W tym repozytorium działa MVP w `Pythonie`, ale docelowy kierunek rozwoju pozostaje:
+W tym repozytorium dziala MVP w `Pythonie`, ale docelowy kierunek rozwoju pozostaje:
 
 - frontend: `React / Next.js`
 - backend: `Node.js`
 - baza: `PostgreSQL`
 - ORM: `Prisma`
 
-Najważniejsze jest to, że logika biznesowa jest już oddzielona od warstwy widoku, więc przejście na ten stack nie wymaga przepisywania reguł duplikatów i modelu danych od zera.
+Najwazniejsze jest to, ze logika biznesowa jest juz oddzielona od warstwy widoku, wiec przejscie na ten stack nie wymaga przepisywania modelu danych od zera.
 
-## Ułatwienia migracji
+## Ulatwienia migracji
 
-Projekt ma już przygotowane kilka rzeczy pod późniejsze przeniesienie:
+Projekt ma juz przygotowane kilka rzeczy pod pozniejsze przeniesienie:
 
-- obsługuje standardowe `DATABASE_URL`
-- może korzystać z wolumenu serwera jako domyślnego magazynu plików
-- ma gotowy skrypt `migrate_sqlite_to_configured_db.py` do przeniesienia rekordów z lokalnej `SQLite` do docelowej bazy
+- obsluguje standardowe `DATABASE_URL`
+- moze korzystac z wolumenu serwera jako domyslnego magazynu plikow
+- ma gotowy skrypt `migrate_sqlite_to_configured_db.py` do przeniesienia rekordow z lokalnej `SQLite` do docelowej bazy
+- ma wspolna warstwe magazynu plikow zamiast twardego zapisu bezposrednio po folderach
+- ma organizacyjny podzial danych juz w modelu i API
+
+## Co warto dodac w kolejnych etapach
+
+- zalaczniki do zadan
+- widok kalendarzowy
+- przypomnienia uruchamiane w tle
+- integracje `Make`
+- integracje `Telegram` dla modulu zadan
+- uogolniony system powiadomien
+- podzial frontendu na mniejsze pliki

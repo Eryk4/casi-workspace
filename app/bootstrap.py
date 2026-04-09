@@ -5,6 +5,7 @@ from app.repositories.event_repository import EventRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.session_repository import SessionRepository
+from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
 from app.services.dashboard_service import DashboardService
@@ -13,6 +14,7 @@ from app.services.invoice_service import InvoiceService
 from app.services.notification_service import NotificationService
 from app.services.organization_service import OrganizationService
 from app.services.storage_service import LocalStorageService
+from app.services.task_service import TaskService
 from app.config import DEFAULT_ADMIN_LOGIN
 
 
@@ -23,6 +25,7 @@ def build_services() -> dict[str, object]:
     organization_repository = OrganizationRepository()
     user_repository = UserRepository()
     session_repository = SessionRepository()
+    task_repository = TaskRepository()
     duplicate_detector = DuplicateDetector(invoice_repository)
     notification_service = NotificationService(event_repository)
     storage_service = LocalStorageService()
@@ -48,15 +51,23 @@ def build_services() -> dict[str, object]:
         notification_service=notification_service,
         storage_service=storage_service,
     )
+    task_service = TaskService(
+        task_repository=task_repository,
+        event_repository=event_repository,
+        user_repository=user_repository,
+        organization_repository=organization_repository,
+    )
     dashboard_service = DashboardService(
         invoice_repository=invoice_repository,
         contractor_repository=contractor_repository,
         event_repository=event_repository,
+        task_repository=task_repository,
     )
     return {
         "organization_repository": organization_repository,
         "organization_service": organization_service,
         "invoice_repository": invoice_repository,
+        "task_repository": task_repository,
         "contractor_repository": contractor_repository,
         "event_repository": event_repository,
         "storage_service": storage_service,
@@ -64,5 +75,6 @@ def build_services() -> dict[str, object]:
         "session_repository": session_repository,
         "auth_service": auth_service,
         "invoice_service": invoice_service,
+        "task_service": task_service,
         "dashboard_service": dashboard_service,
     }

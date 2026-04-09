@@ -4,6 +4,7 @@ import unittest
 
 from app.bootstrap import build_services
 from app.db import reset_database
+from app.services.organization_service import OrganizationError
 
 
 class OrganizationTests(unittest.TestCase):
@@ -108,6 +109,34 @@ class OrganizationTests(unittest.TestCase):
                 organization_id=int(organizacja["organization_id"]),
             )
         )
+
+    def test_organization_can_store_unique_telegram_channel_settings(self) -> None:
+        organizacja = self.organization_service.create_organization(
+            {
+                "name": "Klient Telegram",
+                "slug": "klient-telegram",
+                "telegram_chat_id": "-1001234567890",
+                "telegram_chat_name": "Klient Telegram - dokumenty",
+                "is_active": 1,
+            },
+            actor_user=self.admin,
+            actor_login="admin",
+        )
+
+        self.assertEqual(organizacja["telegram_chat_id"], "-1001234567890")
+        self.assertEqual(organizacja["telegram_chat_name"], "Klient Telegram - dokumenty")
+
+        with self.assertRaises(OrganizationError):
+            self.organization_service.create_organization(
+                {
+                    "name": "Drugi klient Telegram",
+                    "slug": "drugi-klient-telegram",
+                    "telegram_chat_id": "-1001234567890",
+                    "is_active": 1,
+                },
+                actor_user=self.admin,
+                actor_login="admin",
+            )
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import json
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.api.http_server import create_server
 from app.bootstrap import build_services
@@ -51,6 +52,18 @@ class HttpServerTests(unittest.TestCase):
         meta = json.loads(payload.decode("utf-8"))
         self.assertEqual(meta["storage_backend"], "lokalny")
 
+    def test_meta_exposes_environment_flags(self) -> None:
+        with patch("app.api.http_server.test_imports_enabled", return_value=False), patch(
+            "app.api.http_server.default_login_hint_enabled",
+            return_value=False,
+        ):
+            response, payload = self._request("GET", "/api/meta")
+
+        self.assertEqual(response.status, 200)
+        meta = json.loads(payload.decode("utf-8"))
+        self.assertFalse(meta["test_imports_enabled"])
+        self.assertFalse(meta["default_login_hint_enabled"])
+
     def test_dashboard_requires_session_but_login_works(self) -> None:
         response, payload = self._request("GET", "/api/dashboard")
         self.assertEqual(response.status, 401)
@@ -73,6 +86,24 @@ class HttpServerTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         current = json.loads(payload.decode("utf-8"))
         self.assertEqual(current["role"], "administrator")
+
+    def test_test_import_endpoint_can_be_disabled(self) -> None:
+        headers = {"Content-Type": "application/json"}
+        response, payload = self._request(
+            "POST",
+            "/api/session/login",
+            body=json.dumps({"login": "admin", "password": "Admin1234"}),
+            headers=headers,
+        )
+        self.assertEqual(response.status, 200)
+        cookie = response.getheader("Set-Cookie")
+        self.assertTrue(cookie)
+
+        with patch("app.api.http_server.test_imports_enabled", return_value=False):
+            response, payload = self._request("POST", "/api/import/EMAIL", headers={"Cookie": cookie})
+
+        self.assertEqual(response.status, 403)
+        self.assertIn("Import testowy jest wyłączony w tym środowisku.", payload.decode("utf-8"))
 
     def test_org_user_sees_only_own_invoices_and_cannot_open_other_org_files(self) -> None:
         admin = self.services["auth_service"].list_users()[0]
@@ -138,7 +169,13 @@ class HttpServerTests(unittest.TestCase):
     def test_public_telegram_webhook_creates_invoice_and_stores_real_file(self) -> None:
         admin = self.services["auth_service"].list_users()[0]
         organization = self.services["organization_service"].create_organization(
-            {"name": "Telegram Klient", "slug": "telegram-klient", "is_active": 1},
+            {
+                "name": "Telegram Klient",
+                "slug": "telegram-klient",
+                "telegram_chat_id": "-100123",
+                "telegram_chat_name": "Telegram Klient - dokumenty",
+                "is_active": 1,
+            },
             actor_user=admin,
             actor_login="admin",
         )
@@ -172,7 +209,7 @@ class HttpServerTests(unittest.TestCase):
                 "message_id": 77,
                 "date": 1775671200,
                 "caption": "Nowa faktura do systemu",
-                "chat": {"id": -100123, "type": "private"},
+                "chat": {"id": -100123, "type": "supergroup", "title": "Telegram Klient - dokumenty"},
                 "from": {"id": 900100, "username": "olga_telegram", "first_name": "Olga"},
                 "document": {
                     "file_id": "plik-telegram-1",
@@ -210,6 +247,62 @@ class HttpServerTests(unittest.TestCase):
         stored_file = DOCUMENTS_DIR / Path(file_relative)
         self.assertTrue(stored_file.exists())
         self.assertEqual(stored_file.read_bytes(), b"%PDF-1.4 test telegram")
+
+    def test_public_telegram_webhook_can_resolve_organization_by_chat_id(self) -> None:
+        admin = self.services["auth_service"].list_users()[0]
+        organization = self.services["organization_service"].create_organization(
+            {
+                "name": "Chat Klienta",
+                "slug": "chat-klienta",
+                "telegram_chat_id": "-100555",
+                "telegram_chat_name": "Chat Klienta - faktury",
+                "is_active": 1,
+            },
+            actor_user=admin,
+            actor_login="admin",
+        )
+
+        adapter = self.services["invoice_service"].telegram_adapter
+        adapter.bot_token = "telegram-token"
+        adapter.webhook_secret = "sekret-webhooka"
+        adapter._download_file = lambda file_id, suggested_file_name: {
+            "file_name": "chat_klienta.pdf",
+            "content": b"%PDF-1.4 chat klienta",
+            "telegram_file_path": "documents/test/chat_klienta.pdf",
+        }
+
+        webhook_payload = {
+            "update_id": 202,
+            "message": {
+                "message_id": 88,
+                "date": 1775671800,
+                "caption": "Faktura z czatu klienta",
+                "chat": {"id": -100555, "type": "supergroup", "title": "Chat Klienta - faktury"},
+                "from": {"id": 777000, "username": "niepowiazany_uzytkownik", "first_name": "Marta"},
+                "document": {
+                    "file_id": "plik-telegram-2",
+                    "file_unique_id": "unikat-2",
+                    "file_name": "chat_klienta.pdf",
+                    "mime_type": "application/pdf",
+                },
+            },
+        }
+
+        response, payload = self._request(
+            "POST",
+            "/api/telegram/webhook/sekret-webhooka",
+            body=json.dumps(webhook_payload),
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 200)
+        webhook_result = json.loads(payload.decode("utf-8"))
+
+        detail = self.services["invoice_service"].get_invoice_detail(webhook_result["invoice_id"])
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertEqual(detail["invoice"]["organization_id"], organization["organization_id"])
+        self.assertEqual(detail["invoice"]["organization_slug"], "chat-klienta")
+        self.assertIsNone(detail["source_trace"]["linked_user"])
 
 
 if __name__ == "__main__":

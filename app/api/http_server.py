@@ -15,8 +15,18 @@ from app.config import (
     SESSION_DURATION_HOURS,
     STATIC_DIR,
     database_label,
+    default_login_hint_enabled,
+    test_imports_enabled,
 )
-from app.domain.constants import DUPLICATE_TYPES, INVOICE_STATUSES, SOURCES, USER_ROLES
+from app.domain.constants import (
+    DUPLICATE_TYPES,
+    INVOICE_STATUSES,
+    SOURCES,
+    TASK_PRIORITIES,
+    TASK_STATUSES,
+    TASK_TYPES,
+    USER_ROLES,
+)
 from app.services.auth_service import AuthError, PermissionError
 from app.services.organization_service import OrganizationError, OrganizationPermissionError
 from app.services.storage_service import StorageError
@@ -39,6 +49,10 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
         @property
         def dashboard_service(self):
             return services["dashboard_service"]
+
+        @property
+        def task_service(self):
+            return services["task_service"]
 
         @property
         def auth_service(self):
@@ -79,10 +93,15 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         "sources": list(SOURCES),
                         "statuses": list(INVOICE_STATUSES),
                         "duplicate_types": list(DUPLICATE_TYPES),
+                        "task_types": list(TASK_TYPES),
+                        "task_statuses": list(TASK_STATUSES),
+                        "task_priorities": list(TASK_PRIORITIES),
                         "roles": list(USER_ROLES),
                         "database_label": database_label(),
                         "telegram_enabled": self.invoice_service.telegram_integration_info()["enabled"],
                         "storage_backend": self.invoice_service.storage_integration_info()["backend"],
+                        "test_imports_enabled": test_imports_enabled(),
+                        "default_login_hint_enabled": default_login_hint_enabled(),
                     }
                 )
 
@@ -114,6 +133,14 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except AuthError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(users)
+            if path == "/api/tasks/users":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                return self._send_json(self.task_service.list_assignable_users(organization_id=organization_id))
 
             user = self._require_user(READ_ROLES)
             if not user:
@@ -183,6 +210,34 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if organization_id is ...:
                     return
                 return self._send_json(self.invoice_service.list_logs(organization_id=organization_id))
+            if path == "/api/tasks":
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                filters = {
+                    "search": self._query_one(query, "search"),
+                    "task_type": self._query_one(query, "task_type"),
+                    "status": self._query_one(query, "status"),
+                    "priority": self._query_one(query, "priority"),
+                    "assigned_user_id": self._query_one(query, "assigned_user_id"),
+                    "due_from": self._query_one(query, "due_from"),
+                    "due_to": self._query_one(query, "due_to"),
+                    "remind_from": self._query_one(query, "remind_from"),
+                    "remind_to": self._query_one(query, "remind_to"),
+                    "due_reminders_only": self._query_one(query, "due_reminders_only"),
+                }
+                return self._send_json(self.task_service.list_tasks(filters, organization_id=organization_id))
+            if path.startswith("/api/tasks/"):
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                task_id = self._extract_id(path, "/api/tasks/")
+                if task_id is None:
+                    return self._not_found()
+                detail = self.task_service.get_task_detail(task_id, organization_id=organization_id)
+                if not detail:
+                    return self._send_json({"error": "Nie znaleziono zadania."}, status=404)
+                return self._send_json(detail)
             if path == "/api/search":
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:
@@ -278,6 +333,44 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
             if not user:
                 return
 
+            if path == "/api/tasks":
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                payload = self._read_json()
+                try:
+                    created = self.task_service.create_task(
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(created, status=201)
+
+            if path.startswith("/api/tasks/") and path.endswith("/notes"):
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                task_id = self._extract_id(path, "/api/tasks/", suffix="/notes")
+                if task_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                try:
+                    detail = self.task_service.add_task_note(
+                        task_id,
+                        payload.get("note_text", ""),
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                if not detail:
+                    return self._send_json({"error": "Nie znaleziono zadania."}, status=404)
+                return self._send_json(detail, status=201)
+
             if path.startswith("/api/invoices/") and path.endswith("/actions/confirm-duplicate"):
                 invoice_id = self._extract_id(path, "/api/invoices/", suffix="/actions/confirm-duplicate")
                 if invoice_id is None:
@@ -311,6 +404,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 return self._send_json(invoice)
 
             if path.startswith("/api/import/"):
+                if not test_imports_enabled():
+                    return self._send_json({"error": "Import testowy jest wyłączony w tym środowisku."}, status=403)
                 source = path.removeprefix("/api/import/")
                 organization_id = self._resolve_write_scope(user, query)
                 if organization_id is ...:
@@ -399,6 +494,31 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if not invoice:
                     return self._send_json({"error": "Nie znaleziono faktury."}, status=404)
                 return self._send_json(invoice)
+
+            if path.startswith("/api/tasks/"):
+                user = self._require_user(WRITE_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                task_id = self._extract_id(path, "/api/tasks/")
+                if task_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                try:
+                    task = self.task_service.update_task(
+                        task_id,
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                if not task:
+                    return self._send_json({"error": "Nie znaleziono zadania."}, status=404)
+                return self._send_json(task)
 
             return self._not_found()
 
