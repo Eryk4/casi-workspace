@@ -1,0 +1,1 @@
+"""Adaptery i mocki integracyjne."""

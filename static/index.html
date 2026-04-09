@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Panel Faktur Firmowych</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <section id="login-screen" class="auth-screen hidden">
+      <div class="auth-card">
+        <span class="brand-kicker">Logowanie do systemu</span>
+        <h2>Panel Faktur</h2>
+        <p>Zaloguj się loginem i hasłem utworzonym przez administratora.</p>
+        <form id="login-form" class="stack">
+          <input id="login-input" name="login" type="text" placeholder="Login" autocomplete="username" />
+          <input id="password-input" name="password" type="password" placeholder="Hasło" autocomplete="current-password" />
+          <button type="submit">Zaloguj się</button>
+        </form>
+        <p class="subtle-note">Wersja rozwojowa tworzy konto administratora `admin` / `Admin1234`, jeśli baza jest pusta.</p>
+      </div>
+    </section>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-kicker">Panel operacyjny</span>
+          <h1>Panel Faktur</h1>
+          <p>Jedno miejsce do obsługi faktur z KSeF, e-maila i Telegrama.</p>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item active" data-view="dashboard">Pulpit</button>
+          <button class="nav-item" data-view="invoices">Faktury</button>
+          <button class="nav-item" data-view="contractors">Kontrahenci</button>
+          <button class="nav-item" data-view="logs">Historia systemu</button>
+          <button class="nav-item hidden" data-view="organizations" id="organizations-nav-button">Organizacje</button>
+          <button class="nav-item hidden" data-view="users" id="users-nav-button">Użytkownicy</button>
+        </nav>
+
+        <section class="sidebar-section">
+          <h2>Import testowy</h2>
+          <div class="stack">
+            <button class="secondary action-import" data-source="KSeF">Dodaj z KSeF</button>
+            <button class="secondary action-import" data-source="EMAIL">Dodaj z e-maila</button>
+            <button class="secondary action-import" data-source="TELEGRAM">Dodaj z Telegrama</button>
+          </div>
+        </section>
+
+        <section class="sidebar-section">
+          <h2>Tryb pracy</h2>
+          <p id="sidebar-system-info">Ładowanie informacji o środowisku...</p>
+        </section>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h2 id="view-title">Pulpit</h2>
+            <p id="view-subtitle">Podgląd najważniejszych wskaźników i ostatnich zdarzeń.</p>
+            <p id="system-info" class="subtle-note"></p>
+          </div>
+
+          <div class="topbar-actions">
+            <input id="global-search" type="search" placeholder="Szukaj w fakturach i kontrahentach..." />
+            <div id="organization-switcher-box" class="session-box hidden">
+              <div>
+                <strong>Zakres danych</strong>
+                <div class="subtle-note">Wybierz organizację do pracy i importu.</div>
+              </div>
+              <select id="organization-switcher"></select>
+            </div>
+            <div id="session-box" class="session-box hidden">
+              <div>
+                <strong id="session-user-name"></strong>
+                <div id="session-user-role" class="subtle-note"></div>
+                <div id="session-user-organization" class="subtle-note"></div>
+              </div>
+              <button type="button" class="secondary" id="logout-button">Wyloguj</button>
+            </div>
+          </div>
+        </header>
+
+        <section id="global-search-results" class="panel hidden"></section>
+
+        <section id="dashboard-view" class="view active">
+          <div id="dashboard-cards" class="cards"></div>
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Ostatnie zdarzenia</h3>
+            </div>
+            <div id="dashboard-events"></div>
+          </div>
+        </section>
+
+        <section id="invoices-view" class="view">
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Filtry faktur</h3>
+              <button type="button" class="secondary" id="toggle-invoice-filters" aria-expanded="false">Rozwiń filtry</button>
+            </div>
+            <div id="invoice-filters-shell" class="filters-shell collapsed">
+              <form id="invoice-filters" class="filters-grid">
+                <input name="search" type="search" placeholder="Szukaj ogólnie" />
+                <select name="source"></select>
+                <select name="status"></select>
+                <select name="duplicate_type"></select>
+                <input name="date_from" type="date" />
+                <input name="date_to" type="date" />
+                <input name="nip" type="text" placeholder="NIP wystawcy" />
+                <input name="invoice_number" type="text" placeholder="Numer faktury" />
+                <input name="ksef_number" type="text" placeholder="Numer KSeF" />
+                <select name="contractor_id" id="filter-contractor"></select>
+                <select name="sort_by" id="sort-by"></select>
+                <select name="sort_order">
+                  <option value="desc">Sortowanie malejące</option>
+                  <option value="asc">Sortowanie rosnące</option>
+                </select>
+                <div class="filters-actions">
+                  <button type="submit">Zastosuj filtry</button>
+                  <button type="button" class="secondary" id="reset-invoice-filters">Wyczyść</button>
+                </div>
+              </form>
+            </div>
+            <div id="invoice-active-filters" class="active-filters hidden"></div>
+          </div>
+
+          <div class="content-grid">
+            <div class="panel">
+              <div class="panel-header">
+                <h3>Lista faktur</h3>
+                <span id="invoice-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Organizacja</th>
+                      <th>Data wpływu</th>
+                      <th>Źródło</th>
+                      <th>Nazwa pliku</th>
+                      <th>Numer faktury</th>
+                      <th>Numer KSeF</th>
+                      <th>NIP wystawcy</th>
+                      <th>Wystawca</th>
+                      <th>Kwota brutto</th>
+                      <th>Status</th>
+                      <th>Typ duplikatu</th>
+                      <th>Kontrahent</th>
+                    </tr>
+                  </thead>
+                  <tbody id="invoice-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel detail-panel">
+              <div class="panel-header">
+                <h3>Szczegóły faktury</h3>
+              </div>
+              <div id="invoice-detail-empty" class="empty-state">
+                Wybierz fakturę z tabeli, aby zobaczyć szczegóły, OCR, historię i podobne rekordy.
+              </div>
+              <div id="invoice-detail" class="hidden"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="contractors-view" class="view">
+          <div class="content-grid contractors-grid">
+            <div class="panel">
+              <div class="panel-header">
+                <h3>Lista kontrahentów</h3>
+                <input id="contractor-search" type="search" placeholder="Szukaj kontrahenta..." />
+              </div>
+              <div id="contractor-active-filters" class="active-filters hidden"></div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Organizacja</th>
+                      <th>Nazwa</th>
+                      <th>NIP</th>
+                      <th>Data dodania</th>
+                      <th>E-mail</th>
+                      <th>Nowy</th>
+                      <th>Liczba faktur</th>
+                      <th>Ostatnia faktura</th>
+                    </tr>
+                  </thead>
+                  <tbody id="contractor-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel detail-panel">
+              <div class="panel-header">
+                <h3>Szczegóły kontrahenta</h3>
+              </div>
+              <div id="contractor-detail-empty" class="empty-state">
+                Wybierz kontrahenta, aby zobaczyć jego dane i powiązane faktury.
+              </div>
+              <div id="contractor-detail" class="hidden"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="logs-view" class="view">
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Historia systemu</h3>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data i czas</th>
+                    <th>Organizacja</th>
+                    <th>Typ zdarzenia</th>
+                    <th>Kontekst zdarzenia</th>
+                    <th>Status przed</th>
+                    <th>Status po</th>
+                    <th>Powód decyzji</th>
+                    <th>Aktor</th>
+                    <th>Szczegóły</th>
+                  </tr>
+                </thead>
+                <tbody id="log-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="organizations-view" class="view">
+          <div class="content-grid contractors-grid">
+            <div class="panel">
+              <div class="panel-header">
+                <h3>Lista organizacji</h3>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Nazwa</th>
+                      <th>Folder</th>
+                      <th>Aktywna</th>
+                      <th>Użytkownicy</th>
+                      <th>Faktury</th>
+                      <th>Kontrahenci</th>
+                    </tr>
+                  </thead>
+                  <tbody id="organization-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel detail-panel">
+              <div class="panel-header">
+                <h3 id="organization-form-title">Nowa organizacja</h3>
+              </div>
+              <form id="organization-form" class="field-grid">
+                <input type="hidden" id="organization-id" name="organization_id" />
+                <div class="field">
+                  <label>Nazwa organizacji</label>
+                  <input id="organization-name" name="name" type="text" placeholder="np. Biuro Rachunkowe Alfa" />
+                </div>
+                <div class="field">
+                  <label>Identyfikator folderu</label>
+                  <input id="organization-slug" name="slug" type="text" placeholder="np. biuro-rachunkowe-alfa" />
+                </div>
+                <div class="field">
+                  <label>Status</label>
+                  <select id="organization-active" name="is_active">
+                    <option value="1">Aktywna</option>
+                    <option value="0">Nieaktywna</option>
+                  </select>
+                </div>
+                <div class="filters-actions">
+                  <button type="submit">Zapisz organizację</button>
+                  <button type="button" class="secondary" id="reset-organization-form">Wyczyść formularz</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <section id="users-view" class="view">
+          <div class="content-grid contractors-grid">
+            <div class="panel">
+              <div class="panel-header">
+                <h3>Konta użytkowników</h3>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Login</th>
+                      <th>Nazwa widoczna</th>
+                      <th>Organizacja</th>
+                      <th>ID użytkownika Telegram</th>
+                      <th>Rola</th>
+                      <th>Aktywne</th>
+                      <th>Ostatnie logowanie</th>
+                      <th>Dodane przez</th>
+                    </tr>
+                  </thead>
+                  <tbody id="users-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel detail-panel">
+              <div class="panel-header">
+                <h3 id="user-form-title">Nowe konto</h3>
+              </div>
+              <form id="user-form" class="field-grid">
+                <input type="hidden" id="user-id" name="user_id" />
+                <div class="field">
+                  <label>Login</label>
+                  <input id="user-login" name="login" type="text" placeholder="np. Eryk" />
+                </div>
+                <div class="field">
+                  <label>Nazwa widoczna</label>
+                  <input id="user-display-name" name="display_name" type="text" placeholder="np. Eryk K." />
+                </div>
+                <div class="field">
+                  <label>Organizacja</label>
+                  <select id="user-organization-id" name="organization_id"></select>
+                </div>
+                <div class="field">
+                  <label>ID użytkownika Telegram</label>
+                  <input id="user-telegram-user-id" name="telegram_user_id" type="text" placeholder="np. 582114092" />
+                </div>
+                <div class="field">
+                  <label>Rola</label>
+                  <select id="user-role" name="role"></select>
+                </div>
+                <div class="field">
+                  <label>Status</label>
+                  <select id="user-active" name="is_active">
+                    <option value="1">Aktywne</option>
+                    <option value="0">Nieaktywne</option>
+                  </select>
+                </div>
+                <div class="field" style="grid-column: 1 / -1;">
+                  <label>Hasło</label>
+                  <input id="user-password" name="password" type="text" placeholder="Podaj hasło dla nowego konta lub nowe hasło przy zmianie" />
+                </div>
+                <div class="filters-actions">
+                  <button type="submit">Zapisz konto</button>
+                  <button type="button" class="secondary" id="reset-user-form">Wyczyść formularz</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

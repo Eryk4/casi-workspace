@@ -1,0 +1,1 @@
+"""Repozytoria bazy danych."""

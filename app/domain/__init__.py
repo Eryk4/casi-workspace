@@ -1,0 +1,1 @@
+"""Słowniki i stałe domenowe."""
