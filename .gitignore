@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
+.env.local
+data/local.env
 data/*.sqlite3
 data/magazyn/
 data/documents/*.txt

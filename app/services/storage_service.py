@@ -7,8 +7,12 @@ from typing import Protocol
 from app.config import (
     DOCUMENTS_DIR,
     DOCUMENTS_ROUTE_PREFIX,
+    KNOWLEDGE_DIR,
+    KNOWLEDGE_ROUTE_PREFIX,
     OCR_DIR,
     OCR_ROUTE_PREFIX,
+    WHITEBOARD_DIR,
+    WHITEBOARD_ROUTE_PREFIX,
 )
 
 
@@ -79,6 +83,10 @@ class LocalStorageService:
             return DOCUMENTS_ROUTE_PREFIX
         if artifact_type == "ocr":
             return OCR_ROUTE_PREFIX
+        if artifact_type == "knowledge":
+            return KNOWLEDGE_ROUTE_PREFIX
+        if artifact_type == "whiteboard":
+            return WHITEBOARD_ROUTE_PREFIX
         raise StorageError(f"Nieznany typ artefaktu: {artifact_type}")
 
     def root_dir(self, artifact_type: str) -> Path:
@@ -86,6 +94,10 @@ class LocalStorageService:
             return DOCUMENTS_DIR
         if artifact_type == "ocr":
             return OCR_DIR
+        if artifact_type == "knowledge":
+            return KNOWLEDGE_DIR
+        if artifact_type == "whiteboard":
+            return WHITEBOARD_DIR
         raise StorageError(f"Nieznany typ artefaktu: {artifact_type}")
 
     def _resolve_target(self, artifact_type: str, relative_path: Path) -> Path:

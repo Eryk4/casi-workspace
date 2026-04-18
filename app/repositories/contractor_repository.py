@@ -169,3 +169,47 @@ class ContractorRepository:
                     contractor_id,
                 ),
             )
+
+    def search_contractors(
+        self,
+        query_text: str,
+        *,
+        organization_id: int | None = None,
+        limit: int = 6,
+    ) -> list[dict[str, Any]]:
+        normalized_query = str(query_text or "").strip().lower()
+        if not normalized_query:
+            return []
+
+        value = f"%{normalized_query}%"
+        params: list[Any] = [value, value, value, value, value, value, value]
+        query = """
+            SELECT
+                c.*,
+                o.name AS organization_name,
+                o.slug AS organization_slug
+            FROM contractors c
+            LEFT JOIN organizations o ON o.organization_id = c.organization_id
+            WHERE (
+                LOWER(COALESCE(c.name, '')) LIKE ?
+                OR LOWER(COALESCE(c.nip, '')) LIKE ?
+                OR LOWER(COALESCE(c.email, '')) LIKE ?
+                OR LOWER(COALESCE(c.phone, '')) LIKE ?
+                OR LOWER(COALESCE(c.notes, '')) LIKE ?
+                OR LOWER(COALESCE(c.last_invoice_number, '')) LIKE ?
+                OR LOWER(COALESCE(o.name, '')) LIKE ?
+            )
+              AND COALESCE(o.is_active, 1) = 1
+        """
+        if organization_id is not None:
+            query += " AND c.organization_id = ?"
+            params.append(organization_id)
+        query += """
+            ORDER BY c.is_new DESC, c.updated_at DESC, c.contractor_id DESC
+            LIMIT ?
+        """
+        params.append(limit)
+
+        with get_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]

@@ -3,21 +3,158 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Panel Faktur Firmowych</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <title>CASI Workspace</title>
+    <meta name="theme-color" content="#0b1f33" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/styles.css?v=20260418j" />
+    <link rel="stylesheet" href="/workspace-shell.css?v=20260417a" />
+    <link rel="stylesheet" href="/knowledge-overrides.css?v=20260418c" />
   </head>
   <body>
     <section id="login-screen" class="auth-screen hidden">
       <div class="auth-card">
         <span class="brand-kicker">Logowanie do systemu</span>
-        <h2>Panel Faktur</h2>
-        <p>Zaloguj się loginem i hasłem utworzonym przez administratora.</p>
+        <h2>CASI Workspace</h2>
+        <p>Zaloguj się loginem i hasłem utworzonym przez Właściciela systemu albo Administratora organizacji.</p>
         <form id="login-form" class="stack">
           <input id="login-input" name="login" type="text" placeholder="Login" autocomplete="username" />
           <input id="password-input" name="password" type="password" placeholder="Hasło" autocomplete="current-password" />
           <button type="submit">Zaloguj się</button>
         </form>
-        <p class="subtle-note">Wersja rozwojowa tworzy konto administratora `admin` / `Admin1234`, jeśli baza jest pusta.</p>
+        <section id="quick-login-section" class="auth-quick-logins hidden" aria-label="Szybkie logowanie do kont demo">
+          <div class="auth-quick-logins-header">
+            <strong>Szybkie logowanie</strong>
+            <span class="subtle-note">Dostepne konta probne z aktualnej bazy demo.</span>
+          </div>
+          <div id="quick-login-buttons" class="auth-quick-login-grid"></div>
+        </section>
+        <p id="default-login-hint" class="subtle-note hidden">Wersja rozwojowa tworzy konto Właściciela systemu `admin` / `Admin1234`, jeśli baza jest pusta.</p>
+      </div>
+    </section>
+
+    <div id="whiteboard-layer" class="whiteboard-layer hidden" aria-hidden="true">
+      <canvas id="whiteboard-canvas"></canvas>
+    </div>
+
+    <button type="button" id="whiteboard-launcher" class="whiteboard-launcher hidden">Tablica</button>
+
+    <button
+      type="button"
+      id="quick-workspace-launcher"
+      class="quick-workspace-launcher hidden"
+      aria-label="Szybki panel pracy"
+      aria-controls="quick-workspace-panel"
+      aria-expanded="false"
+      title="Szybki panel pracy"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M6.5 3h11A3.5 3.5 0 0 1 21 6.5v11a3.5 3.5 0 0 1-3.5 3.5h-11A3.5 3.5 0 0 1 3 17.5v-11A3.5 3.5 0 0 1 6.5 3Zm0 2A1.5 1.5 0 0 0 5 6.5V8h14V6.5A1.5 1.5 0 0 0 17.5 5h-11ZM19 10H5v7.5A1.5 1.5 0 0 0 6.5 19h11a1.5 1.5 0 0 0 1.5-1.5V10ZM8 12h3v3H8v-3Zm5 0h3v3h-3v-3Z"
+          fill="currentColor"
+        />
+      </svg>
+      <span id="quick-workspace-launcher-badge" class="quick-workspace-launcher-badge hidden">0</span>
+    </button>
+
+    <section id="quick-workspace-panel" class="quick-workspace-panel hidden" aria-hidden="true">
+      <div class="quick-workspace-panel-header">
+        <div>
+          <strong>Szybki panel</strong>
+          <div id="quick-workspace-panel-subtitle" class="subtle-note">Notatki, kalendarz i zadania pod reka.</div>
+        </div>
+        <button type="button" class="secondary" id="quick-workspace-close">Zamknij</button>
+      </div>
+      <div id="quick-workspace-tabs" class="quick-workspace-tabs" role="tablist" aria-label="Sekcje szybkiego panelu">
+        <button type="button" class="quick-workspace-tab" data-quick-workspace-section="organization-note" aria-label="Notatka organizacji">
+          <span class="quick-workspace-tab-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M5 4.5A2.5 2.5 0 0 1 7.5 2h8A2.5 2.5 0 0 1 18 4.5V6h1.5A2.5 2.5 0 0 1 22 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-7.88a4 4 0 0 1-2.82-1.17l-3.63-3.63A4 4 0 0 1 4 12.37V4.5Zm2.5-.5a.5.5 0 0 0-.5.5v7.88c0 .53.21 1.04.59 1.41l3.63 3.63c.37.38.88.59 1.41.59h6.87a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5H18v4a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V4h-2.5Z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="quick-workspace-tab-badge hidden" data-quick-workspace-badge="organization-note">0</span>
+        </button>
+        <button type="button" class="quick-workspace-tab" data-quick-workspace-section="personal-note" aria-label="Notatka osobista">
+          <span class="quick-workspace-tab-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 3a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 12c4.42 0 8 2.24 8 5v1H4v-1c0-2.76 3.58-5 8-5Z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="quick-workspace-tab-badge hidden" data-quick-workspace-badge="personal-note">0</span>
+        </button>
+        <button type="button" class="quick-workspace-tab" data-quick-workspace-section="calendar" aria-label="Kalendarz">
+          <span class="quick-workspace-tab-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a3 3 0 0 1 3 3v11a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V7a3 3 0 0 1 3-3h1V3a1 1 0 0 1 1-1Zm13 8H4v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8ZM5 6a1 1 0 0 0-1 1v1h16V7a1 1 0 0 0-1-1H5Zm2 6h3v3H7v-3Zm5 0h5v3h-5v-3Z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="quick-workspace-tab-badge hidden" data-quick-workspace-badge="calendar">0</span>
+        </button>
+        <button type="button" class="quick-workspace-tab" data-quick-workspace-section="tasks" aria-label="Zadania">
+          <span class="quick-workspace-tab-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M9.5 3a1 1 0 0 1 .8.4l.8 1.1h7.4A2.5 2.5 0 0 1 21 7v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6.5A2.5 2.5 0 0 1 5.5 4H8l.7-.6A1 1 0 0 1 9.5 3Zm7.5 6H8v2h9V9Zm0 4H8v2h9v-2Z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="quick-workspace-tab-badge hidden" data-quick-workspace-badge="tasks">0</span>
+        </button>
+        <button type="button" class="quick-workspace-tab" data-quick-workspace-section="knowledge" aria-label="Dokumenty firmowe">
+          <span class="quick-workspace-tab-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M6 3.5A2.5 2.5 0 0 1 8.5 1h5.38c.66 0 1.3.26 1.77.73l3.62 3.62c.47.47.73 1.11.73 1.77V18.5A3.5 3.5 0 0 1 16.5 22h-8A3.5 3.5 0 0 1 5 18.5v-15Zm8 1.41V7h2.09L14 4.91ZM8.5 3a.5.5 0 0 0-.5.5v15a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V9h-4a1 1 0 0 1-1-1V3H8.5Zm1.5 8h7v2h-7v-2Zm0 4h7v2h-7v-2Z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="quick-workspace-tab-badge hidden" data-quick-workspace-badge="knowledge">0</span>
+        </button>
+      </div>
+      <div id="quick-workspace-content" class="quick-workspace-content">
+        <div class="empty-state">Zaloguj sie, aby otworzyc szybki panel pracy.</div>
+      </div>
+    </section>
+
+    <section id="whiteboard-toolbar" class="whiteboard-toolbar hidden" aria-label="Tablica organizacji">
+      <div class="whiteboard-toolbar-header">
+        <div>
+          <strong>Tablica organizacji</strong>
+          <div id="whiteboard-organization-label" class="subtle-note">Wybierz organizację, aby pracować na wspólnej tablicy.</div>
+        </div>
+        <button type="button" class="secondary" id="whiteboard-hide-toolbar">Ukryj</button>
+      </div>
+      <div class="whiteboard-toolbar-row">
+        <button type="button" class="secondary" id="whiteboard-toggle-board">Wyłącz tablicę</button>
+      </div>
+      <div class="whiteboard-toolbar-row">
+        <button type="button" class="secondary" id="whiteboard-toggle-drawing">Włącz rysowanie</button>
+        <button type="button" class="secondary" id="whiteboard-toggle-eraser">Gumka</button>
+        <button type="button" class="secondary" id="whiteboard-toggle-image-edit">Edytuj obrazki</button>
+      </div>
+      <div class="whiteboard-toolbar-row">
+        <button type="button" class="secondary" id="whiteboard-toggle-interface">Ukryj interfejs</button>
+      </div>
+      <div class="whiteboard-toolbar-row">
+        <button type="button" class="secondary" id="whiteboard-add-image">Dodaj obrazek</button>
+        <input
+          id="whiteboard-image-input"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          class="hidden"
+        />
+      </div>
+      <div class="whiteboard-toolbar-row">
+        <label class="whiteboard-toolbar-field">
+          <span>Kolor</span>
+          <input id="whiteboard-color" type="color" value="#0f5c90" />
+        </label>
+        <label class="whiteboard-toolbar-field whiteboard-toolbar-field-range">
+          <span>Grubość</span>
+          <input id="whiteboard-width" type="range" min="1" max="18" step="1" value="4" />
+        </label>
+      </div>
+      <div class="whiteboard-toolbar-row">
+        <button type="button" class="secondary" id="whiteboard-save-now">Zapisz teraz</button>
+        <button type="button" class="secondary" id="whiteboard-clear">Wyczyść tablicę</button>
+      </div>
+      <div id="whiteboard-status" class="subtle-note">
+        Zmiany innych osób będą odświeżane automatycznie co kilka sekund.
       </div>
     </section>
 
@@ -25,19 +162,327 @@
       <aside class="sidebar">
         <div class="brand">
           <span class="brand-kicker">Panel operacyjny</span>
-          <h1>Panel Faktur</h1>
-          <p>Jedno miejsce do obsługi faktur z KSeF, e-maila i Telegrama.</p>
+          <h1>
+            <span class="brand-word brand-word-primary">CASI</span>
+            <span class="brand-word brand-word-secondary">Workspace</span>
+          </h1>
+          <p class="brand-summary">Dokumenty, wiedza firmowa i praca zespolu w jednym, spokojnym centrum dowodzenia.</p>
+          <div class="brand-pill-row" aria-label="Zakres produktu">
+            <span class="brand-pill">Faktury</span>
+            <span class="brand-pill">Wiedza</span>
+            <span class="brand-pill">Zespol</span>
+          </div>
+          <p>Jedno miejsce do obslugi faktur z KSeF, e-maila, Telegrama i Slacka.</p>
         </div>
 
-        <nav class="nav">
-          <button class="nav-item active" data-view="dashboard">Pulpit</button>
-          <button class="nav-item" data-view="invoices">Faktury</button>
-          <button class="nav-item" data-view="tasks">Asystent Szefa</button>
-          <button class="nav-item" data-view="contractors">Kontrahenci</button>
-          <button class="nav-item" data-view="logs">Historia systemu</button>
-          <button class="nav-item hidden" data-view="organizations" id="organizations-nav-button">Organizacje</button>
-          <button class="nav-item hidden" data-view="users" id="users-nav-button">Użytkownicy</button>
-        </nav>
+        <div id="sidebar-quick-tools" class="sidebar-utility-strip hidden">
+          <button
+            type="button"
+            id="quick-calendar-toggle"
+            class="sidebar-icon-button"
+            aria-label="Szybki podgląd kalendarza"
+            aria-controls="quick-calendar-panel"
+            aria-expanded="false"
+            title="Szybki podgląd kalendarza"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1a3 3 0 0 1 3 3v11a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V7a3 3 0 0 1 3-3h1V3a1 1 0 0 1 1-1Zm13 8H4v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8ZM5 6a1 1 0 0 0-1 1v1h16V7a1 1 0 0 0-1-1H5Zm2 6h3v3H7v-3Zm0 5h3v2H7v-2Zm5-5h5v3h-5v-3Zm0 5h5v2h-5v-2Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+          <div class="sidebar-utility-copy">
+            <strong>Szybki kalendarz</strong>
+            <div id="quick-calendar-context" class="subtle-note">Podgląd dzisiejszych i najbliższych wpisów.</div>
+          </div>
+        </div>
+
+        <section id="quick-calendar-panel" class="sidebar-quick-calendar hidden" aria-hidden="true">
+          <div class="sidebar-quick-calendar-header">
+            <div>
+              <strong>Kalendarz bez zmiany modułu</strong>
+              <div id="quick-calendar-subtitle" class="subtle-note">Najbliższe wpisy z aktualnego kontekstu pracy.</div>
+            </div>
+            <button type="button" class="secondary" id="quick-calendar-open-tasks">Otwórz moduł</button>
+          </div>
+          <div class="quick-calendar-range-bar" role="tablist" aria-label="Zakres szybkiego kalendarza">
+            <button type="button" class="quick-calendar-range active" data-quick-calendar-range="dzis">Dziś</button>
+            <button type="button" class="quick-calendar-range" data-quick-calendar-range="jutro">Jutro</button>
+            <button type="button" class="quick-calendar-range" data-quick-calendar-range="tydzien">7 dni</button>
+          </div>
+          <div id="quick-calendar-summary" class="sidebar-quick-calendar-summary"></div>
+          <div id="quick-calendar-list" class="sidebar-quick-calendar-list">
+            <div class="empty-state">Podgląd pojawi się po zalogowaniu.</div>
+          </div>
+        </section>
+
+        <section class="sidebar-nav-stack" aria-label="Nawigacja modułów">
+          <div class="sidebar-nav-block sidebar-nav-block-primary">
+            <div class="sidebar-nav-block-header">
+              <span class="sidebar-nav-kicker">Podstawy</span>
+              <h2>Start pracy</h2>
+              <p>Najwazniejsze moduly, od ktorych zwykle zaczyna sie dzien.</p>
+            </div>
+            <nav class="nav nav-primary">
+              <button class="nav-item nav-item-featured active" data-view="dashboard">
+                <span class="nav-item-title">Pulpit</span>
+                <span class="nav-item-meta">Szybki stan dnia, alerty i ostatnie zmiany.</span>
+              </button>
+              <button class="nav-item nav-item-featured" data-view="invoices">
+                <span class="nav-item-title">Faktury</span>
+                <span class="nav-item-meta">Obsluga dokumentow, OCR i weryfikacja danych.</span>
+              </button>
+              <button class="nav-item nav-item-featured" data-view="knowledge">
+                <span class="nav-item-title">Asystent Firmowy</span>
+                <span class="nav-item-meta">Pliki firmowe, odpowiedzi i wiedza organizacji.</span>
+              </button>
+              <button class="nav-item nav-item-featured" data-view="contractors">
+                <span class="nav-item-title">Kontrahenci</span>
+                <span class="nav-item-meta">Firmy, kontakty i powiazania z dokumentami.</span>
+              </button>
+            </nav>
+          </div>
+
+          <div class="sidebar-nav-block sidebar-nav-block-secondary">
+            <div class="sidebar-nav-block-header">
+              <span class="sidebar-nav-kicker">Dodatki</span>
+              <h2>Rozszerzenia</h2>
+              <p>Przewin w bok i otwieraj kolejne moduly wtedy, gdy sa potrzebne.</p>
+            </div>
+            <div class="nav-carousel-toolbar">
+              <div class="nav-carousel-copy">
+                <strong>Karuzela modulow dodatkowych</strong>
+                <div class="subtle-note">Przesuwaj karty w bok albo uzyj strzalek, zeby przegladac kolejne obszary.</div>
+              </div>
+              <div class="nav-carousel-controls">
+                <button type="button" class="nav-carousel-button" id="nav-carousel-prev-legacy" aria-label="Poprzednie moduly">&lt;</button>
+                <button type="button" class="nav-carousel-button" id="nav-carousel-next-legacy" aria-label="Nastepne moduly">&gt;</button>
+              </div>
+            </div>
+            <div class="nav-carousel-shell" id="nav-carousel-shell-legacy">
+              <nav class="nav nav-carousel" id="nav-carousel-track-legacy">
+                <button class="nav-item nav-item-carousel" data-view="tasks">
+                  <span class="nav-item-title">Asystent Szefa</span>
+                  <span class="nav-item-meta">Zadania, wydarzenia, planner i praca zespolu.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="billing">
+                  <span class="nav-item-title">Rozliczenia</span>
+                  <span class="nav-item-meta">Platnosci, wyciagi i dalszy etap modulu finansowego.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="support">
+                  <span class="nav-item-title">Pomoc</span>
+                  <span class="nav-item-meta">Pytania, bledy i kontakt z supportem bez wychodzenia z aplikacji.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="inbox">
+                  <span class="nav-item-title">Inbox</span>
+                  <span class="nav-item-meta">Sprawy, zgloszenia i formularze w jednym miejscu.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="views">
+                  <span class="nav-item-title">Widoki</span>
+                  <span class="nav-item-meta">Zapisane zestawy filtrow i gotowe scenariusze pracy.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="automation">
+                  <span class="nav-item-title">Automatyzacje</span>
+                  <span class="nav-item-meta">Reguly if/then i wykonania dzialajace w tle.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="health">
+                  <span class="nav-item-title">Zdrowie</span>
+                  <span class="nav-item-meta">Stan workerow, backlogow i kluczowych procesow.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="logs">
+                  <span class="nav-item-title">Historia</span>
+                  <span class="nav-item-meta">Pelny slad zdarzen, decyzji i zapisow systemu.</span>
+                </button>
+                <button class="nav-item nav-item-carousel hidden" data-view="organizations" id="organizations-nav-button-legacy">
+                  <span class="nav-item-title">Organizacje</span>
+                  <span class="nav-item-meta">Zakresy klientow, wlaczanie modulow i konfiguracja.</span>
+                </button>
+                <button class="nav-item nav-item-carousel hidden" data-view="email-center" id="email-center-nav-button-legacy">
+                  <span class="nav-item-title">Centrum integracji</span>
+                  <span class="nav-item-meta">E-mail, Google i polaczenia z uslugami zewnetrznymi.</span>
+                </button>
+                <button class="nav-item nav-item-carousel hidden" data-view="users" id="users-nav-button-legacy">
+                  <span class="nav-item-title">Uzytkownicy</span>
+                  <span class="nav-item-meta">Role, konta, uprawnienia i dostep do modulow.</span>
+                </button>
+              </nav>
+            </div>
+            <div class="nav-carousel-progress" aria-hidden="true">
+              <div class="nav-carousel-progress-bar" id="nav-carousel-progress-bar-legacy"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="workspace-sidebar-dock" aria-label="Podstawowe obszary">
+          <nav class="workspace-sidebar-dock-nav">
+            <button class="workspace-launch workspace-launch-primary active" data-launch-view="dashboard" title="Pulpit">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13Zm3 1.5v4h4V7H7Zm6 0v2h4V7h-4Zm0 4v2h4v-2h-4Zm-6 2h4v4H7v-4Zm6 2v2h4v-2h-4Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Pulpit</span>
+                <span class="workspace-launch-meta">Stan dnia i alerty.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="invoices" title="Faktury">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm7 1.5V8h3.5L14 4.5ZM8 10h8v1.8H8V10Zm0 4h8v1.8H8V14Zm0-8h4v1.8H8V6Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Faktury</span>
+                <span class="workspace-launch-meta">OCR, obieg i kontrola.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="tasks" title="Asystent Szefa">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M6 4.5A2.5 2.5 0 0 1 8.5 2h7A2.5 2.5 0 0 1 18 4.5V6h1.5A2.5 2.5 0 0 1 22 8.5v11a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 19.5v-11A2.5 2.5 0 0 1 4.5 6H6V4.5Zm2 0V6h8V4.5a.5.5 0 0 0-.5-.5h-7a.5.5 0 0 0-.5.5ZM5 10h5v1.8H5V10Zm0 4h9v1.8H5V14Zm11-4h3v7h-3v-7Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Szef</span>
+                <span class="workspace-launch-meta">Zadania, planner i wydarzenia.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="knowledge" title="Asystent Firmowy">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H19v14.5a1.5 1.5 0 0 1-1.5 1.5H7a3 3 0 0 1-3-3V6.5Zm3.2-.7A1.7 1.7 0 0 0 5.5 7.5V17a1.5 1.5 0 0 0 1.5 1.5h10.5V5.8H7.2ZM8 8h7v1.6H8V8Zm0 3h7v1.6H8V11Zm0 3h4.5v1.6H8V14Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Wiedza</span>
+                <span class="workspace-launch-meta">Pliki, wiedza i odpowiedzi.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="contractors" title="Kontrahenci">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3h7A2.5 2.5 0 0 1 17 5.5V7h1.5A2.5 2.5 0 0 1 21 9.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 5 18.5v-13Zm2 0v1h8v-1a.5.5 0 0 0-.5-.5h-7a.5.5 0 0 0-.5.5Zm0 3v10a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5H7Zm2 2h8v1.7H9v-1.7Zm0 3.5h5v1.7H9V14Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Kontrahenci</span>
+                <span class="workspace-launch-meta">Relacje i dokumenty.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="billing" title="Rozliczenia">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-9Zm3 .5v2h10V8H7Zm0 4v4h5v-4H7Zm7 0h3v1.8h-3V12Zm0 3h3v1.8h-3V15Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Rozlicz.</span>
+                <span class="workspace-launch-meta">Rachunki, salda i importy.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="inbox" title="Inbox">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Zm2 0v7h3.8l1.2 2h2l1.2-2H18v-7a.5.5 0 0 0-.5-.5h-11a.5.5 0 0 0-.5.5Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Inbox</span>
+                <span class="workspace-launch-meta">Sprawy, formularze i kolejki.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="support" title="Pomoc">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 3c4.97 0 9 3.58 9 8 0 2.27-1.06 4.32-2.76 5.78L19 21l-4.18-2.1A10.4 10.4 0 0 1 12 19c-4.97 0-9-3.58-9-8s4.03-8 9-8Zm-3 6v2h6V9H9Zm0 4v2h4v-2H9Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Pomoc</span>
+                <span class="workspace-launch-meta">Support i zgłoszenia.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="views" title="Widoki">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13ZM6.5 5a.5.5 0 0 0-.5.5V9h12V5.5a.5.5 0 0 0-.5-.5h-11ZM18 11H6v7.5a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V11Zm-10 2h3v4H8v-4Zm5 0h3v1.8h-3V13Zm0 3h3v1.8h-3V16Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Widoki</span>
+                <span class="workspace-launch-meta">Saved views i scenariusze.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="automation" title="Automatyzacje">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M13 3 6 14h5l-1 7 8-12h-5l1-6h-1Zm-7 2H4v4h2V5Zm14 0h-2v4h2V5ZM6 15H4v4h2v-4Zm14 0h-2v4h2v-4Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Automaty</span>
+                <span class="workspace-launch-meta">Reguly i wykonania.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="health" title="Zdrowie">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 12.5C4 7.81 7.81 4 12.5 4S21 7.81 21 12.5 17.19 21 12.5 21 4 17.19 4 12.5Zm4.2-.7h2.14l1.08-2.3 2.1 6.1 1.38-3.2h2.9v-1.8h-1.74l-1.74 4.02-2.1-6.12-1.36 3.1H8.2v1.8Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Zdrowie</span>
+                <span class="workspace-launch-meta">Status procesow i workerow.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary" data-launch-view="logs" title="Historia">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 4a8 8 0 1 1-7.75 10h2.07A6 6 0 1 0 12 6v3l4-4-4-4v3Zm-1 4h2v5.2l3.2 1.9-1 1.66L11 14.2V8Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Historia</span>
+                <span class="workspace-launch-meta">Logi i zapis dzialan.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary hidden" data-launch-view="organizations" title="Organizacje">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 20h16v-2H4v2Zm2-3h3V7H6v10Zm5 0h3V4h-3v13Zm5 0h2V10h-2v7Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Org.</span>
+                <span class="workspace-launch-meta">Klienci i konfiguracja.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary hidden" data-launch-view="email-center" title="Centrum integracji">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Zm2 0v.45l6 4.36 6-4.36V6.5a.5.5 0 0 0-.5-.5h-11a.5.5 0 0 0-.5.5Zm0 2.92V17.5a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5V9.42l-5.41 3.93a1 1 0 0 1-1.18 0L6 9.42Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Integr.</span>
+                <span class="workspace-launch-meta">E-mail, KSeF i polaczenia.</span>
+              </span>
+            </button>
+            <button class="workspace-launch workspace-launch-primary hidden" data-launch-view="users" title="Uzytkownicy">
+              <span class="workspace-launch-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M8.5 11A3.5 3.5 0 1 0 8.5 4a3.5 3.5 0 0 0 0 7Zm7 2A2.5 2.5 0 1 0 15.5 8a2.5 2.5 0 0 0 0 5ZM3 19.5A4.5 4.5 0 0 1 7.5 15h2A4.5 4.5 0 0 1 14 19.5V21H3v-1.5Zm12 1.5v-1a4.4 4.4 0 0 0-1.05-2.88A4.12 4.12 0 0 1 16 16.5h1A4 4 0 0 1 21 20.5V21h-6Z" fill="currentColor"/>
+                </svg>
+              </span>
+              <span class="workspace-launch-copy">
+                <span class="workspace-launch-title">Uzytk.</span>
+                <span class="workspace-launch-meta">Role i dostepy.</span>
+              </span>
+            </button>
+          </nav>
+        </section>
 
         <section class="sidebar-section hidden" id="test-import-section">
           <h2>Import testowy</h2>
@@ -45,6 +490,7 @@
             <button class="secondary action-import" data-source="KSeF">Dodaj z KSeF</button>
             <button class="secondary action-import" data-source="EMAIL">Dodaj z e-maila</button>
             <button class="secondary action-import" data-source="TELEGRAM">Dodaj z Telegrama</button>
+            <button class="secondary action-import" data-source="SLACK">Dodaj ze Slacka</button>
           </div>
         </section>
 
@@ -56,22 +502,64 @@
 
       <main class="main">
         <header class="topbar">
-          <div>
+          <div class="topbar-copy">
+            <span class="topbar-kicker">Aktywny obszar pracy</span>
             <h2 id="view-title">Pulpit</h2>
             <p id="view-subtitle">Podgląd najważniejszych wskaźników i ostatnich zdarzeń.</p>
-            <p id="system-info" class="subtle-note"></p>
+            <div class="topbar-note">
+              <span class="topbar-note-label">Kontekst systemu</span>
+              <p id="system-info" class="subtle-note"></p>
+            </div>
           </div>
 
           <div class="topbar-actions">
-            <input id="global-search" type="search" placeholder="Szukaj w fakturach i kontrahentach..." />
-            <div id="organization-switcher-box" class="session-box hidden">
+            <div class="topbar-command-bar">
+            <input id="global-search" type="search" placeholder="Szukaj modulow, ludzi, dokumentow i procesow..." />
+              <div class="topbar-utility-bar">
+                <div class="topbar-menu-shell">
+                  <button
+                    type="button"
+                    id="topbar-more-toggle"
+                    class="topbar-icon-button hidden"
+                    aria-label="Wiecej opcji"
+                    aria-expanded="false"
+                    aria-controls="organization-switcher-box"
+                  >
+                    <span aria-hidden="true">•••</span>
+                  </button>
+                </div>
+                <div class="topbar-menu-shell">
+                  <button
+                    type="button"
+                    id="profile-menu-toggle"
+                    class="topbar-icon-button hidden"
+                    aria-label="Profil uzytkownika"
+                    aria-expanded="false"
+                    aria-controls="session-box"
+                  >
+                    <span id="profile-menu-avatar" class="topbar-avatar" aria-hidden="true">U</span>
+                  </button>
+                </div>
+                <div id="topbar-user-chip" class="topbar-user-chip hidden">
+                  <span class="topbar-user-label">Zalogowany</span>
+                  <strong id="session-user-inline">-</strong>
+                </div>
+              </div>
+            </div>
+            <div class="topbar-meta-grid">
+            <div id="organization-switcher-box" class="topbar-menu-panel hidden">
               <div>
+                <span class="topbar-menu-label">Organizacja</span>
                 <strong>Zakres danych</strong>
                 <div class="subtle-note">Wybierz organizację do pracy i importu.</div>
               </div>
               <select id="organization-switcher"></select>
+              <div class="topbar-menu-section topbar-menu-section-compact">
+                <span class="topbar-menu-label">Dodatki</span>
+                <button type="button" id="pwa-install-button" class="secondary hidden">Zainstaluj aplikacje</button>
+              </div>
             </div>
-            <div id="session-box" class="session-box hidden">
+            <div id="session-box" class="topbar-menu-panel topbar-menu-panel-profile hidden">
               <div>
                 <strong id="session-user-name"></strong>
                 <div id="session-user-role" class="subtle-note"></div>
@@ -79,29 +567,246 @@
               </div>
               <button type="button" class="secondary" id="logout-button">Wyloguj</button>
             </div>
+            </div>
           </div>
         </header>
 
-        <section id="global-search-results" class="panel hidden"></section>
+        <section id="workspace-shell-root" class="workspace-shell hidden" aria-label="CASI Workspace"></section>
+        <div id="workspace-replace-modal-root" class="workspace-shell-modal-root"></div>
 
-        <section id="dashboard-view" class="view active">
-          <div id="dashboard-cards" class="cards"></div>
-          <div class="panel">
-            <div class="panel-header">
-              <h3>Aktywne przypomnienia</h3>
+        <section class="workspace-deck" aria-labelledby="workspace-deck-title">
+          <div class="workspace-deck-header">
+            <div class="workspace-deck-copy">
+              <span class="workspace-deck-kicker">Rozszerzenia</span>
+              <h3 id="workspace-deck-title">Wybierz kolejny scenariusz pracy</h3>
+              <p>To nie jest zwykle menu. To pas szybkiego wejscia do kolejnych czesci produktu, gdy akurat sa potrzebne.</p>
             </div>
-            <div id="dashboard-reminders"></div>
+            <div class="workspace-deck-side">
+              <div class="workspace-deck-side-label">Pas modulow dodatkowych</div>
+              <div class="nav-carousel-controls">
+                <button type="button" class="nav-carousel-button" id="nav-carousel-prev" aria-label="Poprzednie moduly">&lt;</button>
+                <button type="button" class="nav-carousel-button" id="nav-carousel-next" aria-label="Nastepne moduly">&gt;</button>
+              </div>
+            </div>
           </div>
-          <div class="panel">
-            <div class="panel-header">
-              <h3>Ostatnie zdarzenia</h3>
+          <div class="workspace-deck-shell">
+            <div class="nav-carousel-shell" id="nav-carousel-shell">
+              <nav class="nav nav-carousel nav-carousel-deck" id="nav-carousel-track">
+                <button class="nav-item nav-item-carousel" data-view="tasks">
+                  <span class="nav-item-badge">Planner</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M6 4h2v2h8V4h2v2h1.5A1.5 1.5 0 0 1 21 7.5v11A2.5 2.5 0 0 1 18.5 21h-13A2.5 2.5 0 0 1 3 18.5v-11A1.5 1.5 0 0 1 4.5 6H6V4Zm13 7H5v7.5c0 .28.22.5.5.5h13a.5.5 0 0 0 .5-.5V11ZM7 13h4v4H7v-4Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Asystent Szefa</span>
+                  <span class="nav-item-meta">Zadania, wydarzenia, planner i codzienna organizacja pracy zespolu.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="billing">
+                  <span class="nav-item-badge">Finanse</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Zm3 2.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm5-.5h5V10h-5V8.5Zm0 4h5V14h-5v-1.5ZM7 15h10v1.5H7V15Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Rozliczenia</span>
+                  <span class="nav-item-meta">Platnosci, historia operacji i finansowy etap dalszego rozwoju systemu.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="support">
+                  <span class="nav-item-badge">Support</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M12 2.5a8.5 8.5 0 0 1 8.5 8.5c0 4.7-3.8 8.5-8.5 8.5H8.8L4 21.5l1.3-4.3A8.47 8.47 0 0 1 3.5 11 8.5 8.5 0 0 1 12 2.5Zm0 3A5.5 5.5 0 0 0 6.5 11c0 1.52.62 2.9 1.63 3.9l.4.4-.52 1.73 1.9-.73.36.18c.62.31 1.32.49 2.03.49A5.5 5.5 0 1 0 12 5.5Zm-.1 2.6c1.58 0 2.8.84 2.8 2.24 0 1.08-.62 1.68-1.52 2.2-.8.46-1.1.78-1.1 1.46v.24H10.3v-.36c0-1.18.45-1.86 1.46-2.46.72-.43 1.03-.73 1.03-1.19 0-.5-.38-.82-.98-.82-.66 0-1.1.34-1.5.95l-1.46-.9c.58-.89 1.55-1.36 3.05-1.36Zm-.7 8.63a1.18 1.18 0 1 1 0 2.37 1.18 1.18 0 0 1 0-2.37Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Pomoc</span>
+                  <span class="nav-item-meta">Wbudowane zgloszenia, odpowiedzi supportu i historia kontaktu.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="inbox">
+                  <span class="nav-item-badge">Operacje</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8.8a2.5 2.5 0 0 1-2.5 2.5h-4l-2.1 2.1a1 1 0 0 1-1.4 0L7.9 17.8H6.5A2.5 2.5 0 0 1 4 15.3V6.5Zm4 1.7h8V10H8V8.2Zm0 3.8h8v1.8H8V12Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Inbox</span>
+                  <span class="nav-item-meta">Sprawy, zgloszenia i wejscia do procesu zebrane w jedno miejsce.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="views">
+                  <span class="nav-item-badge">Perspektywy</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v2A2.5 2.5 0 0 1 17.5 12h-11A2.5 2.5 0 0 1 4 9.5v-2Zm0 7A2.5 2.5 0 0 1 6.5 12h4A2.5 2.5 0 0 1 13 14.5v2a2.5 2.5 0 0 1-2.5 2.5h-4A2.5 2.5 0 0 1 4 16.5v-2Zm10 0A2.5 2.5 0 0 1 16.5 12h1A2.5 2.5 0 0 1 20 14.5v2a2.5 2.5 0 0 1-2.5 2.5h-1A2.5 2.5 0 0 1 14 16.5v-2Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Widoki</span>
+                  <span class="nav-item-meta">Zapisane filtry, scenariusze i szybkie wejscia do gotowych ustawien.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="automation">
+                  <span class="nav-item-badge">Automaty</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M10.5 3h3l.5 2.3a7.3 7.3 0 0 1 1.9.8l2-1.2 2.1 2.1-1.2 2a7.3 7.3 0 0 1 .8 1.9L22 11.5v3l-2.3.5a7.3 7.3 0 0 1-.8 1.9l1.2 2-2.1 2.1-2-1.2a7.3 7.3 0 0 1-1.9.8L13.5 23h-3l-.5-2.3a7.3 7.3 0 0 1-1.9-.8l-2 1.2L4 19l1.2-2a7.3 7.3 0 0 1-.8-1.9L2 14.5v-3l2.3-.5a7.3 7.3 0 0 1 .8-1.9L4 7l2.1-2.1 2 1.2a7.3 7.3 0 0 1 1.9-.8L10.5 3Zm1.5 5a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Automatyzacje</span>
+                  <span class="nav-item-meta">Reguly if then i procesy, ktore robia robote w tle bez pilnowania recznego.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="health">
+                  <span class="nav-item-badge">Kontrola</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M12 3c4.97 0 9 4.03 9 9s-4.03 9-9 9-9-4.03-9-9 4.03-9 9-9Zm0 2a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm-.7 2.5h1.4l.8 4.2 2.7.6v1.4l-4 1.8-1.9-1V7.5Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Zdrowie</span>
+                  <span class="nav-item-meta">Backlogi, workery i szybki przeglad tego, czy wszystko oddycha jak trzeba.</span>
+                </button>
+                <button class="nav-item nav-item-carousel" data-view="logs">
+                  <span class="nav-item-badge">Historia</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M12 4a8 8 0 1 1-8 8H2l3.2 3.2.1.1L8.5 12H6a6 6 0 1 0 6-6Zm-.8 3h1.6v5l4 2.3-.8 1.4-4.8-2.8V7Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Historia</span>
+                  <span class="nav-item-meta">Slad zdarzen, decyzji i wszystkiego, co wydarzylo sie w systemie.</span>
+                </button>
+                <button class="nav-item nav-item-carousel hidden" data-view="organizations" id="organizations-nav-button">
+                  <span class="nav-item-badge">Admin</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M12 2 3 7v4c0 5.2 3.8 10 9 11 5.2-1 9-5.8 9-11V7l-9-5Zm0 3.2 6.8 3.8V11c0 4.1-2.8 7.8-6.8 8.8-4-1-6.8-4.7-6.8-8.8V9l6.8-3.8Zm0 2.3a2.7 2.7 0 1 1 0 5.4 2.7 2.7 0 0 1 0-5.4Zm-4 8.1a4.9 4.9 0 0 1 8 0H8Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Organizacje</span>
+                  <span class="nav-item-meta">Zakresy klientow, moduly i administracja poziomu firmy.</span>
+                </button>
+                <button class="nav-item nav-item-carousel hidden" data-view="email-center" id="email-center-nav-button">
+                  <span class="nav-item-badge">Integracje</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11Zm2 0v.6l6 4.4 6-4.4v-.6a.5.5 0 0 0-.5-.5h-11a.5.5 0 0 0-.5.5Zm12 3.1-5.4 4a1 1 0 0 1-1.2 0L6 9.6v7.9c0 .28.22.5.5.5h11a.5.5 0 0 0 .5-.5V9.6Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Centrum integracji</span>
+                  <span class="nav-item-meta">Email, Google i polaczenia z uslugami zewnetrznymi w jednym miejscu.</span>
+                </button>
+                <button class="nav-item nav-item-carousel hidden" data-view="users" id="users-nav-button">
+                  <span class="nav-item-badge">Role</span>
+                  <span class="nav-item-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M8.5 11A3.5 3.5 0 1 0 8.5 4a3.5 3.5 0 0 0 0 7Zm7 1.2A2.7 2.7 0 1 0 15.5 6.8a2.7 2.7 0 0 0 0 5.4ZM4 18.8c0-2.7 2.6-4.8 5.8-4.8s5.8 2.1 5.8 4.8V20H4v-1.2Zm12 1.2v-.8c0-1.3-.5-2.4-1.4-3.3 2.6.1 5.4 1.5 5.4 4.1V20H16Z" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <span class="nav-item-title">Uzytkownicy</span>
+                  <span class="nav-item-meta">Konta, role, dostepy i modulowy porzadek w organizacji.</span>
+                </button>
+              </nav>
             </div>
-            <div id="dashboard-events"></div>
+          </div>
+          <div class="nav-carousel-progress workspace-deck-progress" aria-hidden="true">
+            <div class="nav-carousel-progress-bar" id="nav-carousel-progress-bar"></div>
           </div>
         </section>
 
-        <section id="invoices-view" class="view">
-          <div class="panel">
+        <section id="global-search-results" class="panel hidden"></section>
+
+        <section id="dashboard-view" class="view active view-dashboard">
+          <section class="dashboard-stage">
+            <div class="dashboard-workbench">
+              <div id="dashboard-focus-shell" class="dashboard-focus-block">
+                <div class="dashboard-focus-head">
+                  <span class="dashboard-focus-kicker">Pulpit operacyjny</span>
+                  <h3 id="dashboard-focus-title">Dzien pracy</h3>
+                </div>
+                <p id="dashboard-focus-summary" class="dashboard-focus-summary"></p>
+              </div>
+              <div id="dashboard-kpi-strip" class="dashboard-kpi-strip"></div>
+              <div class="dashboard-stage-section">
+                <div class="dashboard-section-heading">
+                  <h3>Najczestsze ruchy</h3>
+                  <p>Wejscia do rzeczy, ktore zwykle wymagaja reakcji jako pierwsze.</p>
+                </div>
+                <div id="dashboard-cards" class="dashboard-action-grid"></div>
+              </div>
+            </div>
+
+            <aside class="dashboard-side-stack">
+              <div id="dashboard-shared-note-shell" class="panel dashboard-side-panel dashboard-shared-note-panel">
+                <div class="dashboard-section-heading dashboard-section-heading-tight">
+                  <h3>Notatka organizacji</h3>
+                  <p>Wspolne miejsce na szybkie ustalenia, statusy i dopiski dla calego zespolu.</p>
+                </div>
+                <div id="organization-shared-note-status" class="subtle-note">
+                  Wybierz organizacje, aby odczytac albo zaktualizowac wspolna notatke.
+                </div>
+                <textarea
+                  id="organization-shared-note-text"
+                  rows="8"
+                  placeholder="Np. Dzisiaj pilnujemy korekt KSeF od dostawcy X i wracamy do paczki po 14:00."
+                  disabled
+                ></textarea>
+                <div class="filters-actions">
+                  <button type="button" id="organization-shared-note-save" disabled>Zapisz notatke</button>
+                </div>
+              </div>
+              <div id="dashboard-priority-shell" class="panel dashboard-side-panel">
+                <div class="dashboard-section-heading dashboard-section-heading-tight">
+                  <h3>Teraz najwazniejsze</h3>
+                  <p>Najwyzej ustawione sygnaly i priorytety do szybkiego sprawdzenia.</p>
+                </div>
+                <div id="dashboard-priority-alerts"></div>
+              </div>
+              <div id="dashboard-reminders-shell" class="panel dashboard-side-panel">
+                <div class="dashboard-section-heading dashboard-section-heading-tight">
+                  <h3>Aktywne przypomnienia</h3>
+                  <p>Rzeczy, ktore wracaja do Ciebie dzisiaj lub za chwile.</p>
+                </div>
+                <div id="dashboard-reminders"></div>
+              </div>
+              <div id="dashboard-knowledge-queue-shell" class="panel dashboard-side-panel">
+                <div class="dashboard-section-heading dashboard-section-heading-tight">
+                  <h3>Dokumenty firmowe</h3>
+                  <p>Review, akceptacje i szybkie decyzje bez wchodzenia gleboko do biblioteki.</p>
+                </div>
+                <div id="dashboard-knowledge-queue"></div>
+              </div>
+            </aside>
+          </section>
+
+          <section class="dashboard-flow-grid">
+            <div id="dashboard-alerts-shell" class="panel dashboard-panel-stream">
+              <div class="dashboard-section-heading">
+                <h3>Alerty operacyjne</h3>
+                <p>Pelny przeglad alertow z calego systemu i ich kontekstu.</p>
+              </div>
+              <div id="dashboard-operational-alerts"></div>
+            </div>
+            <div id="dashboard-events-shell" class="panel dashboard-panel-stream">
+              <div class="dashboard-section-heading">
+                <h3>Ostatnie zdarzenia</h3>
+                <p>Chronologiczny slad ruchow, decyzji i zmian w organizacji.</p>
+              </div>
+              <div id="dashboard-events"></div>
+            </div>
+          </section>
+        </section>
+
+        <section id="invoices-view" class="view view-invoices">
+          <div class="invoice-atelier">
+            <div id="invoice-command-shell" class="panel invoice-command-card">
+              <div class="invoice-command-copy">
+                <span class="view-kicker invoice-kicker">Obieg i kontrola</span>
+                <h3>Faktury jako jedno stanowisko pracy</h3>
+                <p class="subtle-note">
+                  Zmieniamy ten widok w stol operacyjny: decyzje, kolejka, weryfikacja i szczegoly dokumentu sa obok siebie, a nie w porozrzucanych panelach.
+                </p>
+              </div>
+            </div>
+            <div class="invoice-atelier-grid">
+              <aside class="invoice-atelier-sidebar">
+          <div id="invoice-filters-panel-shell" class="panel invoice-filter-card">
             <div class="panel-header">
               <h3>Filtry faktur</h3>
               <button type="button" class="secondary" id="toggle-invoice-filters" aria-expanded="false">Rozwiń filtry</button>
@@ -112,19 +817,21 @@
                 <select name="source"></select>
                 <select name="status"></select>
                 <select name="duplicate_type"></select>
+                <select name="workflow_state" id="filter-invoice-workflow-state"></select>
                 <input name="date_from" type="date" />
                 <input name="date_to" type="date" />
                 <input name="nip" type="text" placeholder="NIP wystawcy" />
                 <input name="invoice_number" type="text" placeholder="Numer faktury" />
                 <input name="ksef_number" type="text" placeholder="Numer KSeF" />
                 <select name="contractor_id" id="filter-contractor"></select>
+                <select name="assigned_user_id" id="filter-invoice-assignee"></select>
                 <select name="sort_by" id="sort-by"></select>
                 <select name="sort_order">
                   <option value="desc">Sortowanie malejące</option>
                   <option value="asc">Sortowanie rosnące</option>
                 </select>
                 <div class="filters-actions">
-                  <button type="submit">Zastosuj filtry</button>
+                  <button type="submit">Odswiez teraz</button>
                   <button type="button" class="secondary" id="reset-invoice-filters">Wyczyść</button>
                 </div>
               </form>
@@ -132,16 +839,144 @@
             <div id="invoice-active-filters" class="active-filters hidden"></div>
           </div>
 
-          <div class="content-grid">
-            <div class="panel">
+          <div id="invoice-saved-views-shell" class="panel invoice-saved-views-card">
+            <div class="panel-header">
+              <h3>Widoki faktur</h3>
+              <span id="invoice-saved-views-count" class="pill"></span>
+            </div>
+            <div class="panel-note">
+              Zapisz gotowe zestawy filtrow i wracaj do nich jednym kliknieciem. To jest szybsze i bezpieczniejsze niz reczne ustawianie listy za kazdym razem.
+            </div>
+            <div id="invoice-saved-views-quick" class="invoice-saved-views-quick"></div>
+            <div id="invoice-saved-views-list" class="invoice-saved-views-list">
+              <div class="empty-state">Widoki faktur zaladuja sie po zalogowaniu.</div>
+            </div>
+            <form id="invoice-saved-view-form" class="field-grid invoice-saved-view-form">
+              <input type="hidden" id="invoice-saved-view-id" value="" />
+              <div class="field">
+                <label>Nazwa widoku</label>
+                <input id="invoice-saved-view-name" type="text" placeholder="np. Moje do decyzji" />
+              </div>
+              <div class="field">
+                <label>Slug</label>
+                <input id="invoice-saved-view-slug" type="text" placeholder="np. moje-do-decyzji" />
+              </div>
+              <div class="field field-full">
+                <label>Opis</label>
+                <textarea id="invoice-saved-view-description" rows="2" placeholder="Krotki opis tego, kiedy ten widok ma sens."></textarea>
+              </div>
+              <div class="field"><label class="checkbox-inline"><input id="invoice-saved-view-shared" type="checkbox" checked /> Wspoldzielony</label></div>
+              <div class="field"><label class="checkbox-inline"><input id="invoice-saved-view-default" type="checkbox" /> Domyslny</label></div>
+              <div class="filters-actions field-full">
+                <button type="submit" id="invoice-saved-view-save">Zapisz aktualne filtry</button>
+                <button type="button" class="secondary" id="invoice-saved-view-apply-selected">Otworz wybrany</button>
+                <button type="button" class="secondary" id="invoice-saved-view-delete">Usun</button>
+                <button type="button" class="secondary" id="invoice-saved-view-reset">Nowy widok</button>
+              </div>
+            </form>
+          </div>
+
+          <div id="invoice-verification-inbox-shell" class="panel invoice-inbox-card">
+            <div class="panel-header">
+              <h3>Skrzynka weryfikacji</h3>
+              <span id="invoice-verification-inbox-count" class="pill"></span>
+            </div>
+            <div class="panel-note">
+              Jedno miejsce do szybkiego wychwycenia faktur wymagajacych uwagi: weryfikacji danych, decyzji o duplikatach i korekt KSeF.
+            </div>
+            <div id="invoice-verification-inbox" class="verification-inbox-grid">
+              <div class="empty-state">Skrzynka weryfikacji zaladuje sie razem z lista faktur.</div>
+            </div>
+          </div>
+
+              </aside>
+              <section class="invoice-atelier-main">
+          <div id="invoice-verification-workspace-shell" class="panel invoice-workspace-card">
+            <div class="panel-header">
+              <h3>Workspace weryfikacji</h3>
+              <span id="invoice-verification-workspace-count" class="pill"></span>
+            </div>
+            <div class="panel-note">
+              Pelny obszar roboczy do pracy na fakturach wymagajacych decyzji, porownania duplikatow, akceptacji korekt KSeF i interwencji po OCR.
+            </div>
+            <div id="invoice-verification-workspace-sla" class="verification-sla-grid">
+              <div class="empty-state">Wczytuje stan SLA i kolejek faktur.</div>
+            </div>
+            <div id="invoice-verification-workspace-tabs" class="verification-workspace-tabs"></div>
+            <div id="invoice-verification-workspace" class="verification-workspace-shell">
+              <div class="empty-state">Workspace weryfikacji zaladuje sie razem z lista faktur.</div>
+            </div>
+          </div>
+
+          <div class="content-grid invoice-ops-grid">
+            <div id="invoice-document-intake-shell" class="panel">
+              <div class="panel-header">
+                <h3>Skrzynka przyjecia dokumentow</h3>
+                <span id="invoice-document-intake-count" class="pill"></span>
+              </div>
+              <div class="panel-note">
+                Tutaj widac wszystkie przyjete dokumenty z e-maila, Telegrama, Slacka i KSeF, zanim przejda dalej przez pelny obieg operacyjny.
+              </div>
+              <div id="invoice-document-intake" class="invoice-ops-shell">
+                <div class="empty-state">Skrzynka przyjecia dokumentow zaladuje sie razem z lista faktur.</div>
+              </div>
+            </div>
+
+            <div id="invoice-exception-center-shell" class="panel">
+              <div class="panel-header">
+                <h3>Centrum wyjatkow</h3>
+                <span id="invoice-exception-center-count" class="pill"></span>
+              </div>
+              <div class="panel-note">
+                Jeden widok dla brakow kontrahenta, problemow OCR, duplikatow do decyzji i oczekiwania na KSeF.
+              </div>
+              <div id="invoice-exception-center" class="invoice-ops-shell">
+                <div class="empty-state">Centrum wyjatkow zaladuje sie razem z lista faktur.</div>
+              </div>
+            </div>
+
+            <div id="invoice-handoff-batches-shell" class="panel">
+              <div class="panel-header">
+                <h3>Paczki przekazania</h3>
+                <span id="invoice-handoff-batches-count" class="pill"></span>
+              </div>
+              <div class="panel-note">
+                Tworz paczki przekazania dla zaznaczonych faktur, eksportuj je i pilnuj historii przekazan dalej.
+              </div>
+              <div class="field-grid invoice-handoff-create-grid">
+                <div class="field">
+                  <label>Cel przekazania</label>
+                  <input id="invoice-handoff-target" placeholder="np. Ksiegowosc zewnetrzna / Biuro rachunkowe" />
+                </div>
+                <div class="field">
+                  <label>Notatka do paczki</label>
+                  <input id="invoice-handoff-note" placeholder="np. Pakiet tygodniowy, pilne, do korekty VAT" />
+                </div>
+              </div>
+              <div id="invoice-handoff-selection-summary" class="subtle-note">
+                Zaznacz faktury na liscie, aby utworzyc paczke przekazania.
+              </div>
+              <div class="filters-actions">
+                <button type="button" id="invoice-create-handoff-batch">Utworz paczke przekazania</button>
+              </div>
+              <div id="invoice-handoff-batches" class="invoice-ops-shell">
+                <div class="empty-state">Paczki przekazania zaladuja sie razem z lista faktur.</div>
+              </div>
+              <div id="invoice-handoff-batch-detail" class="invoice-handoff-detail-shell hidden"></div>
+            </div>
+          </div>
+
+          <div class="content-grid invoice-stage-grid">
+            <div id="invoice-list-shell" class="panel invoice-ledger-card">
               <div class="panel-header">
                 <h3>Lista faktur</h3>
                 <span id="invoice-count" class="pill"></span>
               </div>
-              <div class="table-wrap">
+              <div class="table-wrap invoice-ledger-table-wrap">
                 <table>
                   <thead>
                     <tr>
+                      <th><input type="checkbox" id="invoice-select-all" aria-label="Zaznacz wszystkie faktury" /></th>
                       <th>ID</th>
                       <th>Organizacja</th>
                       <th>Data wpływu</th>
@@ -153,7 +988,9 @@
                       <th>Wystawca</th>
                       <th>Kwota brutto</th>
                       <th>Status</th>
+                      <th>Obieg</th>
                       <th>Typ duplikatu</th>
+                      <th>Odpowiedzialny</th>
                       <th>Kontrahent</th>
                     </tr>
                   </thead>
@@ -162,20 +999,189 @@
               </div>
             </div>
 
-            <div class="panel detail-panel">
+            <div id="invoice-detail-shell" class="panel detail-panel invoice-detail-studio">
               <div class="panel-header">
                 <h3>Szczegóły faktury</h3>
               </div>
               <div id="invoice-detail-empty" class="empty-state">
-                Wybierz fakturę z tabeli, aby zobaczyć szczegóły, OCR, historię i podobne rekordy.
+                Wybierz fakturę z tabeli, aby zobaczyć szczegóły, pochodzenie pól, OCR, historię i centrum duplikatów.
               </div>
               <div id="invoice-detail" class="hidden"></div>
             </div>
           </div>
+              </section>
+            </div>
+          </div>
+          <div id="invoice-ksef-save-modal" class="modal-shell hidden" aria-hidden="true">
+            <div class="modal-card">
+              <div class="modal-header">
+                <div>
+                  <h3 id="invoice-ksef-save-modal-title">Zapis zmian faktury</h3>
+                  <div id="invoice-ksef-save-modal-subtitle" class="subtle-note"></div>
+                </div>
+                <button type="button" class="secondary" id="invoice-ksef-save-modal-close-top">Zamknij</button>
+              </div>
+              <div id="invoice-ksef-save-modal-message" class="modal-body"></div>
+              <div id="invoice-ksef-save-modal-fields" class="ksef-correction-grid"></div>
+              <div class="filters-actions">
+                <button type="button" class="secondary" id="invoice-ksef-save-modal-close">Rozumiem</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="content-grid contractors-grid">
+            <div class="panel">
+              <div class="panel-header">
+                <h3>Rozliczenia przeniesione do osobnego modulu</h3>
+              </div>
+              <div class="panel-note">
+                Salda platnikow, ksiega rozliczen i dopasowanie wplat sa teraz w dedykowanej zakladce
+                <strong>Rozliczenia</strong>, zeby nie mieszac obiegu faktur kosztowych z przychodami,
+                rodzinami i naleznosciami uczniow.
+              </div>
+            </div>
+          </div>
+          <div id="invoice-compare-modal" class="modal-shell hidden" aria-hidden="true">
+            <div class="modal-card modal-card-wide">
+              <div class="modal-header">
+                <div>
+                  <h3 id="invoice-compare-modal-title">Porownanie faktur</h3>
+                  <p id="invoice-compare-modal-subtitle" class="subtle-note">Tutaj zobaczysz roznice miedzy dwiema fakturami.</p>
+                </div>
+                <button type="button" class="secondary" id="invoice-compare-modal-close-top">Zamknij</button>
+              </div>
+              <div id="invoice-compare-modal-body" class="modal-body"></div>
+              <div class="filters-actions" style="margin-top: 18px;">
+                <button type="button" class="secondary" id="invoice-compare-modal-close">Zamknij porownanie</button>
+              </div>
+            </div>
+          </div>
+          <div id="invoice-preview-modal" class="modal-shell hidden" aria-hidden="true">
+            <div class="modal-card modal-card-wide">
+              <div class="modal-header">
+                <div>
+                  <h3 id="invoice-preview-modal-title">Szybki podglad dokumentu</h3>
+                  <p id="invoice-preview-modal-subtitle" class="subtle-note">Podglad dokumentu i OCR bez przechodzenia do pelnych szczegolow.</p>
+                </div>
+                <button type="button" class="secondary" id="invoice-preview-modal-close-top">Zamknij</button>
+              </div>
+              <div id="invoice-preview-modal-body" class="modal-body"></div>
+              <div class="filters-actions" style="margin-top: 18px;">
+                <button type="button" class="secondary" id="invoice-preview-modal-open-detail">Otworz pelne szczegoly</button>
+                <button type="button" class="secondary" id="invoice-preview-modal-close">Zamknij podglad</button>
+              </div>
+            </div>
+          </div>
+          <div id="task-calendar-conflict-modal" class="modal-shell hidden" aria-hidden="true">
+            <div class="modal-card modal-card-wide">
+              <div class="modal-header">
+                <div>
+                  <h3 id="task-calendar-conflict-modal-title">Wykryto kolizje w kalendarzu</h3>
+                  <p id="task-calendar-conflict-modal-subtitle" class="subtle-note">Sprawdzamy, czy przesuniecie nie nachodzi na inne wpisy.</p>
+                </div>
+                <button type="button" class="secondary" id="task-calendar-conflict-modal-close-top">Anuluj</button>
+              </div>
+              <div id="task-calendar-conflict-modal-message" class="modal-body"></div>
+              <div id="task-calendar-conflict-modal-list" class="calendar-conflict-list"></div>
+              <div class="modal-footer">
+                <button type="button" class="secondary" id="task-calendar-conflict-modal-cancel">Anuluj</button>
+                <button type="button" id="task-calendar-conflict-modal-confirm">Przesun mimo to</button>
+              </div>
+            </div>
+          </div>
+          <div id="knowledge-decision-modal" class="modal-shell hidden" aria-hidden="true">
+            <div class="modal-card modal-card-wide">
+              <div class="modal-header">
+                <div>
+                  <h3 id="knowledge-decision-modal-title">Decyzja dla dokumentu</h3>
+                  <p id="knowledge-decision-modal-subtitle" class="subtle-note">Tutaj zapiszesz powod decyzji i ewentualne zmiany osob odpowiedzialnych.</p>
+                </div>
+                <button type="button" class="secondary" data-knowledge-decision-close>Zamknij</button>
+              </div>
+              <div class="modal-body">
+                <div id="knowledge-decision-modal-summary" class="knowledge-modal-summary"></div>
+                <div class="field-grid knowledge-modal-grid">
+                  <div class="field field-full">
+                    <label for="knowledge-decision-modal-reason">Powod decyzji</label>
+                    <textarea id="knowledge-decision-modal-reason" rows="4" placeholder="Napisz krotko, dlaczego podejmujesz te decyzje i co dalej ma zrobic zespol."></textarea>
+                  </div>
+                  <div class="field">
+                    <label for="knowledge-decision-modal-owner">Prowadzi</label>
+                    <select id="knowledge-decision-modal-owner"></select>
+                  </div>
+                  <div class="field">
+                    <label for="knowledge-decision-modal-reviewer">Sprawdza</label>
+                    <select id="knowledge-decision-modal-reviewer"></select>
+                  </div>
+                  <div class="field">
+                    <label for="knowledge-decision-modal-approver">Akceptuje</label>
+                    <select id="knowledge-decision-modal-approver"></select>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="secondary" data-knowledge-decision-close>Anuluj</button>
+                <button type="button" id="knowledge-decision-modal-submit">Zapisz decyzje</button>
+              </div>
+            </div>
+          </div>
+          <div id="knowledge-task-modal" class="modal-shell hidden" aria-hidden="true">
+            <div class="modal-card modal-card-wide">
+              <div class="modal-header">
+                <div>
+                  <h3 id="knowledge-task-modal-title">Nowe zadanie z dokumentu</h3>
+                  <p id="knowledge-task-modal-subtitle" class="subtle-note">Powiazemy zadanie z dokumentem, zeby praca i decyzje zostaly w jednym sladowalnym obiegu.</p>
+                </div>
+                <button type="button" class="secondary" data-knowledge-task-close>Zamknij</button>
+              </div>
+              <div class="modal-body">
+                <div id="knowledge-task-modal-summary" class="knowledge-modal-summary"></div>
+                <div class="field-grid knowledge-modal-grid">
+                  <div class="field field-full">
+                    <label for="knowledge-task-modal-title-input">Tytul zadania</label>
+                    <input id="knowledge-task-modal-title-input" type="text" placeholder="Np. Przygotuj poprawki do wzoru umowy" />
+                  </div>
+                  <div class="field field-full">
+                    <label for="knowledge-task-modal-description">Opis</label>
+                    <textarea id="knowledge-task-modal-description" rows="4" placeholder="Krótko opisz, co trzeba zrobic i na co zwrocic uwage."></textarea>
+                  </div>
+                  <div class="field">
+                    <label for="knowledge-task-modal-assigned-user">Przypisz do</label>
+                    <select id="knowledge-task-modal-assigned-user"></select>
+                  </div>
+                  <div class="field">
+                    <label for="knowledge-task-modal-priority">Priorytet</label>
+                    <select id="knowledge-task-modal-priority">
+                      <option value="niski">niski</option>
+                      <option value="normalny" selected>normalny</option>
+                      <option value="wysoki">wysoki</option>
+                      <option value="krytyczny">krytyczny</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="knowledge-task-modal-visibility">Widocznosc</label>
+                    <select id="knowledge-task-modal-visibility">
+                      <option value="prywatne" selected>prywatne</option>
+                      <option value="organizacja">organizacja</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="knowledge-task-modal-due-at">Termin</label>
+                    <input id="knowledge-task-modal-due-at" type="datetime-local" />
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="secondary" data-knowledge-task-close>Anuluj</button>
+                <button type="button" id="knowledge-task-modal-submit">Utworz zadanie</button>
+              </div>
+            </div>
+          </div>
+          </div>
         </section>
 
         <section id="tasks-view" class="view">
-          <div class="panel">
+          <div id="task-filters-shell" class="panel">
             <div class="panel-header">
               <h3>Filtry zadan</h3>
             </div>
@@ -184,6 +1190,8 @@
               <select name="task_type" id="task-filter-type"></select>
               <select name="status" id="task-filter-status"></select>
               <select name="priority" id="task-filter-priority"></select>
+              <select name="focus_view" id="task-filter-focus-view"></select>
+              <select name="recurrence_pattern" id="task-filter-recurrence-pattern"></select>
               <select name="assigned_user_id" id="task-filter-assigned-user"></select>
               <input name="due_from" type="datetime-local" />
               <input name="due_to" type="datetime-local" />
@@ -194,7 +1202,7 @@
                 Tylko aktywne przypomnienia
               </label>
               <div class="filters-actions">
-                <button type="submit">Zastosuj filtry</button>
+                <button type="submit">Odswiez teraz</button>
                 <button type="button" class="secondary" id="reset-task-filters">Wyczysc</button>
               </div>
             </form>
@@ -202,26 +1210,369 @@
           </div>
 
           <div class="content-grid">
-            <div class="panel">
+            <div id="task-focus-shell" class="panel">
               <div class="panel-header">
-                <h3>Lista zadan</h3>
+                <h3>Szybkie widoki pracy</h3>
+                <span id="task-focus-generated-at" class="pill"></span>
+              </div>
+              <div class="panel-note">
+                To jest szybszy podglad tego, co wymaga uwagi dzisiaj: Twoje wpisy, sprawy po terminie i rzeczy czekajace na innych.
+              </div>
+              <div id="task-focus-grid" class="focus-grid">
+                <div class="empty-state">Widoki pracy pojawia sie po zaladowaniu danych.</div>
+              </div>
+            </div>
+
+            <div id="task-planner-shell" class="panel">
+              <div class="panel-header">
+                <h3>Plan dnia i tygodnia</h3>
+                <span id="task-planner-generated-at" class="pill"></span>
+              </div>
+              <div class="panel-note">
+                Widok zbiera najwazniejsze wpisy z przypomnieniami i terminami, z podzialem na to, co wymaga uwagi teraz.
+              </div>
+              <div class="planner-grid">
+                <section class="planner-column">
+                  <div class="planner-column-header">
+                    <h4>Zalegle</h4>
+                    <span id="planner-count-zalegle" class="pill"></span>
+                  </div>
+                  <div id="task-planner-zalegle" class="planner-bucket"></div>
+                </section>
+                <section class="planner-column">
+                  <div class="planner-column-header">
+                    <h4>Dzis</h4>
+                    <span id="planner-count-dzis" class="pill"></span>
+                  </div>
+                  <div id="task-planner-dzis" class="planner-bucket"></div>
+                </section>
+                <section class="planner-column">
+                  <div class="planner-column-header">
+                    <h4>Jutro</h4>
+                    <span id="planner-count-jutro" class="pill"></span>
+                  </div>
+                  <div id="task-planner-jutro" class="planner-bucket"></div>
+                </section>
+                <section class="planner-column">
+                  <div class="planner-column-header">
+                    <h4>Ten tydzien</h4>
+                    <span id="planner-count-tydzien" class="pill"></span>
+                  </div>
+                  <div id="task-planner-tydzien" class="planner-bucket"></div>
+                </section>
+              </div>
+            </div>
+
+            <div id="task-calendar-shell" class="panel task-calendar-panel">
+              <div class="panel-header">
+                <h3>Kalendarz zadan</h3>
+                <span id="task-calendar-count" class="pill"></span>
+              </div>
+              <div class="panel-note">
+                To jest szybki widok terminow, przypomnien i wpisow kalendarzowych. Dziala w trybie dnia, tygodnia i miesiaca oraz pozwala przeskakiwac miedzy zakresami. W widoku dnia mozesz przeciagac wpisy na konkretna godzine, a przy przesuwaniu system sprawdza kolizje zanim zapisze zmiane.
+              </div>
+              <div class="task-calendar-toolbar">
                 <div class="detail-actions">
-                  <span id="task-count" class="pill"></span>
-                  <button type="button" id="new-task-button">Nowe zadanie</button>
+                  <button type="button" class="secondary active" data-task-calendar-mode="dzien">Dzien</button>
+                  <button type="button" class="secondary" data-task-calendar-mode="tydzien">Tydzien</button>
+                  <button type="button" class="secondary" data-task-calendar-mode="miesiac">Miesiac</button>
                 </div>
+                <div class="detail-actions">
+                  <button type="button" id="task-quick-add-open" class="secondary">Szybki wpis</button>
+                  <button type="button" class="secondary" id="task-calendar-prev">Poprzedni</button>
+                  <button type="button" class="secondary" id="task-calendar-today">Dzis</button>
+                  <button type="button" class="secondary" id="task-calendar-next">Nastepny</button>
+                </div>
+              </div>
+              <div class="task-calendar-header">
+                <strong id="task-calendar-label">Wybierz zakres</strong>
+              </div>
+              <div id="task-calendar-body" class="empty-state task-calendar-body">
+                Widok kalendarza zaladuje sie po pobraniu wpisow z terminami.
+              </div>
+            </div>
+
+              <div id="task-command-shell" class="panel detail-panel">
+                <div class="panel-header">
+                  <h3>Szybkie polecenie tekstowe</h3>
+                </div>
+              <div class="panel-note">
+                Wpisz polecenie naturalnym jezykiem, sprawdz rozpoznane dane, popraw je w tym samym oknie i dopiero potem zapisz wpis.
+              </div>
+              <div class="stack">
+                <textarea
+                  id="task-natural-command"
+                  data-voice-disabled="true"
+                  rows="5"
+                  placeholder="np. Spotkanie z Ola jutro o 14 w wybranym kalendarzu, przypomnij godzine wczesniej"
+                ></textarea>
+                <div class="detail-actions">
+                  <button type="button" class="secondary" id="start-task-natural-voice">Dyktuj</button>
+                  <button type="button" class="secondary" id="stop-task-natural-voice" disabled>Zatrzymaj</button>
+                  <span id="task-natural-voice-status" class="subtle-note">Dyktowanie jest wylaczone.</span>
+                </div>
+                <div class="detail-actions">
+                  <button type="button" id="analyze-task-command">Analizuj polecenie</button>
+                  <button type="button" class="secondary" id="apply-task-command-preview">Otworz pelny formularz</button>
+                  <button type="button" class="secondary" id="create-task-from-preview">Utworz z tego okna</button>
+                </div>
+                  <div id="task-natural-preview" class="empty-state">
+                    Tutaj pojawi sie szybki podglad rozpoznanego wpisu: typ, osoba, data, godzina, kalendarz i ostrzezenia.
+                  </div>
+                </div>
+              </div>
+
+              <div id="task-notes-shell" class="panel detail-panel">
+                <div class="panel-header">
+                  <h3>Notatki w obiegu</h3>
+                  <span id="task-notes-hub-count" class="pill"></span>
+                </div>
+                <div class="panel-note">
+                  To jest lekki widok samych notatek, zeby nie ginely pomiedzy zadaniami, wydarzeniami i przypomnieniami.
+                </div>
+                <div class="detail-actions">
+                  <button type="button" class="secondary" id="task-notes-show-all">Pokaz tylko notatki</button>
+                  <button type="button" class="secondary" id="task-notes-new-private">Nowa prywatna notatka</button>
+                </div>
+                <div id="task-notes-hub" class="empty-state">
+                  Notatki pojawia sie tutaj po zaladowaniu wpisow.
+                </div>
+              </div>
+            </div>
+
+          <div class="content-grid contractors-grid">
+            <div id="task-calendars-shell" class="panel">
+              <div class="panel-header">
+                <h3>Moje kalendarze Google</h3>
+                <span id="user-calendar-count" class="pill"></span>
+              </div>
+              <div class="panel-note">
+                Polacz swoje konto Google, odswiez liste istniejacych kalendarzy i mapuj je na wpisy sluzbowe,
+                organizacyjne albo prywatne - zalezne od Twojej roli. Dla starszego trybu dalej mozesz zostawic adres URL `.ics`.
+              </div>
+                <div class="detail-box">
+                  <div class="panel-header">
+                    <h4>Polaczenie z Google</h4>
+                  </div>
+                  <p id="google-calendar-connection-status" class="subtle-note">Sprawdzanie polaczenia...</p>
+                  <p id="google-calendar-connection-email" class="subtle-note"></p>
+                  <div id="google-calendar-connection-diagnostics" class="connection-diagnostics"></div>
+                  <div id="google-calendar-onboarding" class="google-onboarding-box"></div>
+                  <label class="checkbox-inline">
+                    <input id="google-calendar-visibility-confirmation" type="checkbox" value="1" />
+                    Potwierdzam, ze podlaczam konto uzywane do pracy w tej organizacji.
+                  </label>
+                  <p class="subtle-note">
+                    Adres e-mail tego konta bedzie widoczny dla Wlasciciela systemu i Administratora organizacji.
+                    Nie podlaczaj kont prywatnych.
+                  </p>
+                  <div class="filters-actions">
+                    <button type="button" id="connect-google-calendar">Polacz konto Google</button>
+                    <button type="button" class="secondary" id="refresh-google-calendars">Odswiez kalendarze</button>
+                    <button type="button" class="secondary" id="disconnect-google-calendar">Rozlacz Google</button>
+                  </div>
               </div>
               <div class="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th>ID</th>
-                      <th>Organizacja</th>
-                      <th>Typ</th>
-                      <th>Tytul</th>
-                      <th>Przypisano</th>
-                      <th>Termin</th>
-                      <th>Przypomnienie</th>
-                      <th>Priorytet</th>
+                      <th>Nazwa</th>
+                      <th>Tryb dostepu</th>
+                      <th>Rodzaj</th>
+                      <th>Powiazana organizacja</th>
+                      <th>Domyslny czas</th>
+                      <th>Dostawca</th>
+                      <th>Status</th>
+                      <th>Polaczenie</th>
+                    </tr>
+                  </thead>
+                  <tbody id="user-calendar-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="task-calendar-settings-shell" class="panel detail-panel">
+              <div class="panel-header">
+                <h3 id="user-calendar-form-title">Nowy kalendarz</h3>
+              </div>
+              <form id="user-calendar-form" class="field-grid">
+                <input type="hidden" id="user-calendar-id" />
+                <div class="field">
+                  <label>Nazwa kalendarza</label>
+                  <input id="user-calendar-display-name" type="text" placeholder="np. Firma A" />
+                </div>
+                <div class="field">
+                  <label>Sposob polaczenia</label>
+                  <select id="user-calendar-provider">
+                    <option value="google_api">Istniejacy kalendarz Google</option>
+                    <option value="google_ics">Adres URL (.ics)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Rodzaj kalendarza</label>
+                  <select id="user-calendar-kind">
+                    <option value="organizacja">Organizacja</option>
+                    <option value="rodzinny">Rodzinny</option>
+                    <option value="prywatny">Prywatny</option>
+                    <option value="inne">Sluzbowy osobisty</option>
+                  </select>
+                </div>
+                <div class="field field-full" id="user-calendar-external-field">
+                  <label>Docelowy kalendarz Google</label>
+                  <select id="user-calendar-external-id"></select>
+                  <p class="subtle-note">Tutaj wybierasz konkretny kalendarz z podlaczonego konta Google.</p>
+                </div>
+                <div class="field">
+                  <label>Powiazana organizacja</label>
+                  <select id="user-calendar-linked-organization"></select>
+                </div>
+                <div class="field">
+                  <label>Status</label>
+                  <select id="user-calendar-active">
+                    <option value="1">Aktywny</option>
+                    <option value="0">Nieaktywny</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Domyslny czas wpisu (min)</label>
+                  <input id="user-calendar-default-duration" type="number" min="1" max="1440" step="5" value="60" />
+                </div>
+                <div class="field field-full">
+                  <label>Opis</label>
+                  <textarea id="user-calendar-description" rows="3" placeholder="np. Wydarzenia dla zespolu firmy A"></textarea>
+                </div>
+                <div class="filters-actions">
+                  <button type="submit">Zapisz kalendarz</button>
+                  <button type="button" class="secondary" id="reset-user-calendar-form">Wyczysc formularz</button>
+                  <button type="button" class="secondary hidden" id="delete-user-calendar-button">Usun kalendarz</button>
+                </div>
+                <p class="subtle-note hidden" id="user-calendar-access-note"></p>
+                <p class="subtle-note">
+                  Tryb bezposredni zapisuje wpisy do istniejacego kalendarza Google. Tryb `.ics` zostawia adres URL do recznego podpiecia.
+                </p>
+              </form>
+
+              <div class="panel-header" style="margin-top: 18px;">
+                <h3>Moje ustawienia przypomnien</h3>
+              </div>
+              <form id="user-reminder-preferences-form" class="field-grid">
+                <label class="checkbox-inline field-full">
+                  <input id="user-own-telegram-reminders-enabled" type="checkbox" />
+                  Otrzymuj przypomnienia Telegram
+                </label>
+                <label class="checkbox-inline field-full">
+                  <input id="user-own-browser-reminders-enabled" type="checkbox" />
+                  Otrzymuj alerty przegladarki
+                </label>
+                <div class="field">
+                  <label>Cisza nocna od</label>
+                  <input id="user-own-quiet-hours-start" type="time" />
+                </div>
+                <div class="field">
+                  <label>Cisza nocna do</label>
+                  <input id="user-own-quiet-hours-end" type="time" />
+                </div>
+                <div class="field">
+                  <label>Ponawiaj co (min)</label>
+                  <input id="user-own-repeat-interval" type="number" min="0" max="1440" step="5" placeholder="0 = bez ponowienia" />
+                </div>
+                <div class="filters-actions">
+                  <button type="submit">Zapisz ustawienia przypomnien</button>
+                </div>
+                <div class="field field-full">
+                  <label>Alerty przegladarki</label>
+                  <div id="browser-notification-status" class="subtle-note">
+                    Sprawdzanie mozliwosci powiadomien przegladarki...
+                  </div>
+                  <div class="filters-actions">
+                    <button type="button" class="secondary" id="enable-browser-notifications">Wlacz alerty przegladarki</button>
+                    <button type="button" class="secondary" id="disable-browser-notifications">Wylacz alerty</button>
+                    <button type="button" class="secondary" id="test-browser-notification">Test alertu</button>
+                  </div>
+                  <p class="subtle-note">
+                    To jest webowy alert bez aplikacji mobilnej. Dziala najlepiej przy otwartym panelu i po zgodzie przegladarki.
+                  </p>
+                </div>
+                <div class="field field-full">
+                  <label>Automatyczne przypomnienia w tle</label>
+                  <div id="task-reminder-dispatch-status" class="subtle-note">
+                    Sprawdzanie statusu automatycznej wysylki...
+                  </div>
+                  <div class="filters-actions">
+                    <button type="button" class="secondary" id="dispatch-task-reminders">Wymus wysylke zaleglych przypomnien</button>
+                  </div>
+                  <p class="subtle-note">
+                    Scheduler zapisuje przypomnienia do outboxa, a worker dostarcza je w tle. Dzieki temu wysylka dziala nawet wtedy, gdy panel jest zamkniety albo serwer web ma restart.
+                  </p>
+                </div>
+                <div class="field field-full task-reminder-monitor">
+                  <div class="panel-header">
+                    <div>
+                      <label>Outbox i worker</label>
+                      <p class="subtle-note">Widok techniczny dla operacyjnego monitoringu: backlog, heartbeat i pojedyncze retry.</p>
+                    </div>
+                    <div class="detail-actions">
+                      <span id="task-reminder-worker-count" class="pill"></span>
+                      <button type="button" class="secondary" id="refresh-task-reminders">Odswiez status</button>
+                    </div>
+                  </div>
+                  <div id="task-reminder-health-summary" class="task-reminder-health-summary"></div>
+                  <div class="task-reminder-outbox-filters" role="tablist" aria-label="Filtr statusu outboxa">
+                    <button type="button" class="secondary small-action active" data-task-reminder-outbox-filter="all">Wszystkie</button>
+                    <button type="button" class="secondary small-action" data-task-reminder-outbox-filter="queued">Do wysłania</button>
+                    <button type="button" class="secondary small-action" data-task-reminder-outbox-filter="processing">W przetwarzaniu</button>
+                    <button type="button" class="secondary small-action" data-task-reminder-outbox-filter="failed">Błędy</button>
+                    <button type="button" class="secondary small-action" data-task-reminder-outbox-filter="sent">Wysłane</button>
+                    <button type="button" class="secondary small-action" data-task-reminder-outbox-filter="cancelled">Anulowane</button>
+                  </div>
+                  <div id="task-reminder-workers" class="empty-state">
+                    Status workera pojawi sie po pierwszym cyklu tła.
+                  </div>
+                  <div class="table-wrap" style="margin-top: 14px;">
+                    <table class="mobile-card-table">
+                      <thead>
+                        <tr>
+                          <th>Status</th>
+                          <th>Wpis</th>
+                          <th>Odbiorca</th>
+                          <th>Dostepne od</th>
+                          <th>Blad</th>
+                          <th>Akcja</th>
+                        </tr>
+                      </thead>
+                      <tbody id="task-reminder-outbox-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="content-grid">
+            <div id="task-list-shell" class="panel">
+              <div class="panel-header">
+                <h3>Lista zadan</h3>
+                <div class="detail-actions">
+                  <span id="task-count" class="pill"></span>
+                  <button type="button" id="new-task-button">Nowy wpis</button>
+                </div>
+              </div>
+              <div class="table-wrap">
+                    <table class="mobile-card-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Organizacja</th>
+                        <th>Widocznosc</th>
+                        <th>Typ</th>
+                        <th>Tytul</th>
+                        <th>Kalendarz</th>
+                        <th>Synchronizacja</th>
+                        <th>Przypisano</th>
+                        <th>Termin</th>
+                        <th>Przypomnienie</th>
+                        <th>Priorytet</th>
                       <th>Status</th>
                       <th>Aktualizacja</th>
                     </tr>
@@ -231,21 +1582,984 @@
               </div>
             </div>
 
-            <div class="panel detail-panel">
+            <div id="task-detail-shell" class="panel detail-panel">
               <div class="panel-header">
-                <h3>Szczegoly zadania</h3>
+                <h3>Szczegoly wpisu</h3>
               </div>
               <div id="task-detail-empty" class="empty-state">
-                Wybierz zadanie z tabeli albo kliknij "Nowe zadanie", aby zaplanowac prace.
+                Wybierz wpis z tabeli albo kliknij "Nowy wpis", aby zaplanowac prace.
               </div>
               <div id="task-detail" class="hidden"></div>
+            </div>
+          </div>
+
+          <div id="task-quick-add-sheet" class="quick-add-sheet hidden" aria-hidden="true">
+            <div class="quick-add-backdrop" id="task-quick-add-backdrop"></div>
+            <div class="panel quick-add-panel">
+              <div class="panel-header">
+                <h3>Szybki wpis</h3>
+                <div class="detail-actions">
+                  <button type="button" class="secondary" id="task-quick-add-close">Zamknij</button>
+                </div>
+              </div>
+              <p class="panel-note">
+                To jest lekki formularz do szybkiego dodania wpisu z telefonu lub z kalendarza. Pozniej zawsze mozna otworzyc pelny formularz.
+              </p>
+              <form id="task-quick-add-form" class="field-grid">
+                <div class="field field-full">
+                  <label>Tytul</label>
+                  <input id="task-quick-add-title" type="text" placeholder="np. Zadzwonic do klienta" />
+                </div>
+                <div class="field">
+                  <label>Termin</label>
+                  <input id="task-quick-add-due-at" type="datetime-local" />
+                </div>
+                <div class="field">
+                  <label>Typ</label>
+                  <select id="task-quick-add-type">
+                    <option value="zadanie">Zadanie</option>
+                    <option value="wydarzenie">Wydarzenie</option>
+                    <option value="przypomnienie">Przypomnienie</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Priorytet</label>
+                  <select id="task-quick-add-priority">
+                    <option value="niski">Niski</option>
+                    <option value="normalny" selected>Normalny</option>
+                    <option value="wysoki">Wysoki</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Przypomnij po</label>
+                  <select id="task-quick-add-reminder-offset">
+                    <option value="0">Bez przypomnienia</option>
+                    <option value="15">15 min</option>
+                    <option value="60" selected>1 godzina</option>
+                    <option value="1440">1 dzien</option>
+                  </select>
+                </div>
+                <div class="field field-full">
+                  <label>Notatka</label>
+                  <textarea id="task-quick-add-description" rows="3" placeholder="Krotki kontekst lub instrukcja"></textarea>
+                </div>
+                <div class="filters-actions field-full">
+                  <button type="submit" id="task-quick-add-save">Dodaj szybko</button>
+                </div>
+              </form>
+            </div>
+          </div>
+          <button type="button" id="task-quick-add-fab" class="task-quick-add-fab" aria-label="Szybki wpis">
+            +
+          </button>
+        </section>
+
+        <section id="billing-view" class="view view-billing">
+          <details id="billing-roadmap-shell" class="panel billing-roadmap-panel">
+            <summary class="billing-roadmap-summary">
+              <span class="billing-roadmap-summary-copy">
+                <strong>Plan dalszych wdrozen</strong>
+                <span>Placeholdery kolejnych etapow sa tu schowane domyslnie, zeby nie przeszkadzaly w wizualnym tescie aktualnego modulu.</span>
+              </span>
+              <span class="pill">Rozwin plan</span>
+            </summary>
+            <p class="subtle-note">
+              Ponizej widzisz, co juz dziala, co ma gotowy backend bez docelowego widoku oraz gdzie pojawia sie kolejne etapy.
+            </p>
+            <div id="billing-roadmap-grid" class="billing-roadmap-grid"></div>
+          </details>
+
+          <div class="panel billing-command-panel">
+            <div class="panel-header">
+              <div>
+                <h3>Centrum rozliczen</h3>
+                <p class="subtle-note">
+                  Jedno miejsce do pracy po uczniu, ale z pieniedzmi liczonymi po rodzinie i platniku.
+                  To tutaj mamy juz szkoly, modele, naleznosci, wplaty, salda i pierwszy etap rozksiegowania.
+                </p>
+              </div>
+              <div class="billing-section-links">
+                <a href="#billing-students-shell">Uczniowie</a>
+                <a href="#billing-payers-shell">Rodziny</a>
+                <a href="#billing-models-shell">Modele</a>
+                <a href="#billing-charges-shell">Naleznosci</a>
+                <a href="#billing-balances-shell">Saldo</a>
+                <a href="#billing-import-shell">Wplaty</a>
+              </div>
+            </div>
+            <div id="billing-summary-grid" class="summary-grid"></div>
+          </div>
+
+          <div class="content-grid contractors-grid">
+            <div id="billing-students-shell" class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Uczniowie</h3>
+                  <p class="subtle-note">Glowny widok roboczy po dziecku, z podgladem szkoly, modelu, telefonu rodziny i ostatniej wplaty.</p>
+                </div>
+                <span id="billing-student-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Uczen</th>
+                      <th>Szkola</th>
+                      <th>Model</th>
+                      <th>Dzien</th>
+                      <th>Grupa</th>
+                      <th>Rodzina</th>
+                      <th>Ostatnia wplata rodziny</th>
+                      <th>Saldo rodziny</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-student-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="billing-student-editor-shell" class="panel detail-panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Dodaj ucznia</h3>
+                  <p class="subtle-note">Mozesz wybrac istniejaca rodzine albo zostawic to pole puste i wpisac numer telefonu. Nowy numer utworzy rodzine automatycznie.</p>
+                </div>
+              </div>
+              <form id="billing-student-form" class="field-grid">
+                <div class="field">
+                  <label>Imie i nazwisko</label>
+                  <input id="billing-student-full-name" type="text" placeholder="np. Lena Kruk" />
+                </div>
+                <div class="field">
+                  <label>Rodzina / platnik</label>
+                  <select id="billing-student-payer-id"></select>
+                </div>
+                <div class="field">
+                  <label>Telefon rodziny</label>
+                  <input id="billing-student-payer-phone" type="text" placeholder="np. 500600700 lub +48 500 600 700" />
+                </div>
+                <div class="field">
+                  <label>Nazwa nowej rodziny</label>
+                  <input id="billing-student-payer-display-name" type="text" placeholder="np. Rodzina Kruk" />
+                </div>
+                <div class="field">
+                  <label>E-mail rodziny</label>
+                  <input id="billing-student-payer-email" type="email" placeholder="np. rodzina@example.com" />
+                </div>
+                <div class="field">
+                  <label class="checkbox-inline">
+                    <input id="billing-student-payer-has-kdr" type="checkbox" />
+                    Nowa rodzina ma Karte Duzej Rodziny
+                  </label>
+                </div>
+                <div class="field field-full">
+                  <p id="billing-student-payer-help" class="subtle-note">
+                    Jesli telefon pasuje do istniejacej rodziny, system podepnie ucznia do niej. Jesli to nowy numer, rodzina utworzy sie automatycznie przy zapisie.
+                  </p>
+                </div>
+                <div class="field">
+                  <label>Szkola</label>
+                  <select id="billing-student-school-id"></select>
+                </div>
+                <div class="field">
+                  <label>Model rozliczen</label>
+                  <select id="billing-student-model-id"></select>
+                </div>
+                <div class="field">
+                  <label>Dzien zajec</label>
+                  <input id="billing-student-lesson-day" type="text" placeholder="np. wtorek" />
+                </div>
+                <div class="field">
+                  <label>Kolejnosc w rodzinie</label>
+                  <input id="billing-student-family-order" type="number" min="1" step="1" value="1" />
+                </div>
+                <div class="field">
+                  <label>Grupa</label>
+                  <input id="billing-student-group-name" type="text" placeholder="np. Robotyka 1" />
+                </div>
+                <div class="field field-full">
+                  <label>Notatki</label>
+                  <textarea id="billing-student-notes" rows="3" placeholder="Dodatkowe informacje o uczniu, grupie albo ustaleniach."></textarea>
+                </div>
+                <div class="filters-actions field-full">
+                  <button type="submit" id="billing-save-student-button">Dodaj ucznia</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="content-grid contractors-grid">
+            <div id="billing-payers-shell" class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Rodziny / platnicy</h3>
+                  <p class="subtle-note">Jedna rodzina moze oplacac jedno albo wiele dzieci, zwykle z jednego numeru telefonu.</p>
+                </div>
+                <span id="billing-payer-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Rodzina</th>
+                      <th>Telefon</th>
+                      <th>Dzieci</th>
+                      <th>KDR</th>
+                      <th>Naliczone</th>
+                      <th>Rozliczone</th>
+                      <th>Saldo</th>
+                      <th>Ostatnia wplata</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-payer-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="billing-payer-editor-shell" class="panel detail-panel">
+              <div class="panel-header">
+                <h3>Dodaj rodzine</h3>
+              </div>
+              <form id="billing-payer-form" class="field-grid">
+                <div class="field">
+                  <label>Nazwa rodziny</label>
+                  <input id="billing-payer-display-name" type="text" placeholder="np. Rodzina Kruk" />
+                </div>
+                <div class="field">
+                  <label>Telefon</label>
+                  <input id="billing-payer-contact-phone" type="text" placeholder="np. 500600700" />
+                </div>
+                <div class="field">
+                  <label>E-mail</label>
+                  <input id="billing-payer-email" type="email" placeholder="np. rodzina@example.com" />
+                </div>
+                <div class="field">
+                  <label class="checkbox-inline">
+                    <input id="billing-payer-has-kdr" type="checkbox" />
+                    Rodzina ma Karte Duzej Rodziny
+                  </label>
+                </div>
+                <div class="field field-full">
+                  <label>Notatki</label>
+                  <textarea id="billing-payer-notes" rows="3" placeholder="Dodatkowe ustalenia, np. kontakt, wyjatki lub informacje rozliczeniowe."></textarea>
+                </div>
+                <div class="filters-actions field-full">
+                  <button type="submit" id="billing-save-payer-button">Dodaj rodzine</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="content-grid contractors-grid">
+            <div id="billing-schools-shell" class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Szkoly</h3>
+                  <p class="subtle-note">Slownik szkol z pelna nazwa i skrotem, zeby nie wpisywac placowek recznie przy kazdym uczniu.</p>
+                </div>
+                <span id="billing-school-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Skrot</th>
+                      <th>Pelna nazwa</th>
+                      <th>Miasto</th>
+                      <th>Uczniowie</th>
+                      <th>Aktywna</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-school-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="billing-school-editor-shell" class="panel detail-panel">
+              <div class="panel-header">
+                <h3>Dodaj szkole</h3>
+              </div>
+              <form id="billing-school-form" class="field-grid">
+                <div class="field field-full">
+                  <label>Pelna nazwa</label>
+                  <input id="billing-school-full-name" type="text" placeholder="np. Szkola Podstawowa nr 4 w Bielsku Podlaskim" />
+                </div>
+                <div class="field">
+                  <label>Skrot</label>
+                  <input id="billing-school-short-name" type="text" placeholder="np. SP4 BP" />
+                </div>
+                <div class="field">
+                  <label>Miasto</label>
+                  <input id="billing-school-city" type="text" placeholder="np. Bielsk Podlaski" />
+                </div>
+                <div class="field field-full">
+                  <label>Notatki</label>
+                  <textarea id="billing-school-notes" rows="3" placeholder="Opcjonalne informacje o szkole, adresie albo ustaleniach organizacyjnych."></textarea>
+                </div>
+                <div class="filters-actions field-full">
+                  <button type="submit" id="billing-save-school-button">Dodaj szkole</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="content-grid contractors-grid">
+            <div id="billing-models-shell" class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Modele rozliczen</h3>
+                  <p class="subtle-note">Konfiguracja roku szkolnego, dnia tygodnia, stawek, zniżek i darmowego startu.</p>
+                </div>
+                <span id="billing-model-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Model</th>
+                      <th>Rok</th>
+                      <th>Dzien</th>
+                      <th>Tryb</th>
+                      <th>Mies.</th>
+                      <th>Sem.</th>
+                      <th>Rodzenstwo</th>
+                      <th>KDR</th>
+                      <th>Darmowy start</th>
+                      <th>Umowa</th>
+                      <th>Uczniowie</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-model-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="billing-model-editor-shell" class="panel detail-panel">
+              <div class="panel-header">
+                <h3>Dodaj model rozliczen</h3>
+              </div>
+              <form id="billing-model-form" class="field-grid">
+                <div class="field">
+                  <label>Nazwa modelu</label>
+                  <input id="billing-model-name" type="text" placeholder="np. 26/27 Wtorek" />
+                </div>
+                <div class="field">
+                  <label>Rok szkolny</label>
+                  <input id="billing-model-school-year" type="text" placeholder="np. 2026/2027" />
+                </div>
+                <div class="field">
+                  <label>Dzien zajec</label>
+                  <input id="billing-model-lesson-day" type="text" placeholder="np. wtorek" />
+                </div>
+                <div class="field">
+                  <label>Tryb rozliczen</label>
+                  <select id="billing-model-settlement-mode">
+                    <option value="monthly">Miesieczny</option>
+                    <option value="semester">Semestralny</option>
+                    <option value="custom">Wlasny</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Stawka miesieczna za zajecia</label>
+                  <input id="billing-model-monthly-rate" type="number" min="0" step="0.01" placeholder="57.00" />
+                </div>
+                <div class="field">
+                  <label>Stawka semestralna za zajecia</label>
+                  <input id="billing-model-semester-rate" type="number" min="0" step="0.01" placeholder="54.00" />
+                </div>
+                <div class="field">
+                  <label>Znizka rodzenstwo</label>
+                  <input id="billing-model-sibling-discount" type="number" min="0" step="0.01" value="100" />
+                </div>
+                <div class="field">
+                  <label>Znizka KDR</label>
+                  <input id="billing-model-large-family-discount" type="number" min="0" step="0.01" value="50" />
+                </div>
+                <div class="field">
+                  <label>Darmowe zajecia na start</label>
+                  <input id="billing-model-intro-free-lessons" type="number" min="0" step="1" value="1" />
+                </div>
+                <div class="field">
+                  <label class="checkbox-inline">
+                    <input id="billing-model-contract-required" type="checkbox" />
+                    Wymaga umowy
+                  </label>
+                </div>
+                <div class="field field-full">
+                  <label>Notatki</label>
+                  <textarea id="billing-model-notes" rows="3" placeholder="Na przyklad szkola, grupa, niestandardowe zasady albo wewnetrzny opis modelu."></textarea>
+                </div>
+                <div class="filters-actions field-full">
+                  <button type="submit" id="billing-save-model-button">Dodaj model</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="content-grid contractors-grid">
+            <div id="billing-charges-shell" class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Naleznosci</h3>
+                  <p class="subtle-note">Generator i tabela kwot do zaplaty z rozpisaniem darmowego startu, rodzenstwa i KDR.</p>
+                </div>
+                <span id="billing-charge-count" class="pill"></span>
+              </div>
+              <div id="billing-charge-total-summary" class="subtle-note"></div>
+              <div class="table-wrap">
+                <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Termin</th>
+                      <th>Okres</th>
+                      <th>Uczen</th>
+                      <th>Rodzina</th>
+                      <th>Model</th>
+                      <th>Zajec</th>
+                      <th>Bazowa</th>
+                      <th>Ulgi</th>
+                      <th>Do zaplaty</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-charge-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="billing-charge-generator-shell" class="panel detail-panel">
+              <div class="panel-header">
+                <h3>Generuj naleznosci</h3>
+              </div>
+              <form id="billing-charge-generator-form" class="field-grid">
+                <div class="field">
+                  <label>Model rozliczen</label>
+                  <select id="billing-charge-model-id"></select>
+                </div>
+                <div class="field">
+                  <label>Okres</label>
+                  <input id="billing-charge-period-label" type="text" placeholder="np. Pazdziernik 2026 albo Semestr zimowy 2026/2027" />
+                </div>
+                <div class="field">
+                  <label>Termin platnosci</label>
+                  <input id="billing-charge-due-date" type="date" />
+                </div>
+                <div class="field">
+                  <label>Liczba zajec</label>
+                  <input id="billing-charge-lesson-count" type="number" min="1" step="1" value="1" />
+                </div>
+                <div class="field field-full">
+                  <label>Notatki</label>
+                  <textarea id="billing-charge-notes" rows="3" placeholder="Na przyklad okres specjalny, korekta kalendarza albo niestandardowa partia naliczen."></textarea>
+                </div>
+                <div class="filters-actions field-full">
+                  <button type="submit" id="billing-generate-charge-button">Generuj naleznosci</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="content-grid contractors-grid">
+            <div id="billing-overdue-shell" class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Raport zaleglosci</h3>
+                  <p class="subtle-note">Na tym etapie raport jest celowo rodzinny, bo platnosci i saldo liczymy po platniku, a nie po pojedynczym dziecku.</p>
+                </div>
+                <span id="billing-overdue-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Rodzina</th>
+                      <th>Telefon</th>
+                      <th>Dzieci</th>
+                      <th>Saldo</th>
+                      <th>Ostatnia wplata</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-overdue-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="billing-contract-shell" class="panel detail-panel billing-placeholder-panel">
+              <div class="panel-header">
+                <h3>Umowy i podpisy</h3>
+              </div>
+              <p class="subtle-note">
+                Tu pojawi sie generator umow, snapshot warunkow, bezpieczny link dla rodzica i obsluga podpisu elektronicznego.
+                Celowo zostawiam to jeszcze jako osobny etap, zeby nie budowac polrozwiazania.
+              </p>
+              <ul class="billing-placeholder-list">
+                <li>szablon umowy z wyborem modelu i wariantu platnosci</li>
+                <li>telefon kontaktowy i telefon jako identyfikator wplat</li>
+                <li>wiele dzieci pod jedna rodzina i jedna umowa rodzinna</li>
+                <li>historia podpisu, IP, czas i niezmienialny snapshot dokumentu</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="content-grid contractors-grid">
+            <div id="billing-balances-shell" class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Saldo platnikow</h3>
+                  <p class="subtle-note">Saldo rodzin liczone na podstawie naliczen i dopasowanych wplat.</p>
+                </div>
+                <span id="billing-balance-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Platnik</th>
+                      <th>Telefon</th>
+                      <th>Naliczone</th>
+                      <th>Rozliczone</th>
+                      <th>Saldo</th>
+                      <th>Ostatnia wplata</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-balance-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="billing-ledger-shell" class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Ksiega rozliczen</h3>
+                  <p class="subtle-note">Chronologiczny slad tego, co podnioslo albo obnizylo saldo rodziny.</p>
+                </div>
+                <span id="billing-ledger-entry-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Platnik</th>
+                      <th>Rodzaj wpisu</th>
+                      <th>Zmiana</th>
+                      <th>Saldo po</th>
+                      <th>Notatka</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-ledger-entry-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="content-grid contractors-grid">
+            <div id="billing-matches-shell" class="panel detail-panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Dopasowania platnosci</h3>
+                  <p class="subtle-note">Mozesz dopasowac cala wplate do rodziny albo rozbijac ja recznie na konkretne naleznosci.</p>
+                </div>
+                <span id="billing-payment-match-count" class="pill"></span>
+              </div>
+              <form id="billing-manual-match-form" class="field-grid">
+                <div class="field">
+                  <label>Transakcja</label>
+                  <select id="billing-match-transaction-id"></select>
+                </div>
+                <div class="field">
+                  <label>Platnik</label>
+                  <select id="billing-match-payer-id"></select>
+                </div>
+                <div class="field">
+                  <label>Naleznosc</label>
+                  <select id="billing-match-charge-id"></select>
+                </div>
+                <div class="field">
+                  <label>Kwota dopasowania</label>
+                  <input id="billing-match-amount" type="number" min="0.01" step="0.01" placeholder="0.00" />
+                </div>
+                <div class="field field-full">
+                  <label>Powod</label>
+                  <input id="billing-match-reason" type="text" placeholder="np. Platnosc za dwoje dzieci, platnosc czesciowa albo korekta tytulu" />
+                </div>
+                <div id="billing-match-helper-note" class="subtle-note field-full">
+                  Wybierz platnika, aby zobaczyc jego otwarte naleznosci i recznie rozdzielic rodzinna wplate.
+                </div>
+                <div class="filters-actions field-full">
+                  <button type="submit">Dopasuj platnosc</button>
+                </div>
+              </form>
+              <div class="table-wrap" style="margin-top: 18px;">
+                <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Transakcja</th>
+                      <th>Platnik</th>
+                      <th>Dopasowana kwota</th>
+                      <th>Powod</th>
+                      <th>Data</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-payment-match-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div id="billing-family-allocation-shell" class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Otwarte naleznosci platnika</h3>
+                  <p class="subtle-note">Minimalny etap rozksiegowania rodzinnego: wybierasz platnika i od razu widzisz, co jeszcze jest do pokrycia.</p>
+                </div>
+                <span id="billing-open-charge-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Uczen</th>
+                      <th>Okres</th>
+                      <th>Termin</th>
+                      <th>Kwota</th>
+                      <th>Model</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-open-charge-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="content-grid contractors-grid">
+            <div id="billing-accounts-shell" class="panel">
+              <div class="panel-header">
+                <h3>Rachunki bankowe organizacji</h3>
+                <span id="billing-bank-account-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                    <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Organizacja</th>
+                      <th>Nazwa rachunku</th>
+                      <th>Bank</th>
+                      <th>IBAN</th>
+                      <th>Waluta</th>
+                      <th>Aktywny</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-bank-account-table-body"></tbody>
+                </table>
+              </div>
+
+              <div class="panel-header" style="margin-top: 18px;">
+                <h3>Dodaj rachunek bankowy</h3>
+              </div>
+              <form id="billing-bank-account-form" class="field-grid">
+                <div class="field">
+                  <label>Nazwa rachunku</label>
+                  <input id="billing-account-name" name="account_name" type="text" placeholder="np. Rachunek glowny" />
+                </div>
+                <div class="field">
+                  <label>Nazwa banku</label>
+                  <input id="billing-bank-name" name="bank_name" type="text" placeholder="np. mBank" />
+                </div>
+                <div class="field">
+                  <label>IBAN</label>
+                  <input id="billing-iban" name="iban" type="text" placeholder="np. PL12123456789012345678901234" />
+                </div>
+                <div class="field">
+                  <label>Waluta</label>
+                  <input id="billing-currency" name="currency" type="text" value="PLN" maxlength="3" />
+                </div>
+                <div class="filters-actions">
+                  <button type="submit" id="billing-save-account-button">Dodaj rachunek</button>
+                </div>
+              </form>
+            </div>
+
+            <div id="billing-import-shell" class="panel detail-panel">
+              <div class="panel-header">
+                <h3>Import wyciagu CSV</h3>
+              </div>
+              <form id="billing-statement-import-form" class="field-grid">
+                <div class="field">
+                  <label>Rachunek bankowy</label>
+                  <select id="billing-import-bank-account-id" name="billing_bank_account_id"></select>
+                </div>
+                <div class="field">
+                  <label>Plik CSV</label>
+                  <input id="billing-import-file" name="statement_file" type="file" accept=".csv,text/csv" />
+                </div>
+                <div class="filters-actions">
+                  <button type="submit" id="billing-import-button">Importuj wyciag</button>
+                </div>
+                <p class="subtle-note">
+                  Na tym etapie modul zapisuje transakcje z wyciagu i pomija duplikaty przy ponownym imporcie.
+                </p>
+              </form>
+
+              <div id="billing-last-import-summary" class="empty-state" style="margin-top: 16px;">
+                Po imporcie tutaj pojawi sie podsumowanie ostatniego wyciagu.
+              </div>
+
+              <div class="panel-header" style="margin-top: 18px;">
+                <h3>Transakcje z wyciagow</h3>
+                <span id="billing-transaction-count" class="pill"></span>
+              </div>
+              <div class="table-wrap">
+                    <table class="mobile-card-table">
+                  <thead>
+                    <tr>
+                      <th>Data ksiegowania</th>
+                      <th>Organizacja</th>
+                      <th>Rachunek</th>
+                      <th>Kwota</th>
+                      <th>Kierunek</th>
+                      <th>Kontrahent</th>
+                      <th>Tytul</th>
+                      <th>Referencja</th>
+                      <th>Status dopasowania</th>
+                    </tr>
+                  </thead>
+                  <tbody id="billing-transaction-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="support-view" class="view view-support">
+          <div id="support-root"></div>
+        </section>
+
+        <section id="inbox-view" class="view">
+          <div id="inbox-root"></div>
+        </section>
+
+        <section id="views-view" class="view">
+          <div id="views-root"></div>
+        </section>
+
+        <section id="automation-view" class="view">
+          <div id="automation-root"></div>
+        </section>
+
+        <section id="health-view" class="view">
+          <div id="health-root"></div>
+        </section>
+
+        <section id="knowledge-view" class="view view-knowledge">
+          <div class="knowledge-studio">
+          <div id="knowledge-overview-shell" class="panel knowledge-shell knowledge-command-card">
+            <div class="panel-header">
+              <div>
+                <h3>Asystent Firmowy</h3>
+                <p class="subtle-note">
+                  Jedna baza dokumentow dla organizacji: pracownicy moga pytac asystenta albo przejsc do biblioteki plikow i pobrac potrzebny wzor.
+                </p>
+              </div>
+              <span id="knowledge-count" class="pill"></span>
+            </div>
+            <div class="summary-grid">
+              <div class="summary-item">
+                <strong>Folder organizacji</strong>
+                <div id="knowledge-folder-path">-</div>
+              </div>
+              <div class="summary-item">
+                <strong>Status dostepu</strong>
+                <div id="knowledge-access-note">Zaloguj sie, aby pracowac z baza wiedzy.</div>
+              </div>
+              <div class="summary-item">
+                <strong>Pipeline dokumentow</strong>
+                <div id="knowledge-pipeline-summary" class="pill-row"></div>
+              </div>
+            </div>
+            <div class="knowledge-mode-switch" id="knowledge-mode-switch">
+              <button type="button" class="secondary" id="knowledge-mode-assistant">Asystent</button>
+              <button type="button" class="secondary" id="knowledge-mode-documents">Dokumenty</button>
+            </div>
+            <div id="knowledge-documents-summary" class="subtle-note"></div>
+          </div>
+          <div class="content-grid contractors-grid knowledge-studio-grid">
+            <div class="panel knowledge-library-column" id="knowledge-documents-pane">
+              <div class="panel-header">
+                <h3>Dokumenty firmowe</h3>
+                <span id="knowledge-downloadable-count" class="pill"></span>
+              </div>
+              <div class="summary-grid hidden">
+                <div class="summary-item">
+                  <strong>Folder organizacji</strong>
+                  <div id="knowledge-folder-path-legacy">-</div>
+                </div>
+                <div class="summary-item">
+                  <strong>Status dostępu</strong>
+                  <div id="knowledge-access-note-legacy">Zaloguj się, aby pracować z bazą wiedzy.</div>
+                </div>
+                <div class="summary-item">
+                  <strong>Pipeline dokumentów</strong>
+                  <div id="knowledge-pipeline-summary-legacy" class="pill-row"></div>
+                </div>
+              </div>
+              <form id="knowledge-upload-form" class="field-grid">
+                <div class="field">
+                  <label>Tytuł dokumentu</label>
+                  <input id="knowledge-title" type="text" placeholder="np. Procedura urlopowa" />
+                </div>
+                <div class="field">
+                  <label>Plik</label>
+                  <input id="knowledge-file" type="file" accept=".txt,.md,.markdown,.csv,.json,.xml,.html,.htm,.log,.ini,.yaml,.yml,.docx,.pdf,.xlsx,.jpg,.jpeg,.png,.bmp,.tif,.tiff,.webp" />
+                </div>
+                <div class="field">
+                  <label>Folder w bibliotece</label>
+                  <input id="knowledge-library-path" type="text" placeholder="np. Wzory/HR albo Procedury/Operacyjne" />
+                </div>
+                <div class="field field-full">
+                  <label>Widocznosc dokumentu</label>
+                  <div class="knowledge-option-grid">
+                    <label class="checkbox-row">
+                      <input id="knowledge-is-downloadable" type="checkbox" checked />
+                      <span>Pokazuj w zakladce Dokumenty i pozwol pobrac plik</span>
+                    </label>
+                    <label class="checkbox-row">
+                      <input id="knowledge-use-in-assistant" type="checkbox" checked />
+                      <span>Uzywaj tego dokumentu w odpowiedziach asystenta</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="field field-full">
+                  <label>Treść dokumentu lub dodatkowy opis</label>
+                  <textarea id="knowledge-content" rows="7" placeholder="Możesz wkleić treść dokumentu albo dodać opis pomagający indeksacji."></textarea>
+                </div>
+                <div class="filters-actions">
+                  <button type="submit" id="knowledge-save-button">Dodaj do bazy wiedzy</button>
+                  <button type="button" class="secondary" id="knowledge-sync-button">Synchronizuj folder</button>
+                </div>
+                <div id="knowledge-import-feedback" class="knowledge-import-feedback">
+                  <strong id="knowledge-import-title">Import dokumentow</strong>
+                  <div id="knowledge-import-description">Obslugiwane formaty: TXT, MD, CSV, JSON, XML, HTML, DOCX, PDF, XLSX oraz obrazy JPG/PNG/TIFF.</div>
+                </div>
+                <p class="subtle-note">
+                  Kazdy dokument dostepny dla uzytkownika moze byc znaleziony w wyszukiwarce, a pliki oznaczone do pobrania trafiaja do biblioteki firmowej.
+                </p>
+                <p class="subtle-note">
+                  Import jest dostepny tylko dla kont z wlaczonym uprawnieniem dodawania plikow do bazy wiedzy.
+                </p>
+                <p class="subtle-note">
+                  Operator, Koordynator, Administrator organizacji albo Właściciel systemu może dodać plik tutaj albo wrzucić dokument bezpośrednio do folderu organizacji i użyć synchronizacji.
+                </p>
+              </form>
+              <div class="field-grid knowledge-filter-grid">
+                <div class="field">
+                  <label>Stan pliku</label>
+                  <select id="knowledge-filter-lifecycle">
+                    <option value="">Wszystkie</option>
+                    <option value="active">Aktywny</option>
+                    <option value="archived">Archiwalny</option>
+                    <option value="deleted">Usuniety</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Status przetwarzania</label>
+                  <select id="knowledge-filter-status">
+                    <option value="">Wszystkie statusy</option>
+                    <option value="queued">W kolejce</option>
+                    <option value="processing">Przetwarzanie</option>
+                    <option value="ready">Gotowy</option>
+                    <option value="error">Blad</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Zrodlo</label>
+                  <select id="knowledge-filter-source">
+                    <option value="">Wszystkie zrodla</option>
+                    <option value="manual">Tekst reczny</option>
+                    <option value="upload">Wgrany plik</option>
+                    <option value="folder_sync">Folder organizacji</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Obieg dokumentu</label>
+                  <select id="knowledge-filter-business-status">
+                    <option value="">Wszystkie etapy</option>
+                    <option value="roboczy">Roboczy</option>
+                    <option value="do_sprawdzenia">Do sprawdzenia</option>
+                    <option value="do_akceptacji">Do akceptacji</option>
+                    <option value="obowiazujacy">Obowiazujacy</option>
+                    <option value="archiwalny">Archiwalny</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Szukaj pliku</label>
+                  <input id="knowledge-filter-search" type="search" placeholder="np. umowa, wzor, delegacje, regulamin" />
+                </div>
+                <div class="filters-actions knowledge-filter-actions">
+                  <button type="button" class="secondary" id="knowledge-clear-filters">Wyczysc filtry</button>
+                </div>
+              </div>
+              <div class="knowledge-documents-view-switch" id="knowledge-documents-view-switch">
+                <button type="button" class="secondary" id="knowledge-documents-view-recent">Ostatnio dodane</button>
+                <button type="button" class="secondary" id="knowledge-documents-view-folders">Foldery</button>
+              </div>
+              <div id="knowledge-documents" class="list">
+                <div class="empty-state">Brak dokumentów w bazie wiedzy.</div>
+              </div>
+            </div>
+
+            <div id="knowledge-hub-shell" class="panel detail-panel knowledge-hub-panel">
+              <div id="knowledge-assistant-pane" class="knowledge-intelligence-card">
+              <div class="panel-header">
+                <h3>Asystent</h3>
+              </div>
+              <form id="knowledge-question-form" class="stack">
+                <input id="knowledge-question" type="search" placeholder="Zadaj pytanie o procedury, umowy albo polityki firmy..." />
+                <button type="submit">Zapytaj bazę wiedzy</button>
+              </form>
+              <div id="knowledge-question-suggestions" class="knowledge-question-suggestions"></div>
+              <div id="knowledge-answer-empty" class="empty-state">
+                Zadaj pytanie, a moduł pokaże odpowiedź opartą wyłącznie na dokumentach tej organizacji.
+              </div>
+              <div id="knowledge-answer" class="hidden"></div>
+              </div>
+              <div class="knowledge-side-stack knowledge-context-grid">
+                <section id="knowledge-preview-shell" class="knowledge-side-section">
+                  <div class="panel-header knowledge-section-header">
+                    <h3>Podglad dokumentu</h3>
+                    <span id="knowledge-selected-version" class="pill"></span>
+                  </div>
+                  <div id="knowledge-selected-document" class="empty-state">
+                    Wybierz dokument z listy, aby zobaczyc szczegoly, wersje i fragmenty tresci.
+                  </div>
+                </section>
+                <section id="knowledge-my-work-shell" class="knowledge-side-section">
+                  <div class="panel-header knowledge-section-header">
+                    <h3>Moja praca</h3>
+                    <span id="my-work-count" class="pill"></span>
+                  </div>
+                  <div id="my-work-panel" class="empty-state">
+                    Zaloguj sie i wybierz organizacje, aby sprawdzic dostep do sekcji pracy osobistej.
+                  </div>
+                </section>
+                <section id="knowledge-admin-shell" class="knowledge-side-section">
+                  <div class="panel-header knowledge-section-header">
+                    <h3>Uprawnienia organizacji</h3>
+                    <span id="knowledge-admin-count" class="pill"></span>
+                  </div>
+                  <div id="knowledge-admin-panel" class="empty-state">
+                    Panel uprawnien pojawi sie po zaladowaniu danych organizacji.
+                  </div>
+                </section>
+              </div>
             </div>
           </div>
         </section>
 
         <section id="contractors-view" class="view">
           <div class="content-grid contractors-grid">
-            <div class="panel">
+            <div id="contractors-list-shell" class="panel">
               <div class="panel-header">
                 <h3>Lista kontrahentów</h3>
                 <input id="contractor-search" type="search" placeholder="Szukaj kontrahenta..." />
@@ -271,7 +2585,7 @@
               </div>
             </div>
 
-            <div class="panel detail-panel">
+            <div id="contractors-detail-shell" class="panel detail-panel">
               <div class="panel-header">
                 <h3>Szczegóły kontrahenta</h3>
               </div>
@@ -284,7 +2598,7 @@
         </section>
 
         <section id="logs-view" class="view">
-          <div class="panel">
+          <div id="logs-shell" class="panel">
             <div class="panel-header">
               <h3>Historia systemu</h3>
             </div>
@@ -311,7 +2625,7 @@
 
         <section id="organizations-view" class="view">
           <div class="content-grid contractors-grid">
-            <div class="panel">
+            <div id="organizations-list-shell" class="panel">
               <div class="panel-header">
                 <h3>Lista organizacji</h3>
               </div>
@@ -322,8 +2636,14 @@
                       <th>ID</th>
                       <th>Nazwa</th>
                       <th>Folder</th>
-                      <th>ID kanalu Telegram</th>
-                      <th>Nazwa kanalu Telegram</th>
+                      <th>Skrzynka e-mail</th>
+                      <th>Stan e-mail</th>
+                      <th>Ostatnie sprawdzenie</th>
+                      <th>Identyfikator KSeF</th>
+                      <th>Stan KSeF</th>
+                      <th>Ostatni KSeF</th>
+                      <th>Komunikator</th>
+                      <th>Cel / kanał</th>
                       <th>Aktywna</th>
                       <th>Użytkownicy</th>
                       <th>Faktury</th>
@@ -335,7 +2655,7 @@
               </div>
             </div>
 
-            <div class="panel detail-panel">
+            <div id="organizations-form-shell" class="panel detail-panel">
               <div class="panel-header">
                 <h3 id="organization-form-title">Nowa organizacja</h3>
               </div>
@@ -350,12 +2670,72 @@
                   <input id="organization-slug" name="slug" type="text" placeholder="np. biuro-rachunkowe-alfa" />
                 </div>
                 <div class="field">
-                  <label>ID kanalu Telegram</label>
-                  <input id="organization-telegram-chat-id" name="telegram_chat_id" type="text" placeholder="np. -1001234567890" />
+                  <label>Komunikator organizacji</label>
+                  <select id="organization-communication-provider" name="communication_provider">
+                    <option value="telegram">Telegram</option>
+                    <option value="slack">Slack</option>
+                    <option value="whatsapp">WhatsApp</option>
+                  </select>
                 </div>
                 <div class="field">
-                  <label>Nazwa kanalu Telegram</label>
-                  <input id="organization-telegram-chat-name" name="telegram_chat_name" type="text" placeholder="np. Klient Alfa - dokumenty" />
+                  <label>Aktywny kanał</label>
+                  <div id="organization-communication-provider-summary" class="subtle-note">
+                    Wybierz komunikator i uzupelnij jego dane ponizej.
+                  </div>
+                </div>
+                <div class="field field-span-2">
+                  <div id="organization-communication-setup" class="communication-setup-card"></div>
+                </div>
+                <div class="field field-span-2" data-organization-communication-section="telegram">
+                  <label>Telegram</label>
+                  <div class="field-grid">
+                    <div class="field">
+                      <label>ID kanalu Telegram (wymagane)</label>
+                      <input id="organization-telegram-chat-id" name="telegram_chat_id" type="text" placeholder="np. -1001234567890" />
+                    </div>
+                    <div class="field">
+                      <label>Nazwa kanalu Telegram (opcjonalnie)</label>
+                      <input id="organization-telegram-chat-name" name="telegram_chat_name" type="text" placeholder="np. Klient Alfa - dokumenty" />
+                    </div>
+                  </div>
+                </div>
+                <div class="field field-span-2 hidden" data-organization-communication-section="slack">
+                  <label>Slack</label>
+                  <div class="field-grid">
+                    <div class="field">
+                      <label>Workspace (opcjonalnie)</label>
+                      <input id="organization-slack-workspace-name" name="slack_workspace_name" type="text" placeholder="np. Casi Ops" />
+                    </div>
+                    <div class="field">
+                      <label>ID kanału (wymagane)</label>
+                      <input id="organization-slack-channel-id" name="slack_channel_id" type="text" placeholder="np. C0123456789" />
+                    </div>
+                    <div class="field field-span-2">
+                      <label>Nazwa kanału (opcjonalnie)</label>
+                      <input id="organization-slack-channel-name" name="slack_channel_name" type="text" placeholder="np. #faktury-klient-alfa" />
+                    </div>
+                  </div>
+                </div>
+                <div class="field field-span-2 hidden" data-organization-communication-section="whatsapp">
+                  <label>WhatsApp</label>
+                  <div class="field-grid">
+                    <div class="field">
+                      <label>Numer telefonu (wymagane)</label>
+                      <input id="organization-whatsapp-phone-number" name="whatsapp_phone_number" type="text" placeholder="np. +48123123123" />
+                    </div>
+                    <div class="field">
+                      <label>Nazwa widoczna (opcjonalnie)</label>
+                      <input id="organization-whatsapp-display-name" name="whatsapp_display_name" type="text" placeholder="np. Faktury Klient Alfa" />
+                    </div>
+                  </div>
+                </div>
+                <div class="field field-span-2">
+                  <div id="organization-communication-note" class="subtle-note">
+                    Organizacja ma jeden aktywny komunikator. Telegram i Slack sa juz podlaczone operacyjnie, a WhatsApp pozostaje gotowa konfiguracja do dalszej integracji.
+                  </div>
+                </div>
+                <div class="field field-span-2 hidden" id="system-communication-settings-shell">
+                  <div id="system-communication-settings" class="communication-setup-card"></div>
                 </div>
                 <div class="field">
                   <label>Status</label>
@@ -364,8 +2744,107 @@
                     <option value="0">Nieaktywna</option>
                   </select>
                 </div>
+                <div class="field field-span-2">
+                  <label>Pakiety organizacji</label>
+                  <label class="checkbox-inline">
+                    <input id="organization-module-manager-assistant" name="enabled_modules" type="checkbox" value="manager_assistant" />
+                    Wlacz Asystenta Szefa. Wlasciciel organizacji dostaje pelny planner, a pracownicy sekcje Moja praca w Asystencie Firmowym.
+                  </label>
+                  <div id="organization-modules-note" class="subtle-note">
+                    Tylko Wlasciciel systemu moze zmieniac aktywne pakiety organizacji.
+                  </div>
+                </div>
+                <div class="field field-span-2">
+                  <label>Skroty klawiszowe modulow</label>
+                  <div id="organization-module-shortcuts" class="field-grid"></div>
+                  <div class="subtle-note">
+                    Puste pole oznacza brak skrotu. Przyklady: Ctrl+1, Ctrl+Shift+K, Alt+2. W ramach organizacji kazdy skrot musi byc unikalny.
+                  </div>
+                </div>
+                <div class="field field-span-2">
+                  <label>Adres odbiorcy / alias organizacji</label>
+                  <input id="organization-email-inbox-address" name="email_inbox_address" type="email" placeholder="np. klient-faktury@casi24.com" />
+                  <div class="subtle-note">
+                    System czyta jedna centralna skrzynke IMAP i przypisuje wiadomosci do organizacji po adresie odbiorcy, nadawcy i frazie w temacie.
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Dozwolony nadawca</label>
+                  <input id="organization-email-allowed-sender" name="email_allowed_sender" type="email" placeholder="np. dokumenty@dostawca.pl" />
+                </div>
+                <div class="field">
+                  <label>Fraza w temacie</label>
+                  <input id="organization-email-subject-keyword" name="email_subject_keyword" type="text" placeholder="np. Faktura" />
+                </div>
+                <div class="field">
+                  <label>Integracja e-mail</label>
+                  <select id="organization-email-integration-enabled" name="email_integration_enabled">
+                    <option value="0">Wylaczona</option>
+                    <option value="1">Wlaczona</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Identyfikator firmy w KSeF</label>
+                  <input id="organization-ksef-company-identifier" name="ksef_company_identifier" type="text" placeholder="np. 1234567890" />
+                </div>
+                <div class="field">
+                  <label>Srodowisko KSeF</label>
+                  <select id="organization-ksef-environment" name="ksef_environment">
+                    <option value="demo">Demo</option>
+                    <option value="production">Produkcyjne</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Integracja KSeF</label>
+                  <select id="organization-ksef-integration-enabled" name="ksef_integration_enabled">
+                    <option value="0">Wylaczona</option>
+                    <option value="1">Wlaczona</option>
+                  </select>
+                </div>
+                <div class="field field-span-2">
+                  <label>Tymczasowy kierownik korekt KSeF</label>
+                  <select id="organization-ksef-delegate-user-id" name="ksef_correction_delegate_user_id">
+                    <option value="">Brak delegata</option>
+                  </select>
+                  <div class="subtle-note">
+                    Wlasciciel organizacji moze czasowo przekazac zatwierdzanie i odrzucanie prosb o lokalna korekte danych
+                    potwierdzonych z KSeF.
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Delegacja wazna do</label>
+                  <input id="organization-ksef-delegate-expires-at" name="ksef_correction_delegate_expires_at" type="datetime-local" />
+                </div>
+                <div class="field field-span-2">
+                  <label>Stan integracji e-mail</label>
+                  <div id="organization-email-summary" class="subtle-note">
+                    Ustaw adres organizacji i centralna skrzynke IMAP, aby sprawdzac poczte.
+                  </div>
+                </div>
+                <div class="field field-span-2">
+                  <label>Stan integracji KSeF</label>
+                  <div id="organization-ksef-summary" class="subtle-note">
+                    Ustaw identyfikator firmy i srodowisko KSeF, aby pobierac faktury z glownego zrodla.
+                  </div>
+                </div>
+                <div class="field field-span-2">
+                  <label>Ostatnie importy e-mail</label>
+                  <div id="organization-email-import-runs" class="empty-state">
+                    Zapisz albo wybierz organizacje, aby zobaczyc historie sprawdzen skrzynki.
+                  </div>
+                </div>
+                <div class="field field-span-2">
+                  <label>Ostatnie importy KSeF</label>
+                  <div id="organization-ksef-import-runs" class="empty-state">
+                    Zapisz albo wybierz organizacje, aby zobaczyc historie sprawdzen KSeF.
+                  </div>
+                </div>
                 <div class="filters-actions">
                   <button type="submit">Zapisz organizację</button>
+                  <button type="button" class="secondary" id="organization-test-email-connection">Testuj polaczenie</button>
+                  <button type="button" class="secondary" id="organization-check-email">Sprawdz e-mail</button>
+                  <button type="button" class="secondary" id="organization-test-ksef-connection">Testuj KSeF</button>
+                  <button type="button" class="secondary" id="organization-check-ksef">Sprawdz KSeF</button>
                   <button type="button" class="secondary" id="reset-organization-form">Wyczyść formularz</button>
                 </div>
               </form>
@@ -373,9 +2852,50 @@
           </div>
         </section>
 
+        <section id="email-center-view" class="view">
+          <div class="content-grid contractors-grid">
+            <div id="email-center-summary-shell" class="panel">
+              <div class="panel-header">
+                <h3>Centrum integracji</h3>
+              </div>
+              <div id="email-center-summary" class="stack">
+                <div class="empty-state">Ladowanie centrum integracji...</div>
+              </div>
+              <div class="filters-actions">
+                <button type="button" id="email-center-google-connect">Polacz Google Workspace</button>
+                <button type="button" class="secondary" id="email-center-google-disconnect">Rozlacz skrzynke</button>
+                <button type="button" class="secondary" id="email-center-refresh">Odswiez centrum</button>
+              </div>
+              <div class="subtle-note">
+                To centrum pokazuje stan e-maila, KSeF, OCR, Telegrama, Slacka, magazynu plikow i automatycznych cykli.
+              </div>
+            </div>
+
+            <div id="email-center-runs-shell" class="panel detail-panel">
+              <div class="panel-header">
+                <h3>Ostatnie importy e-mail</h3>
+                <span id="email-center-count" class="pill"></span>
+              </div>
+              <div id="email-center-runs" class="list">
+                <div class="empty-state">Brak danych o importach e-mail.</div>
+              </div>
+            </div>
+            <div id="ksef-center-runs-shell" class="panel detail-panel">
+              <div class="panel-header">
+                <h3>Ostatnie importy KSeF</h3>
+                <span id="ksef-center-count" class="pill"></span>
+              </div>
+              <div id="ksef-center-runs" class="list">
+                <div class="empty-state">Brak danych o importach KSeF.</div>
+              </div>
+            </div>
+          </div>
+          </div>
+        </section>
+
         <section id="users-view" class="view">
           <div class="content-grid contractors-grid">
-            <div class="panel">
+            <div id="users-list-shell" class="panel">
               <div class="panel-header">
                 <h3>Konta użytkowników</h3>
               </div>
@@ -387,8 +2907,13 @@
                       <th>Login</th>
                       <th>Nazwa widoczna</th>
                       <th>Organizacja</th>
+                      <th>Czlonkostwa</th>
                       <th>ID użytkownika Telegram</th>
+                      <th>Przypomnienia TG</th>
                       <th>Rola</th>
+                      <th>Baza wiedzy</th>
+                      <th>Google</th>
+                      <th>Kalendarz organizacji</th>
                       <th>Aktywne</th>
                       <th>Ostatnie logowanie</th>
                       <th>Dodane przez</th>
@@ -399,7 +2924,7 @@
               </div>
             </div>
 
-            <div class="panel detail-panel">
+            <div id="users-form-shell" class="panel detail-panel">
               <div class="panel-header">
                 <h3 id="user-form-title">Nowe konto</h3>
               </div>
@@ -422,8 +2947,53 @@
                   <input id="user-telegram-user-id" name="telegram_user_id" type="text" placeholder="np. 582114092" />
                 </div>
                 <div class="field">
+                  <label class="checkbox-inline">
+                    <input id="user-telegram-reminders-enabled" name="telegram_reminders_enabled" type="checkbox" value="1" checked />
+                    Otrzymuje przypomnienia Telegram
+                  </label>
+                </div>
+                <div class="field">
                   <label>Rola</label>
                   <select id="user-role" name="role"></select>
+                </div>
+                <div class="field">
+                  <label class="checkbox-inline">
+                    <input id="user-can-upload-knowledge" name="can_upload_knowledge" type="checkbox" value="1" />
+                    Moze dodawac pliki do bazy wiedzy
+                  </label>
+                </div>
+                <div class="field field-full">
+                  <label>Capability modułu wiedzy</label>
+                  <div id="user-capabilities-list" class="capability-grid"></div>
+                  <p class="subtle-note">Role zostają, ale tutaj ustawiasz konkretne prawa w module wiedzy.</p>
+                </div>
+                <div class="field field-full" id="user-google-calendar-admin-box">
+                  <label>Google pracownika i kalendarz organizacji</label>
+                  <div id="user-google-calendar-status" class="subtle-note">Zapisz konto albo wybierz istniejace, aby sprawdzic stan polaczenia Google.</div>
+                  <div id="user-google-calendar-email" class="subtle-note"></div>
+                  <div id="user-google-calendar-approved-by" class="subtle-note"></div>
+                  <p class="subtle-note">
+                    Adres podlaczony przez pracownika jest widoczny dla Wlasciciela systemu i Administratora organizacji.
+                  </p>
+                  <div class="filters-actions">
+                    <button type="button" id="approve-user-google-calendar">Zatwierdz konto Google</button>
+                    <button type="button" class="secondary" id="reject-user-google-calendar">Odrzuc konto Google</button>
+                  </div>
+                  <div class="field" style="margin-top: 12px;">
+                    <label>Przypisany kalendarz organizacji</label>
+                    <div id="user-assigned-organization-calendar" class="subtle-note">Brak przypisanego kalendarza organizacji.</div>
+                  </div>
+                  <div class="field">
+                    <label>Kalendarz organizacji do przypisania</label>
+                    <select id="user-organization-calendar-select"></select>
+                    <p class="subtle-note">
+                      Jesli pracownik nie ma wlasnego konta sluzbowego, mozesz przypisac mu jeden z kalendarzy organizacji.
+                    </p>
+                  </div>
+                  <div class="filters-actions">
+                    <button type="button" id="assign-user-organization-calendar">Przypisz kalendarz organizacji</button>
+                    <button type="button" class="secondary" id="remove-user-organization-calendar">Usun przypisanie</button>
+                  </div>
                 </div>
                 <div class="field">
                   <label>Status</label>
@@ -448,6 +3018,11 @@
     </div>
 
     <div id="toast" class="toast hidden"></div>
-    <script src="/app.js"></script>
+    <script src="/app.js?v=20260418j"></script>
+    <script src="/workspace-shell.js?v=20260418b"></script>
+    <script src="/knowledge-overrides.js?v=20260418d"></script>
+    <script src="/search-enhancements.js?v=20260412a"></script>
+    <script src="/voice-inputs.js?v=20260412a"></script>
+    <script src="/whiteboard.js?v=20260418b"></script>
   </body>
 </html>

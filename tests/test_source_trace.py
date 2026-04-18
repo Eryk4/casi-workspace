@@ -16,6 +16,8 @@ class SourceTraceTests(unittest.TestCase):
 
     def test_telegram_import_stores_sender_trace_and_structured_paths(self) -> None:
         admin = self.services["auth_service"].list_users()[0]
+        default_organization = self.services["organization_repository"].ensure_default_organization()
+        default_slug = str(default_organization["slug"])
         self.services["auth_service"].create_user(
             {
                 "login": "Eryk",
@@ -24,9 +26,11 @@ class SourceTraceTests(unittest.TestCase):
                 "password": "9834",
                 "role": "operator",
                 "is_active": 1,
+                "organization_id": default_organization["organization_id"],
             },
             actor_login="admin",
             actor_user_id=admin["user_id"],
+            actor_user=admin,
         )
 
         invoice = self.services["invoice_service"].import_mock("TELEGRAM")
@@ -40,13 +44,13 @@ class SourceTraceTests(unittest.TestCase):
         self.assertEqual(detail["invoice"]["source_sender_name"], "eryklach95")
         self.assertEqual(detail["invoice"]["source_sender_id"], "582114092")
         self.assertEqual(detail["invoice"]["storage_backend"], "lokalny")
-        self.assertTrue(detail["invoice"]["file_storage_key"].startswith("organizacje/organizacja-domyslna/TELEGRAM/"))
-        self.assertTrue(detail["invoice"]["ocr_storage_key"].startswith("organizacje/organizacja-domyslna/TELEGRAM/"))
+        self.assertTrue(detail["invoice"]["file_storage_key"].startswith(f"organizacje/{default_slug}/TELEGRAM/"))
+        self.assertTrue(detail["invoice"]["ocr_storage_key"].startswith(f"organizacje/{default_slug}/TELEGRAM/"))
         self.assertTrue(
-            detail["invoice"]["file_link"].startswith("/pliki/dokumenty/organizacje/organizacja-domyslna/TELEGRAM/2026-04-07/")
+            detail["invoice"]["file_link"].startswith(f"/pliki/dokumenty/organizacje/{default_slug}/TELEGRAM/2026-04-07/")
         )
         self.assertTrue(
-            detail["invoice"]["ocr_link"].startswith("/pliki/ocr/organizacje/organizacja-domyslna/TELEGRAM/2026-04-07/")
+            detail["invoice"]["ocr_link"].startswith(f"/pliki/ocr/organizacje/{default_slug}/TELEGRAM/2026-04-07/")
         )
 
         source_trace = detail["source_trace"]

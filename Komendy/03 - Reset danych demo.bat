@@ -10,5 +10,9 @@ if /I not "%confirm%"=="tak" (
   pause
   exit /b 0
 )
+set "INVOICE_DATABASE_URL="
+set "DATABASE_URL="
+set "INVOICE_DB_ENGINE=sqlite"
+set "INVOICE_SQLITE_PATH=%cd%\data\invoice_ops.sqlite3"
 python run.py --reset
 pause

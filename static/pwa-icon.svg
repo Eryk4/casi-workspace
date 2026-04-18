@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Panel Faktur">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f5c90"/>
+      <stop offset="100%" stop-color="#0b1f33"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <rect x="108" y="104" width="296" height="304" rx="28" fill="#ffffff" opacity="0.96"/>
+  <rect x="148" y="154" width="176" height="22" rx="11" fill="#cfe0ef"/>
+  <rect x="148" y="198" width="216" height="22" rx="11" fill="#cfe0ef"/>
+  <rect x="148" y="242" width="164" height="22" rx="11" fill="#cfe0ef"/>
+  <path d="M322 286l31 31 67-73" fill="none" stroke="#0f5c90" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="150" cy="330" r="16" fill="#0f5c90"/>
+  <circle cx="190" cy="330" r="16" fill="#0f5c90" opacity="0.8"/>
+</svg>

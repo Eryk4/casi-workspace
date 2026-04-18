@@ -4,8 +4,23 @@ Praktyczna aplikacja webowa do pracy operacyjnej. System laczy dwa obszary:
 
 - obsluge faktur firmowych
 - modul `Asystent Szefa` do zadan, wydarzen, terminow i notatek
+- modul `Asystent Firmowy` do bazy wiedzy organizacji i odpowiadania na pytania na podstawie dokumentow
+
+Repozytorium ma tez juz fundament pod kolejny obszar:
+
+- modul rozliczen klientow organizacji z importem wyciagow bankowych
 
 Projekt jest przygotowany tak, zeby dalo sie go dalej rozwijac pod klientow, zespol i wdrozenie serwerowe.
+
+## Pozycja W Ekosystemie
+
+Ta aplikacja pozostaje osobnym produktem, ale jest przygotowywana do pracy w wiekszym ekosystemie dwoch aplikacji produktowych.
+
+W praktyce oznacza to:
+
+- osobny frontend, UX i logike domenowa dla tego produktu
+- gotowosc do wspolnego fundamentu dla kont, organizacji, rol, capability, sesji, storage i audit logu
+- brak sztucznego laczenia wszystkiego w jedna mega-aplikacje
 
 ## Co juz dziala
 
@@ -15,6 +30,10 @@ Projekt jest przygotowany tak, zeby dalo sie go dalej rozwijac pod klientow, zes
 - logika duplikatow:
   - ten sam numer `KSeF` = pewny duplikat
   - ten sam `numer faktury + NIP wystawcy` = podejrzenie duplikatu
+- nadrzednosc zrodel danych:
+  - `KSeF` jest zrodlem nadrzednym dla danych faktury
+  - `e-mail` i `Telegram` moga utworzyc rekord wstepny, ale przy dopasowaniu do `KSeF` dane z `KSeF` wygrywaja
+  - w szczegolach faktury pokazywane jest `zrodlo nadrzedne`
 - statusy i reczna weryfikacja
 - kontrahenci i oznaczenie nowych kontrahentow
 - historia zdarzen
@@ -27,15 +46,46 @@ Projekt jest przygotowany tak, zeby dalo sie go dalej rozwijac pod klientow, zes
 
 - lista zadan, wydarzen i przypomnien
 - tworzenie zadania w organizacji
+- domyslnie prywatne wpisy uzytkownika
+- mozliwosc udostepnienia wpisu wybranym osobom albo calej organizacji
 - przypisanie do uzytkownika z tej samej organizacji
 - terminy `data + godzina`
 - osobna data i godzina przypomnienia dla zadania lub wydarzenia
+- kilka nazwanych kalendarzy Google na uzytkownika, na przyklad `Firma A`, `Firma B` albo `Rodzinny`
+- wybor kalendarza Google przy zapisie zadania albo wydarzenia
+- eksport do Google Calendar przez prywatny adres URL `.ics`
+- ustawienia przypomnien uzytkownika: cisza nocna i ponowienie co X minut
 - statusy i priorytety
 - notatki do zadania
 - historia zmian zadania
 - filtrowanie po typie, statusie, priorytecie, osobie i terminie
 - widok aktywnych przypomnien na pulpicie
+- automatyczne przypomnienia Telegram wysylane przez outbox i worker w tle, z widocznym statusem kolejki i recznym uruchomieniem ponownego przebiegu
 - osobna zakladka `Asystent Szefa` w tym samym panelu
+
+### Asystent Firmowy - baza wiedzy
+
+- osobna zakladka `Asystent Firmowy`
+- oddzielna baza wiedzy dla kazdej organizacji
+- import plikow przez formularz i synchronizacje folderu organizacji
+- obslugiwane formaty: `TXT`, `DOCX`, `XLSX`, `PDF`, obrazy z OCR
+- asynchroniczna kolejka przetwarzania dokumentow
+- statusy dokumentow: `queued`, `processing`, `ready`, `error`
+- wersjonowanie dokumentow po kazdym przetworzeniu
+- odpowiedzi z cytowaniem dokumentu, wersji i linkiem do zrodla
+- uprawnienia per uzytkownik:
+  - `knowledge.read`
+  - `knowledge.upload`
+  - `knowledge.sync`
+  - `knowledge.manage`
+
+### Rozliczenia klientow - fundament
+
+- rachunki bankowe przypisane do organizacji
+- rejestr importow wyciagow CSV
+- normalizacja transakcji bankowych do wspolnej tabeli
+- pomijanie duplikatow przy ponownym imporcie tych samych pozycji
+- przygotowanie pod dopasowanie wplat po identyfikatorze klienta z tytulu przelewu
 
 ## Organizacje i bezpieczenstwo danych
 
@@ -46,6 +96,7 @@ System ma fundament pod prace z klientami:
 - uzytkownik organizacji widzi tylko dane swojej organizacji
 - duplikaty faktur sa wykrywane tylko w obrebie tej samej organizacji
 - dokumenty i OCR sa rozdzielone do osobnych katalogow organizacji
+- baza wiedzy, wersje dokumentow i kolejka przetwarzania sa trzymane osobno dla kazdej organizacji
 
 Przykladowy uklad plikow:
 
@@ -98,6 +149,24 @@ Start aplikacji:
 python run.py
 ```
 
+Tryb pelny z webem, schedulerm i workerem w jednym procesie:
+
+```bash
+python run.py --mode standalone
+```
+
+Sam panel webowy ze schedulowaniem przypomnien:
+
+```bash
+python run.py --mode web
+```
+
+Osobny worker do dostarczania przypomnien:
+
+```bash
+python run.py --mode worker
+```
+
 Start pod dostep z innego komputera w tej samej sieci:
 
 ```bash
@@ -129,6 +198,68 @@ Jesli nie chcesz wpisywac komend recznie, uzyj plikow z folderu:
 Komendy/
 ```
 
+## Testy
+
+Pelny zestaw testow nadal uruchamiasz tak:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Warstwa HTTP zostala rozbita na mniejsze paczki:
+
+- `tests/test_http_server_system.py`
+- `tests/test_http_server_integrations.py`
+- `tests/test_http_server_invoices.py`
+- `tests/test_http_server_access.py`
+- `tests/test_http_server_telegram.py`
+
+To ulatwia szybsze sprawdzanie zmian bez odpalania calego repo przy kazdej poprawce.
+Mozesz tez skorzystac z gotowych plikow:
+
+- `Komendy/13 - Testy HTTP.bat`
+- `Komendy/14 - Testy HTTP szybkie.bat`
+
+Najwieksze pakiety domenowe tez zostaly rozbite:
+
+- zadania:
+  - `tests/test_task_service.py`
+  - `tests/test_task_commands.py`
+  - `tests/test_task_http.py`
+- faktury:
+  - `tests/test_invoice_duplicates.py`
+  - `tests/test_invoice_review_and_ksef.py`
+  - `tests/test_invoice_collaboration.py`
+- kalendarze:
+  - `tests/test_calendar_service.py`
+  - `tests/test_calendar_google.py`
+  - `tests/test_calendar_http.py`
+- wyszukiwanie:
+  - `tests/test_search_access.py`
+  - `tests/test_search_descriptive.py`
+
+Do codziennej pracy sa gotowe tez osobne komendy:
+
+- `Komendy/15 - Testy zadan.bat`
+- `Komendy/16 - Testy faktur.bat`
+- `Komendy/17 - Testy kalendarzy.bat`
+- `Komendy/18 - Testy wyszukiwania.bat`
+
+Dodatkowo repo ma juz uporzadkowane profile testowe:
+
+- `python run_quality_checks.py --profile smoke`
+  - szybki i sensowny zestaw do codziennej pracy
+- `python run_quality_checks.py --profile predeploy`
+  - glowna kontrola przed wdrozeniem
+- `python run_quality_checks.py --profile full`
+  - pelne `unittest discover` dla calego repo
+
+Te same profile sa dostepne tez z folderu `Komendy/`:
+
+- `Komendy/19 - Testy smoke.bat`
+- `Komendy/20 - Kontrola przed deployem.bat`
+- `Komendy/21 - Pelny test discover.bat`
+
 ## Seed demonstracyjny
 
 Reset danych demo tworzy przykladowe rekordy:
@@ -148,6 +279,8 @@ Reset danych demo tworzy przykladowe rekordy:
 - `Historia systemu`
 - `Organizacje`
 - `Uzytkownicy`
+- `Asystent Firmowy`
+- `Rozliczenia klientow` - fundament backendowy pod dalsza rozbudowe
 
 ## Asystent Szefa - zakres MVP
 
@@ -172,15 +305,37 @@ Priorytety:
 - `wysoki`
 - `krytyczny`
 
+Zakres widocznosci:
+
+- `prywatne`
+- `wybrane_osoby`
+- `organizacja`
+
 Na tym etapie modul nie ma jeszcze:
 
 - zalacznikow do zadan
 - widoku kalendarzowego
 - integracji z Make
 - integracji z Telegramem dla zadan
+- pelnej synchronizacji dwukierunkowej z Google Calendar
 - automatycznych przypomnien w tle przez Telegram / e-mail / Make
 
 To jest cel kolejnych etapow.
+
+## Google Calendar - jak to dziala teraz
+
+Obecny model jest celowo prosty i stabilny:
+
+- kazdy uzytkownik moze zalozyc kilka wlasnych kalendarzy i nazwac je po swojemu
+- aplikacja generuje dla kazdego kalendarza prywatny adres `.ics`
+- ten adres dodajesz w Google Calendar przez `Inne kalendarze -> Z adresu URL`
+- zadania i wydarzenia przypisane do wybranego kalendarza pojawiaja sie potem w Google Calendar
+
+Wazne ograniczenia obecnej wersji:
+
+- to jest synchronizacja jednokierunkowa `aplikacja -> Google Calendar`
+- zmiany zrobione bezposrednio w Google Calendar nie wracaja jeszcze do aplikacji
+- Google odswieza subskrybowane kalendarze we wlasnym tempie, wiec aktualizacja nie zawsze jest natychmiastowa
 
 ## Ulatwienia pod migracje i Railway
 
@@ -205,6 +360,7 @@ Po migracji trzeba jeszcze skopiowac magazyn plikow dokumentow i OCR.
 Projekt jest przygotowany pod Railway:
 
 - aplikacja slucha na `0.0.0.0` i porcie z `PORT`
+- startuje w trybie `standalone`, czyli panel HTTP i petle tla ida w jednym procesie
 - jest endpoint zdrowia `GET /health`
 - konfiguracja Railway jest w pliku `railway.json`
 - przy `PostgreSQL` demo seed jest domyslnie wylaczony
@@ -228,6 +384,114 @@ INVOICE_SHOW_DEFAULT_LOGIN_HINT=0
 RAILWAY_VOLUME_MOUNT_PATH=/data
 ```
 
+Lokalnie najwygodniej nie wpisywac tego za kazdym razem recznie, tylko skopiowac:
+
+```text
+.env.local.example -> .env.local
+```
+
+System automatycznie czyta lokalne pliki:
+
+- `.env.local`
+- `data/local.env`
+
+Wazne:
+
+- te pliki sa prywatne i nie trafiaja do repo
+- zwykle wystarczy wpisac tam dane `IMAP`, `OCR` albo inne lokalne sekrety
+- zmienne ustawione bezposrednio w systemie dalej maja pierwszenstwo
+
+## E-mail organizacji
+
+Kazda organizacja ma teraz w panelu:
+
+- adres skrzynki organizacji
+- opcjonalnego dozwolonego nadawce
+- opcjonalna fraze w temacie
+- przycisk `Testuj polaczenie`
+- przycisk `Sprawdz e-mail`
+
+Po kliknieciu `Testuj polaczenie`:
+
+- system laczy sie ze skrzynka przez `IMAP`
+- nie importuje dokumentow
+- pokazuje, czy logowanie, folder i podstawowy odczyt wiadomosci dzialaja
+- zapisuje wynik ostatniego testu polaczenia w organizacji
+
+Po kliknieciu `Sprawdz e-mail`:
+
+- system sprawdza skrzynke przez `IMAP`
+- importuje na raz wszystkie nowe pasujace dokumenty
+- pokazuje, ile nowych faktur wpadlo
+- pomija juz znane wiadomosci
+- zapisuje wynik ostatniego sprawdzenia w organizacji
+- zapisuje pelny rejestr importu: tryb reczny albo automatyczny, liczbe sprawdzonych wiadomosci, zalaczniki i powody pominiec
+
+Jesli chcesz wlaczyc automat co kilka minut, dopisz tez:
+
+```text
+INVOICE_EMAIL_AUTOCHECK_ENABLED=1
+INVOICE_EMAIL_AUTOCHECK_SECONDS=300
+```
+
+To uruchamia cykliczne sprawdzanie wszystkich aktywnych organizacji, ktore maja:
+
+- wlaczona integracje e-mail
+- ustawiony adres odbiorcy
+- globalnie skonfigurowany `IMAP`
+
+Reczny przycisk `Sprawdz e-mail` nadal zostaje jako awaryjny i diagnostyczny.
+
+Do lokalnego podpiecia skrzynki uzupelnij w `.env.local`:
+
+```text
+INVOICE_EMAIL_IMAP_HOST=imap.gmail.com
+INVOICE_EMAIL_IMAP_PORT=993
+INVOICE_EMAIL_IMAP_USERNAME=twoja_skrzynka@twojadomena.pl
+INVOICE_EMAIL_IMAP_PASSWORD=twoje_haslo_aplikacji_google
+INVOICE_EMAIL_IMAP_FOLDER=INBOX
+INVOICE_EMAIL_IMAP_USE_SSL=1
+INVOICE_EMAIL_FETCH_LIMIT=100
+```
+
+Dla wygody masz tez gotowe pliki:
+
+- `Komendy\08 - Otworz ustawienia e-mail.bat`
+- `Komendy\09 - Test polaczenia e-mail.bat`
+- `Komendy\10 - Sprawdz gotowosc e-mail.bat`
+- `Komendy\11 - Konfigurator e-mail.bat`
+- `Komendy\12 - Sprawdz gotowosc Google OAuth e-mail.bat`
+
+Dla Google Workspace / Gmail zwykle potrzebujesz hasla aplikacji Google, a nie zwyklego hasla do konta.
+
+Na start najprostszy jest klasyczny IMAP z haslem aplikacji. To wystarcza do lokalnego testu i pierwszego wdrozenia.
+
+Rownolegle system ma juz przygotowany tryb Google Workspace OAuth dla centralnej skrzynki. Ten tryb przydaje sie, gdy:
+
+- chcesz odejsc od recznego trzymania hasla aplikacji
+- chcesz miec jedna centralna skrzynke dla wielu organizacji
+- chcesz przygotowac bardziej produkcyjny model pod przyszly ekosystem
+
+Do Google OAuth potrzebujesz dodatkowo:
+
+```text
+INVOICE_PUBLIC_BASE_URL=https://twoj-publiczny-adres
+INVOICE_EMAIL_GOOGLE_CLIENT_ID=...
+INVOICE_EMAIL_GOOGLE_CLIENT_SECRET=...
+```
+
+Wazne:
+
+- `INVOICE_PUBLIC_BASE_URL` musi byc publicznym adresem HTTPS
+- bez publicznego HTTPS nie zakonczysz autoryzacji Google
+- lokalnie mozesz wiec najpierw testowac IMAP, a OAuth dolaczyc pozniej
+
+`09 - Test polaczenia e-mail.bat` robi suchy test: laczy sie ze skrzynka, sprawdza folder i pokazuje, ile dokumentow system widzi jako nowe jeszcze przed kliknieciem `Sprawdz e-mail` w panelu.
+`10 - Sprawdz gotowosc e-mail.bat` sprawdza caly stan modulu: konfiguracje e-mail, organizacje gotowe do importu oraz stan Google Workspace OAuth.
+`11 - Konfigurator e-mail.bat` prowadzi krok po kroku przez wpisanie ustawien Google Workspace / IMAP, automatu i podstawowych pol OAuth i zapisuje je do `.env.local`.
+`12 - Sprawdz gotowosc Google OAuth e-mail.bat` sprawdza osobno, czy publiczny adres i klient Google sa juz gotowe do przycisku `Polacz Google Workspace`.
+
+
 Jesli chcesz wlaczyc Telegram dla faktur:
 
 ```text
@@ -248,6 +512,8 @@ Pierwszy prawdziwy przeplyw Telegram jest juz gotowy:
 
 - bot wysyla aktualizacje webhookiem do aplikacji
 - aplikacja pobiera PDF albo zdjecie z Telegrama
+- dokument zapisuje sie w organizacji przypisanej po `ID uzytkownika Telegram` albo `ID kanalu Telegram`
+- OCR probuje odczytac tresc lokalnie i wyciagnac numer faktury, NIP, daty, kwote i walute
 - zapisuje plik w folderze organizacji
 - dopasowuje uzytkownika po `ID uzytkownika Telegram`
 - tworzy fakture w organizacji tego uzytkownika
@@ -269,7 +535,28 @@ Wazne:
 
 - konto uzytkownika w systemie musi miec wpisane `ID uzytkownika Telegram`
 - to konto musi byc przypisane do organizacji
-- OCR dla faktur jest na tym etapie jeszcze warstwa testowa
+- jesli organizacja ma ustawione `ID kanalu Telegram`, system moze tez rozpoznac organizacje po czacie
+- jesli OCR nie odczyta kluczowych pol, faktura trafia automatycznie do `weryfikacji`
+
+### Lokalny OCR
+
+OCR dziala teraz w dwoch trybach:
+
+- `tesseract` - jesli na komputerze lub serwerze jest dostepny lokalny `Tesseract OCR`
+- `fallback` - jesli plik ma czytelna warstwe tekstowa, system sprobuje odczytac tekst bez pelnego OCR
+
+Opcjonalne zmienne srodowiskowe:
+
+```text
+INVOICE_TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
+INVOICE_OCR_LANGUAGE=pol+eng
+```
+
+Uwagi praktyczne:
+
+- zdjecia i skany z Telegrama wymagaja lokalnego `Tesseract`, zeby OCR byl naprawde skuteczny
+- tekstowe PDF-y potrafia zostac odczytane nawet bez `Tesseract`
+- w pulpicie aplikacji widac, czy OCR dziala jako `lokalny silnik aktywny`, czy tylko `tryb awaryjny`
 
 ## Testy
 
@@ -293,7 +580,9 @@ python -m unittest discover -s tests -v
 - `GET /api/tasks`
 - `GET /api/tasks/{id}`
 - `GET /api/tasks/users`
+- `GET /api/tasks/reminders/status`
 - `POST /api/tasks`
+- `POST /api/tasks/reminders/dispatch`
 - `PATCH /api/tasks/{id}`
 - `POST /api/tasks/{id}/notes`
 - `GET /api/contractors`
@@ -306,6 +595,11 @@ python -m unittest discover -s tests -v
 - `GET /api/users`
 - `POST /api/users`
 - `PATCH /api/users/{id}`
+- `GET /api/knowledge/documents`
+- `POST /api/knowledge/documents`
+- `POST /api/knowledge/sync`
+- `POST /api/knowledge/documents/{id}/reprocess`
+- `POST /api/knowledge/ask`
 - `POST /api/import/KSeF`
 - `POST /api/import/EMAIL`
 - `POST /api/import/TELEGRAM`
@@ -316,7 +610,7 @@ python -m unittest discover -s tests -v
 - prawdziwe API `KSeF`: `app/integrations/ksef_client.py`
 - prawdziwy odbior `e-maili`: `app/integrations/email_ingestion.py`
 - prawdziwy bot `Telegram`: `app/integrations/telegram_bot.py`
-- prawdziwy silnik `OCR`: `app/integrations/ocr_engine.py`
+- lokalny silnik `OCR` z parserem pol: `app/integrations/ocr_engine.py`
 
 ## Dalszy rozwoj
 
@@ -326,5 +620,5 @@ python -m unittest discover -s tests -v
 - integracje `Make` i `Telegram` dla modulu zadan
 - prawdziwy bot `Telegram` dla faktur
 - prawdziwy import `KSeF`
-- prawdziwy odbior poczty
+- produkcyjne wdrozenie centralnej skrzynki Google Workspace z OAuth
 - frontend `React / Next.js`

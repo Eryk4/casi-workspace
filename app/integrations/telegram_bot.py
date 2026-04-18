@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from app.integrations.ocr_engine import OCREngine
 
@@ -21,6 +21,10 @@ class TelegramBotAdapter:
         self.bot_token = bot_token.strip()
         self.webhook_secret = webhook_secret.strip()
 
+    def configure(self, *, bot_token: str = "", webhook_secret: str = "") -> None:
+        self.bot_token = str(bot_token or "").strip()
+        self.webhook_secret = str(webhook_secret or "").strip()
+
     @property
     def webhook_path(self) -> str | None:
         if not self.webhook_secret:
@@ -30,11 +34,38 @@ class TelegramBotAdapter:
     def is_configured(self) -> bool:
         return bool(self.bot_token and self.webhook_secret)
 
+    def can_send_messages(self) -> bool:
+        return bool(self.bot_token)
+
     def integration_status(self) -> dict[str, Any]:
         return {
             "enabled": self.is_configured(),
+            "outbound_enabled": self.can_send_messages(),
             "mode": "aktywny" if self.is_configured() else "wylaczony",
         }
+
+    def send_text_message(self, chat_id: str, text: str) -> dict[str, Any]:
+        normalized_chat_id = str(chat_id or "").strip()
+        normalized_text = str(text or "").strip()
+        if not self.can_send_messages():
+            raise TelegramBotError("Brak tokenu bota Telegram do wysylki powiadomien.")
+        if not normalized_chat_id:
+            raise TelegramBotError("Brak identyfikatora czatu Telegram do wysylki powiadomienia.")
+        if not normalized_text:
+            raise TelegramBotError("Brak tresci powiadomienia Telegram.")
+
+        request = Request(
+            f"https://api.telegram.org/bot{self.bot_token}/sendMessage",
+            data=json.dumps(
+                {
+                    "chat_id": normalized_chat_id,
+                    "text": normalized_text,
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        return self._telegram_api_json(request)
 
     def fetch_mock_invoice(self) -> dict[str, Any]:
         # TODO: tutaj podłącz prawdziwy Telegram bot / webhook, odbiór pliku,
@@ -201,6 +232,17 @@ class TelegramBotAdapter:
                 return json.loads(response.read().decode("utf-8"))
         except (HTTPError, URLError, json.JSONDecodeError) as error:
             raise TelegramBotError(f"Nie udało się pobrać danych z Telegrama: {error}") from error
+
+    def _telegram_api_json(self, request_or_url: str | Request) -> dict[str, Any]:
+        try:
+            with urlopen(request_or_url, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, json.JSONDecodeError) as error:
+            raise TelegramBotError(f"Nie udalo sie pobrac danych z Telegrama: {error}") from error
+        if isinstance(payload, dict) and payload.get("ok") is False:
+            description = str(payload.get("description") or "Telegram zwrocil blad wysylki.")
+            raise TelegramBotError(description)
+        return payload
 
     def _resolve_incoming_date(self, message: dict[str, Any]) -> str:
         raw_timestamp = message.get("date")

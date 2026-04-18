@@ -13,12 +13,14 @@ class SessionRepository:
                 connection,
                 """
                 INSERT INTO user_sessions (
-                    user_id, token_hash, ip_address, user_agent, created_at, last_seen_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    user_id, token_hash, device_id, device_label, ip_address, user_agent, created_at, last_seen_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["user_id"],
                     payload["token_hash"],
+                    payload.get("device_id"),
+                    payload.get("device_label"),
                     payload.get("ip_address"),
                     payload.get("user_agent"),
                     payload["created_at"],
@@ -38,6 +40,14 @@ class SessionRepository:
                     u.display_name,
                     u.role,
                     u.is_active,
+                    u.telegram_reminders_enabled,
+                    u.reminder_quiet_hours_start,
+                    u.reminder_quiet_hours_end,
+                    u.reminder_repeat_interval_minutes,
+                    u.can_upload_knowledge,
+                    u.workspace_state_json,
+                    u.workspace_state_updated_at,
+                    u.workspace_state_device_id,
                     u.organization_id,
                     o.name AS organization_name,
                     o.slug AS organization_slug
@@ -78,3 +88,33 @@ class SessionRepository:
                 "DELETE FROM user_sessions WHERE user_id = ?",
                 (user_id,),
             )
+
+    def delete_for_user_and_device_id(self, user_id: int, device_id: str) -> None:
+        with get_connection() as connection:
+            connection.execute(
+                "DELETE FROM user_sessions WHERE user_id = ? AND device_id = ?",
+                (user_id, device_id),
+            )
+
+    def count_active_devices_for_user(self, user_id: int, exclude_device_id: str | None = None) -> int:
+        query = """
+            SELECT COUNT(*)
+            FROM (
+                SELECT COALESCE(NULLIF(TRIM(COALESCE(device_id, '')), ''), 'session:' || CAST(session_id AS TEXT)) AS device_key
+                FROM user_sessions
+                WHERE user_id = ?
+                  AND expires_at > ?
+        """
+        params: list[Any] = [user_id, now_iso()]
+        if exclude_device_id:
+            query += """
+                  AND COALESCE(NULLIF(TRIM(COALESCE(device_id, '')), ''), '') <> ?
+            """
+            params.append(exclude_device_id)
+        query += """
+                GROUP BY COALESCE(NULLIF(TRIM(COALESCE(device_id, '')), ''), 'session:' || CAST(session_id AS TEXT))
+            ) active_devices
+        """
+        with get_connection() as connection:
+            row = connection.execute(query, tuple(params)).fetchone()
+        return int(row[0] if row else 0)

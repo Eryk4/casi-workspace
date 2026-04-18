@@ -2,12 +2,24 @@
 
 ## Cel
 
-System ma byc prostym panelem operacyjnym dla firmy i klientow. Obecnie obejmuje dwa glowne obszary:
+System ma byc prostym panelem operacyjnym dla firmy i klientow. Obecnie obejmuje trzy glowne obszary:
 
 - obsluge faktur
 - modul `Asystent Szefa` do zadan, wydarzen, przypomnien i notatek
+- modul `Asystent Firmowy` do bazy wiedzy organizacji i odpowiadania na pytania na podstawie dokumentow
+- fundament pod modul rozliczen klientow z importem wyciagow bankowych
 
 Architektura ma pozwolic na bezpieczna rozbudowe pod zespol, klientow, Telegram, Make i wdrozenie serwerowe.
+
+## Pozycja W Ekosystemie
+
+Ta aplikacja jest projektowana jako osobny produkt, ale gotowy do pracy w wiekszym ekosystemie dwoch aplikacji produktowych.
+
+To oznacza:
+
+- wlasny frontend, UX i logike domenowa dla tego produktu
+- gotowosc do wspolnego fundamentu dla kont, organizacji, rol, capability, sesji, storage i audit logu
+- brak sztucznego laczenia wszystkiego w jedna zakladke lub jeden kombajn
 
 ## Warstwy
 
@@ -38,7 +50,10 @@ Najwazniejsze repozytoria:
 - `invoice_repository.py`
 - `contractor_repository.py`
 - `event_repository.py`
+- `calendar_repository.py`
 - `task_repository.py`
+- `knowledge_repository.py`
+- `billing_repository.py`
 
 ### `app/services`
 
@@ -50,8 +65,11 @@ Warstwa logiki biznesowej:
 - `duplicate_detector.py` - reguly duplikatow
 - `dashboard_service.py` - dane pulpitu
 - `notification_service.py` - przygotowanie komunikatow o duplikatach
+- `calendar_service.py` - prywatne feedy Google Calendar i ustawienia przypomnien uzytkownika
 - `task_service.py` - zadania, notatki, historia zmian
+- `knowledge_service.py` - baza wiedzy organizacji, pipeline importu, OCR, wersjonowanie i odpowiedzi z cytowaniami
 - `storage_service.py` - zapis i odczyt plikow przez wspolna warstwe magazynu
+- `billing_service.py` - rachunki bankowe organizacji i import wyciagow CSV
 
 ### `app/integrations`
 
@@ -74,6 +92,7 @@ Panel webowy SPA po polsku:
 - pulpit
 - faktury
 - `Asystent Szefa`
+- `Asystent Firmowy`
 - kontrahenci
 - historia systemu
 - organizacje
@@ -100,9 +119,36 @@ Panel webowy SPA po polsku:
 - `password_hash`
 - `password_salt`
 - `role`
+- `telegram_reminders_enabled`
+- `reminder_quiet_hours_start`
+- `reminder_quiet_hours_end`
+- `reminder_repeat_interval_minutes`
 - `is_active`
 - `last_login_at`
 - `created_by_user_id`
+- `created_at`
+- `updated_at`
+
+### `user_capabilities`
+
+Jawne uprawnienia do modulow, niezalezne od samej roli.
+
+- `user_capability_id`
+- `user_id`
+- `capability_code`
+- `granted_at`
+
+### `user_calendars`
+
+Nazwane kalendarze uzytkownika do synchronizacji z Google Calendar przez prywatny adres `.ics`.
+
+- `user_calendar_id`
+- `owner_user_id`
+- `provider`
+- `display_name`
+- `description`
+- `sync_token`
+- `is_active`
 - `created_at`
 - `updated_at`
 
@@ -182,6 +228,70 @@ Ogolna historia systemowa dla wielu modulow:
 - `actor`
 - `details`
 
+### `knowledge_documents`
+
+Glowny rejestr dokumentow bazy wiedzy organizacji.
+
+- `knowledge_document_id`
+- `organization_id`
+- `title`
+- `file_name`
+- `mime_type`
+- `file_link`
+- `file_storage_key`
+- `content_text`
+- `content_hash`
+- `char_count`
+- `source_type`
+- `processing_status`
+- `processing_error`
+- `current_version_number`
+- `last_processed_at`
+- `processing_started_at`
+- `created_by_user_id`
+- `created_at`
+- `updated_at`
+
+### `knowledge_document_versions`
+
+Historia kolejnych wersji tresci dokumentu po przetworzeniu.
+
+- `knowledge_document_version_id`
+- `knowledge_document_id`
+- `organization_id`
+- `version_number`
+- `content_text`
+- `content_hash`
+- `char_count`
+- `source_type`
+- `extraction_method`
+- `created_by_user_id`
+- `created_at`
+
+### `knowledge_processing_jobs`
+
+Kolejka przetwarzania importu i ponownego przetwarzania dokumentow.
+
+- `knowledge_processing_job_id`
+- `organization_id`
+- `knowledge_document_id`
+- `job_type`
+- `status`
+- `source_storage_key`
+- `source_file_name`
+- `source_mime_type`
+- `source_type`
+- `source_content_hash`
+- `supplemental_text`
+- `error_message`
+- `attempts`
+- `max_attempts`
+- `created_by_user_id`
+- `started_at`
+- `finished_at`
+- `created_at`
+- `updated_at`
+
 ### `tasks`
 
 Glowny obiekt modulu `Asystent Szefa`.
@@ -189,13 +299,21 @@ Glowny obiekt modulu `Asystent Szefa`.
 - `task_id`
 - `organization_id`
 - `task_type`
+- `visibility_scope`
+- `owner_user_id`
 - `title`
 - `description`
 - `status`
 - `priority`
 - `due_at`
+- `remind_at`
 - `assigned_user_id`
+- `calendar_id`
+- `calendar_duration_minutes`
 - `created_by_user_id`
+- `reminder_sent_at`
+- `reminder_last_attempt_at`
+- `reminder_last_error`
 - `completed_at`
 - `created_at`
 - `updated_at`
@@ -205,6 +323,7 @@ Typy:
 - `zadanie`
 - `wydarzenie`
 - `przypomnienie`
+- `notatka`
 
 Statusy:
 
@@ -245,6 +364,62 @@ Historia zmian zadania:
 - `details`
 - `created_at`
 
+### `billing_bank_accounts`
+
+Rachunki bankowe organizacji do importu wyciagow.
+
+- `billing_bank_account_id`
+- `organization_id`
+- `account_name`
+- `bank_name`
+- `iban`
+- `currency`
+- `is_active`
+- `created_at`
+- `updated_at`
+
+### `billing_statement_imports`
+
+Rejestr importow wyciagow bankowych.
+
+- `billing_statement_import_id`
+- `organization_id`
+- `billing_bank_account_id`
+- `source_type`
+- `source_file_name`
+- `imported_by_user_id`
+- `imported_at`
+- `row_count`
+- `imported_transaction_count`
+- `skipped_transaction_count`
+- `status`
+- `notes`
+- `created_at`
+- `updated_at`
+
+### `billing_transactions`
+
+Znormalizowane transakcje z wyciagow bankowych.
+
+- `billing_transaction_id`
+- `organization_id`
+- `billing_bank_account_id`
+- `billing_statement_import_id`
+- `booking_date`
+- `value_date`
+- `amount`
+- `currency`
+- `direction`
+- `counterparty_name`
+- `counterparty_account`
+- `title`
+- `reference`
+- `raw_data`
+- `transaction_hash`
+- `matched_status`
+- `created_at`
+- `updated_at`
+
 ## Organizacje i zakres danych
 
 To jest najwazniejsza zasada architektury dla wersji klienckiej:
@@ -253,6 +428,7 @@ To jest najwazniejsza zasada architektury dla wersji klienckiej:
 - administrator organizacji dziala tylko w swojej organizacji
 - administrator globalny moze zarzadzac wieloma organizacjami
 - pliki i OCR sa rozdzielone na poziomie katalogow organizacji
+- baza wiedzy, kolejka dokumentow i wersje dokumentow sa odseparowane organizacjami
 - zadania, notatki i historia zadan sa rowniez odseparowane organizacjami
 
 Zakres organizacji jest sprawdzany:
@@ -263,6 +439,8 @@ Zakres organizacji jest sprawdzany:
 - przy logach
 - przy zadaniach
 - przy notatkach do zadan
+- przy dokumentach bazy wiedzy
+- przy pytaniach do asystenta firmowego
 - przy imporcie
 - przy otwieraniu plikow z dysku
 
@@ -289,6 +467,37 @@ to faktura dostaje:
 
 System nie blokuje faktury, tylko oznacza ja do recznej weryfikacji.
 
+## Nadrzednosc zrodel danych
+
+- `KSeF` jest zrodlem nadrzednym dla danych faktury.
+- `EMAIL` i `TELEGRAM` moga zapisac rekord wstepny i dokument zrodlowy.
+- Jezeli pozniej pojawi sie dopasowana faktura z `KSeF`, system aktualizuje istniejacy rekord danymi z `KSeF`.
+- W rekordzie przechowywane jest `authoritative_source`, zeby bylo widac, ktore zrodlo wygrywa biznesowo.
+
+## Asystent Firmowy - logika MVP
+
+Modul wiedzy jest osobna funkcja produktowa tej aplikacji i zarazem kandydatem do wspolnego fundamentu ekosystemu.
+
+Najwazniejsze elementy:
+
+- oddzielna zakladka i osobny UX dla pracy na bazie wiedzy
+- osobna baza wiedzy dla kazdej organizacji
+- capability zamiast samej roli:
+  - `knowledge.read`
+  - `knowledge.upload`
+  - `knowledge.sync`
+  - `knowledge.manage`
+- import plikow do folderu organizacji albo przez formularz
+- asynchroniczna kolejka przetwarzania dokumentow
+- statusy dokumentu:
+  - `queued`
+  - `processing`
+  - `ready`
+  - `error`
+- wersjonowanie tresci dokumentu po kazdym przetworzeniu
+- OCR dla obrazow i odczyt tekstu z `TXT`, `DOCX`, `XLSX`, `PDF`
+- odpowiedzi z cytowaniem dokumentu, wersji i linkiem do zrodla
+
 ## Asystent Szefa - logika MVP
 
 Na obecnym etapie modul zadan dziala jako osobna czesc tej samej aplikacji, a nie osobna aplikacja.
@@ -297,7 +506,9 @@ Obslugiwane akcje:
 
 - utworzenie zadania
 - zmiana typu, statusu, priorytetu, terminu i osoby przypisanej
+- zmiana zakresu widocznosci wpisu
 - ustawienie osobnego terminu przypomnienia
+- przypisanie wpisu do jednego z nazwanych kalendarzy Google uzytkownika
 - oznaczenie jako zakonczone
 - dodanie notatki
 - historia zmian
@@ -305,11 +516,22 @@ Obslugiwane akcje:
 Najwazniejsze zasady:
 
 - zadanie zawsze nalezy do organizacji
+- wpis jest domyslnie prywatny i widzi go tylko wlasciciel
+- wpis mozna udostepnic wybranym osobom z tej samej organizacji
+- wpis mozna tez oznaczyc jako widoczny dla calej organizacji
 - zadanie mozna przypisac tylko do aktywnego uzytkownika tej samej organizacji
 - zadanie lub wydarzenie moze miec osobna godzine przypomnienia
+- zadanie lub wydarzenie moze byc wpisane do prywatnego kalendarza Google wybranego przez uzytkownika
 - przypomnienie nie moze byc ustawione pozniej niz termin zadania
 - notatka do zadania rowniez nalezy do tej samej organizacji
 - zmiany sa zapisywane jednoczesnie w `task_history` i w ogolnym `event_logs`
+
+Synchronizacja Google Calendar w obecnej wersji:
+
+- kazdy uzytkownik moze miec kilka nazwanych kalendarzy, na przyklad `Firma A`, `Firma B`, `Rodzinny`
+- aplikacja generuje prywatny feed `.ics` dla kazdego kalendarza
+- Google Calendar subskrybuje ten adres przez `Z adresu URL`
+- synchronizacja jest jednokierunkowa `aplikacja -> Google Calendar`
 
 ## Magazyn plikow
 
@@ -370,6 +592,10 @@ Projekt ma juz przygotowane kilka rzeczy pod pozniejsze przeniesienie:
 
 ## Co warto dodac w kolejnych etapach
 
+- baze klientow organizacji do rozliczen
+- identyfikator platnosci klienta, na start np. numer telefonu w tytule przelewu
+- dopasowanie wplat z wyciagow do naleznosci klientow
+- saldo klienta i dokumenty rozliczeniowe
 - zalaczniki do zadan
 - widok kalendarzowy
 - przypomnienia uruchamiane w tle

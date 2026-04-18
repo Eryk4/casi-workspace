@@ -17,9 +17,12 @@ SORTABLE_COLUMNS = {
     "issue_date": "i.issue_date",
     "gross_amount": "i.gross_amount",
     "status": "i.status",
+    "workflow_state": "i.workflow_state",
     "duplicate_type": "i.duplicate_type",
     "created_at": "i.created_at",
     "updated_at": "i.updated_at",
+    "handed_off_at": "i.handed_off_at",
+    "closed_at": "i.closed_at",
 }
 
 
@@ -46,16 +49,19 @@ class InvoiceRepository:
                     OR COALESCE(i.issuer_nip, '') LIKE ?
                     OR COALESCE(i.issuer_name, '') LIKE ?
                     OR COALESCE(c.name, '') LIKE ?
+                    OR COALESCE(assignee.display_name, assignee.login, '') LIKE ?
                 )
                 """
             )
-            params.extend([search_value] * 7)
+            params.extend([search_value] * 8)
 
         for key, column in {
             "source": "i.source",
             "status": "i.status",
+            "workflow_state": "i.workflow_state",
             "duplicate_type": "i.duplicate_type",
             "contractor_id": "i.contractor_id",
+            "assigned_user_id": "i.assigned_user_id",
             "nip": "i.issuer_nip",
             "invoice_number": "i.invoice_number",
             "ksef_number": "i.ksef_number",
@@ -80,10 +86,19 @@ class InvoiceRepository:
                 i.*,
                 c.name AS contractor_name,
                 o.name AS organization_name,
-                o.slug AS organization_slug
+                o.slug AS organization_slug,
+                COALESCE(assignee.display_name, assignee.login) AS assigned_user_name,
+                assignee.role AS assigned_user_role,
+                COALESCE(comment_summary.invoice_comment_count, 0) AS invoice_comment_count
             FROM invoices i
             LEFT JOIN contractors c ON c.contractor_id = i.contractor_id
             LEFT JOIN organizations o ON o.organization_id = i.organization_id
+            LEFT JOIN users assignee ON assignee.user_id = i.assigned_user_id
+            LEFT JOIN (
+                SELECT invoice_id, COUNT(*) AS invoice_comment_count
+                FROM invoice_comments
+                GROUP BY invoice_id
+            ) comment_summary ON comment_summary.invoice_id = i.id
         """
         conditions.append("COALESCE(o.is_active, 1) = 1")
         if conditions:
@@ -109,16 +124,59 @@ class InvoiceRepository:
                 c.is_new AS contractor_is_new,
                 c.notes AS contractor_notes,
                 o.name AS organization_name,
-                o.slug AS organization_slug
+                o.slug AS organization_slug,
+                COALESCE(assignee.display_name, assignee.login) AS assigned_user_name,
+                assignee.role AS assigned_user_role,
+                COALESCE(comment_summary.invoice_comment_count, 0) AS invoice_comment_count
             FROM invoices i
             LEFT JOIN contractors c ON c.contractor_id = i.contractor_id
             LEFT JOIN organizations o ON o.organization_id = i.organization_id
+            LEFT JOIN users assignee ON assignee.user_id = i.assigned_user_id
+            LEFT JOIN (
+                SELECT invoice_id, COUNT(*) AS invoice_comment_count
+                FROM invoice_comments
+                GROUP BY invoice_id
+            ) comment_summary ON comment_summary.invoice_id = i.id
             WHERE i.id = ?
               AND COALESCE(o.is_active, 1) = 1
         """
         if organization_id is not None:
             query += " AND i.organization_id = ?"
             params.append(organization_id)
+        with get_connection() as connection:
+            row = connection.execute(query, params).fetchone()
+        return dict(row) if row else None
+
+    def get_by_source_external_id(
+        self,
+        source_external_id: str,
+        *,
+        source: str | None = None,
+        organization_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        normalized_external_id = str(source_external_id or "").strip()
+        if not normalized_external_id:
+            return None
+
+        params: list[Any] = [normalized_external_id]
+        query = """
+            SELECT
+                i.*,
+                o.name AS organization_name,
+                o.slug AS organization_slug
+            FROM invoices i
+            LEFT JOIN organizations o ON o.organization_id = i.organization_id
+            WHERE i.source_external_id = ?
+              AND COALESCE(o.is_active, 1) = 1
+        """
+        if source:
+            query += " AND i.source = ?"
+            params.append(source)
+        if organization_id is not None:
+            query += " AND i.organization_id = ?"
+            params.append(organization_id)
+        query += " ORDER BY i.id DESC LIMIT 1"
+
         with get_connection() as connection:
             row = connection.execute(query, params).fetchone()
         return dict(row) if row else None
@@ -131,12 +189,14 @@ class InvoiceRepository:
                 """
                 INSERT INTO invoices (
                     organization_id, incoming_date, source, file_name, document_type, invoice_number, ksef_number,
+                    authoritative_source,
                     issuer_nip, issuer_name, issue_date, sale_date, gross_amount,
                     currency, status, duplicate_type, flag_reason, contractor_id,
+                    assigned_user_id,
                     file_link, file_storage_key, ocr_link, ocr_storage_key, storage_backend, source_external_id,
                     source_sender_name, source_sender_id, source_metadata, invoice_hash, ocr_raw_text, ocr_confidence,
                     notes, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload.get("organization_id"),
@@ -146,6 +206,7 @@ class InvoiceRepository:
                     payload.get("document_type"),
                     payload.get("invoice_number"),
                     payload.get("ksef_number"),
+                    payload.get("authoritative_source"),
                     payload.get("issuer_nip"),
                     payload.get("issuer_name"),
                     payload.get("issue_date"),
@@ -156,6 +217,7 @@ class InvoiceRepository:
                     payload.get("duplicate_type", "brak"),
                     payload.get("flag_reason"),
                     payload.get("contractor_id"),
+                    payload.get("assigned_user_id"),
                     payload.get("file_link"),
                     payload.get("file_storage_key"),
                     payload.get("ocr_link"),
@@ -186,6 +248,7 @@ class InvoiceRepository:
             "document_type",
             "invoice_number",
             "ksef_number",
+            "authoritative_source",
             "issuer_nip",
             "issuer_name",
             "issue_date",
@@ -196,6 +259,7 @@ class InvoiceRepository:
             "duplicate_type",
             "flag_reason",
             "contractor_id",
+            "assigned_user_id",
             "file_link",
             "file_storage_key",
             "ocr_link",
@@ -208,6 +272,19 @@ class InvoiceRepository:
             "invoice_hash",
             "ocr_raw_text",
             "ocr_confidence",
+            "workflow_state",
+            "ready_for_handoff_at",
+            "ready_for_handoff_by_user_id",
+            "handoff_target",
+            "handoff_note",
+            "handed_off_at",
+            "handed_off_by_user_id",
+            "closed_at",
+            "closed_by_user_id",
+            "closed_reason",
+            "reopened_at",
+            "reopened_by_user_id",
+            "reopen_reason",
             "notes",
         }
         update_fields = {key: value for key, value in fields.items() if key in allowed}
@@ -221,6 +298,43 @@ class InvoiceRepository:
                 f"UPDATE invoices SET {assignments} WHERE id = ?",
                 values,
             )
+
+    def add_comment(self, payload: dict[str, Any]) -> int:
+        with get_connection() as connection:
+            return execute_insert_returning_id(
+                connection,
+                """
+                INSERT INTO invoice_comments (
+                    invoice_id, organization_id, parent_comment_id, note_text, created_by_user_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["invoice_id"],
+                    payload["organization_id"],
+                    payload.get("parent_comment_id"),
+                    payload["note_text"],
+                    payload["created_by_user_id"],
+                    now_iso(),
+                ),
+                "invoice_comment_id",
+            )
+
+    def list_comments(self, invoice_id: int) -> list[dict[str, Any]]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    c.*,
+                    COALESCE(u.display_name, u.login) AS created_by_user_name,
+                    u.role AS created_by_user_role
+                FROM invoice_comments c
+                LEFT JOIN users u ON u.user_id = c.created_by_user_id
+                WHERE c.invoice_id = ?
+                ORDER BY COALESCE(c.parent_comment_id, c.invoice_comment_id) ASC, c.created_at ASC, c.invoice_comment_id ASC
+                """,
+                (invoice_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def delete_relations(self, invoice_id: int) -> None:
         with get_connection() as connection:
@@ -260,6 +374,58 @@ class InvoiceRepository:
                 """,
                 (invoice_id,),
             ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_pending_ksef_correction_invoices(
+        self,
+        *,
+        organization_id: int | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        params: list[Any] = ["pending"]
+        query = """
+            SELECT
+                i.*,
+                c.name AS contractor_name,
+                o.name AS organization_name,
+                o.slug AS organization_slug,
+                COALESCE(assignee.display_name, assignee.login) AS assigned_user_name,
+                assignee.role AS assigned_user_role,
+                COALESCE(comment_summary.invoice_comment_count, 0) AS invoice_comment_count,
+                COUNT(k.invoice_ksef_field_override_id) AS pending_override_count,
+                MAX(k.created_at) AS latest_request_at
+            FROM invoice_ksef_field_overrides k
+            JOIN invoices i ON i.id = k.invoice_id
+            LEFT JOIN contractors c ON c.contractor_id = i.contractor_id
+            LEFT JOIN organizations o ON o.organization_id = i.organization_id
+            LEFT JOIN users assignee ON assignee.user_id = i.assigned_user_id
+            LEFT JOIN (
+                SELECT invoice_id, COUNT(*) AS invoice_comment_count
+                FROM invoice_comments
+                GROUP BY invoice_id
+            ) comment_summary ON comment_summary.invoice_id = i.id
+            WHERE k.status = ?
+              AND COALESCE(o.is_active, 1) = 1
+        """
+        if organization_id is not None:
+            query += " AND i.organization_id = ?"
+            params.append(organization_id)
+        query += """
+            GROUP BY
+                i.id,
+                c.name,
+                o.name,
+                o.slug,
+                assignee.display_name,
+                assignee.login,
+                assignee.role,
+                comment_summary.invoice_comment_count
+            ORDER BY MAX(k.created_at) DESC, i.id DESC
+            LIMIT ?
+        """
+        params.append(max(1, int(limit)))
+        with get_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
     def find_exact_ksef_duplicates(
@@ -333,30 +499,77 @@ class InvoiceRepository:
             row = connection.execute(query, params).fetchone()
         return int(row["total"]) if row else 0
 
-    def search_global(self, query_text: str, organization_id: int | None = None) -> dict[str, list[dict[str, Any]]]:
-        value = f"%{query_text.strip()}%"
-        invoice_params: list[Any] = [value, value, value, value, value]
-        contractor_params: list[Any] = [value, value, value]
-        invoice_query = """
+    def search_invoices(
+        self,
+        query_text: str,
+        *,
+        organization_id: int | None = None,
+        limit: int = 6,
+    ) -> list[dict[str, Any]]:
+        normalized_query = str(query_text or "").strip().lower()
+        if not normalized_query:
+            return []
+
+        value = f"%{normalized_query}%"
+        params: list[Any] = [value] * 14
+        query = """
             SELECT
                 i.id,
                 i.invoice_number,
+                i.ksef_number,
+                i.file_name,
                 i.issuer_name,
                 i.issuer_nip,
+                i.incoming_date,
+                i.issue_date,
+                i.sale_date,
+                i.gross_amount,
+                i.currency,
                 i.status,
+                i.duplicate_type,
                 i.source,
-                o.name AS organization_name
+                i.organization_id,
+                o.name AS organization_name,
+                o.slug AS organization_slug
             FROM invoices i
             LEFT JOIN organizations o ON o.organization_id = i.organization_id
             WHERE (
                 CAST(i.id AS TEXT) LIKE ?
-                OR COALESCE(i.invoice_number, '') LIKE ?
-                OR COALESCE(i.ksef_number, '') LIKE ?
-                OR COALESCE(i.issuer_name, '') LIKE ?
-                OR COALESCE(i.issuer_nip, '') LIKE ?
+                OR LOWER(COALESCE(i.invoice_number, '')) LIKE ?
+                OR LOWER(COALESCE(i.ksef_number, '')) LIKE ?
+                OR LOWER(COALESCE(i.issuer_name, '')) LIKE ?
+                OR LOWER(COALESCE(i.issuer_nip, '')) LIKE ?
+                OR LOWER(COALESCE(i.file_name, '')) LIKE ?
+                OR LOWER(COALESCE(i.status, '')) LIKE ?
+                OR LOWER(COALESCE(i.source, '')) LIKE ?
+                OR LOWER(COALESCE(i.duplicate_type, '')) LIKE ?
+                OR COALESCE(i.incoming_date, '') LIKE ?
+                OR COALESCE(i.issue_date, '') LIKE ?
+                OR COALESCE(i.sale_date, '') LIKE ?
+                OR COALESCE(CAST(i.gross_amount AS TEXT), '') LIKE ?
+                OR LOWER(COALESCE(o.name, '')) LIKE ?
             )
               AND COALESCE(o.is_active, 1) = 1
         """
+        if organization_id is not None:
+            query += " AND i.organization_id = ?"
+            params.append(organization_id)
+        query += """
+            ORDER BY i.updated_at DESC, i.id DESC
+            LIMIT ?
+        """
+        params.append(limit)
+
+        with get_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def search_global(self, query_text: str, organization_id: int | None = None) -> dict[str, list[dict[str, Any]]]:
+        normalized_query = str(query_text or "").strip().lower()
+        if not normalized_query:
+            return {"invoices": [], "contractors": []}
+
+        value = f"%{normalized_query}%"
         contractor_query = """
             SELECT
                 c.contractor_id,
@@ -364,26 +577,26 @@ class InvoiceRepository:
                 c.nip,
                 c.email,
                 c.is_new,
+                c.organization_id,
                 o.name AS organization_name
             FROM contractors c
             LEFT JOIN organizations o ON o.organization_id = c.organization_id
             WHERE (
-                c.name LIKE ?
-                OR c.nip LIKE ?
-                OR COALESCE(c.email, '') LIKE ?
+                LOWER(COALESCE(c.name, '')) LIKE ?
+                OR LOWER(COALESCE(c.nip, '')) LIKE ?
+                OR LOWER(COALESCE(c.email, '')) LIKE ?
             )
+              AND COALESCE(o.is_active, 1) = 1
         """
+        contractor_params: list[Any] = [value, value, value]
         if organization_id is not None:
-            invoice_query += " AND i.organization_id = ?"
-            invoice_params.append(organization_id)
             contractor_query += " AND c.organization_id = ?"
             contractor_params.append(organization_id)
-        invoice_query += " ORDER BY i.updated_at DESC LIMIT 10"
         contractor_query += " ORDER BY c.updated_at DESC LIMIT 10"
         with get_connection() as connection:
-            invoice_rows = connection.execute(invoice_query, invoice_params).fetchall()
+            invoice_rows = self.search_invoices(query_text, organization_id=organization_id, limit=10)
             contractor_rows = connection.execute(contractor_query, contractor_params).fetchall()
         return {
-            "invoices": [dict(row) for row in invoice_rows],
+            "invoices": invoice_rows,
             "contractors": [dict(row) for row in contractor_rows],
         }
