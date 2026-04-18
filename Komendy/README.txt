@@ -75,5 +75,22 @@ Wazne:
    Uruchamia pelne `unittest discover` dla calego repo.
 
 22. `22 - Ustaw PostgreSQL URL lokalnie.bat`
-   Jednorazowo zapisuje `INVOICE_DATABASE_URL` do `.env.local`.
-   Po tym kroku nie trzeba juz ustawiac zmiennej recznie przy kazdym starcie.
+   Ustawia lub aktualizuje `INVOICE_DATABASE_URL` w `.env.local`.
+   Nie nadpisuje pozostalych ustawien lokalnych.
+
+23. `23 - Ustaw release id z commita.bat`
+   Ustawia `INVOICE_APP_RELEASE_ID` na wartosc oparta o aktualny commit.
+   Ta sama wartosc powinna byc ustawiona na Railway, aby latwo sprawdzac zgodnosc wersji.
+
+24. `24 - Parity local vs Railway.bat`
+   Porownuje lokalna instancje z Railway i zwraca blad, gdy roznia sie:
+   - `app_release_id`
+   - wersje kluczowych assetow frontendowych (`styles/workspace-shell/knowledge-overrides`).
+
+Rekomendowany rytm pracy przed deployem:
+
+1. `19 - Testy smoke.bat` podczas codziennej pracy.
+2. `20 - Kontrola przed deployem.bat` przed wypchnieciem zmian.
+3. `23 - Ustaw release id z commita.bat` po wybraniu commita do wdrozenia.
+4. Push zmian do `main` i deploy na Railway.
+5. `24 - Parity local vs Railway.bat` po wdrozeniu.

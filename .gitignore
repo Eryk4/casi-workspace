@@ -3,6 +3,11 @@ __pycache__/
 .env.local
 data/local.env
 data/*.sqlite3
+data/test_runtime/
 data/magazyn/
 data/documents/*.txt
 data/ocr/*.txt
+_local_server_*.log
+.tmp-ui-server.*.log
+tmp_*.txt
+_tmp_*.log

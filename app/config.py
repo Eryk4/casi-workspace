@@ -199,7 +199,12 @@ DOCUMENTS_ROUTE_PREFIX = "/pliki/dokumenty/"
 OCR_ROUTE_PREFIX = "/pliki/ocr/"
 KNOWLEDGE_ROUTE_PREFIX = "/pliki/wiedza/"
 WHITEBOARD_ROUTE_PREFIX = "/pliki/tablica/"
-APP_RELEASE_ID = os.getenv("INVOICE_APP_RELEASE_ID", "").strip() or "local-dev"
+APP_RELEASE_ID = (
+    os.getenv("INVOICE_APP_RELEASE_ID", "").strip()
+    or os.getenv("RAILWAY_GIT_COMMIT_SHA", "").strip()[:12]
+    or os.getenv("SOURCE_VERSION", "").strip()[:12]
+    or "local-dev"
+)
 
 
 def uses_postgresql() -> bool:

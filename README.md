@@ -384,6 +384,41 @@ INVOICE_SHOW_DEFAULT_LOGIN_HINT=0
 RAILWAY_VOLUME_MOUNT_PATH=/data
 ```
 
+### Proces lokal -> Railway (spojna wersja)
+
+Rekomendowany, powtarzalny flow:
+
+1. uruchamiaj szybkie testy codzienne:
+
+```bash
+python run_quality_checks.py --profile smoke
+```
+
+2. przed wdrozeniem uruchom pelna kontrole predeploy:
+
+```bash
+python run_quality_checks.py --profile predeploy
+```
+
+3. ustaw release id z aktualnego commita lokalnie:
+
+```bash
+python sync_release_id.py
+```
+
+4. ustaw te sama wartosc `INVOICE_APP_RELEASE_ID` na Railway i wdroz `main`.
+
+5. po wdrozeniu porownaj parity local vs Railway:
+
+```bash
+python compare_environment_parity.py --remote-base https://<twoj-adres-railway> --require-same-release --require-same-assets
+```
+
+Na Windows masz tez gotowe skróty:
+
+- `Komendy/23 - Ustaw release id z commita.bat`
+- `Komendy/24 - Parity local vs Railway.bat`
+
 Lokalnie najwygodniej nie wpisywac tego za kazdym razem recznie, tylko skopiowac:
 
 ```text
