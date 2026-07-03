@@ -15,7 +15,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 - First low-risk write paths exist in Work Items, invoice comments, and additive CRM contractor notes.
 - Current write paths and their tenant-scope/security status are tracked in `frontend/docs/WRITE_ACTIONS_STATUS.md`.
 - CRM write readiness is documented in `frontend/docs/CRM_ACTIONS_READINESS.md`; CRM now has only one narrow write action in Next: adding a contractor note. Contractor master data remains read-only.
-- `Pulpit dnia` is documented in `frontend/docs/PULPIT_DNIA_PRODUCT_NOTE.md` and is a real read-only daily triage view assembled from existing organization-scoped sources. Current local data is only a safe sandbox for development and verification.
+- `Pulpit dnia` is documented in `frontend/docs/PULPIT_DNIA_PRODUCT_NOTE.md` and is the first product v1 daily triage screen assembled from existing organization-scoped sources. Current local data is only a safe sandbox for development and verification.
 - Environment and data safety rules are documented in `docs/ENVIRONMENT_AND_DATA_SAFETY.md`.
 
 ## Module Matrix
@@ -23,7 +23,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 | Module | Route | Screen status | Live API | Requires organization | `organization_id` connected | Read-only | Write actions | Tests | Recommended next step |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Dashboard / Pulpit | `/pulpit` | Real operational dashboard | Yes, `GET /api/dashboard` | Yes | Yes | Yes | No | `test-dashboard.js` | Keep stable; use as org-scoped landing page. |
-| Pulpit dnia | `/pulpit-dnia` | Real read-only daily triage view with balanced top priorities | Yes, dashboard/tasks/work-items/invoices/billing/contractors/documents | Yes | Yes for all current sources | Yes | No | `test-daily-brief.js` | Keep live-verifying usefulness with sandbox data; add a read-only backend aggregator only if frontend-side aggregation becomes too request-heavy. |
+| Pulpit dnia | `/pulpit-dnia` | Product v1 daily triage screen with balanced top priorities | Yes, dashboard/tasks/work-items/invoices/billing/contractors/documents | Yes | Yes for all current sources | Yes | No | `test-daily-brief.js` | Keep stable as the first morning overview; add a read-only backend aggregator only if frontend-side aggregation becomes too request-heavy. |
 | Faktury | `/faktury`, `/faktury/[invoiceId]` | Real invoice inbox, detail preview, and operator comments | Yes, invoice inbox/detail/comment endpoints | Yes | Yes | Mostly read-only; one additive comment form | Yes: add operator comment only | `test-invoices.js` | Keep comments stable; do not expose workflow decisions until state-specific UX and permissions are reviewed. |
 | Work Items | `/work-items` | Real operational work queue | Yes, `GET /api/work-items` and action endpoints | Yes | Yes | No | Yes: assign to self, snooze, close | `test-work-items.js` | Live-verify more tenant cases and then consider one next low-risk action. |
 | Dokumenty / Knowledge | `/dokumenty`, `/dokumenty/[documentId]` | Real read-only document list and detail | Yes, document list/detail endpoints | Yes | Yes | Yes | No | `test-documents.js`, `test-document-detail.js` | Keep read-only until upload/edit/storage contracts are reviewed. |
@@ -139,6 +139,6 @@ python run_quality_checks.py --profile frontend-smoke
 
 ## Recommended Next Small Steps
 
-1. Live-verify `/pulpit-dnia` with a global user and at least one active organization to confirm the first-screen answer is useful.
+1. Keep `/pulpit-dnia` stable as product v1 and use it as the first morning overview during local sandbox verification.
 2. Keep invoice comments as the only invoice write until workflow decision UX, permissions, and state-specific confirmations are reviewed.
 3. Continue live-verifying organization-scoped screens after each small write addition, especially global-user and stale `casi.activeOrganizationId` cases.

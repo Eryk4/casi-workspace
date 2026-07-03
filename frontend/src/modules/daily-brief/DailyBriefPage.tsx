@@ -24,6 +24,8 @@ import { readWorkItems } from "../work-items/workItemsModel";
 import {
   DAILY_BRIEF_ORGANIZATION_REQUIRED_DESCRIPTION,
   DAILY_BRIEF_ORGANIZATION_REQUIRED_TITLE,
+  DAILY_BRIEF_REFRESH_LABEL,
+  DAILY_BRIEF_SECTION_LABELS,
   buildDailyBrief,
   canUseDailyBriefOrganizationScope,
   isDailyBriefEmpty,
@@ -100,7 +102,7 @@ export function DailyBriefPage() {
     } catch (error) {
       setSnapshot(null);
       setStatus("error");
-      setErrorMessage(error instanceof Error ? error.message : "Nie udalo sie zbudowac Pulpitu dnia.");
+      setErrorMessage(error instanceof Error ? error.message : "Nie udało się zbudować Pulpitu dnia.");
     }
   }, [organizationStatus, selectedOrganizationId]);
 
@@ -116,25 +118,25 @@ export function DailyBriefPage() {
     <div className="module-page daily-brief-page">
       <PageHeader
         badgeTone="info"
-        description="Jedno read-only miejsce na dzisiejsze sygnaly z zadan, faktur, CRM, dokumentow i rozliczen. Bez AI i bez akcji zapisu."
+        description="Poranny przegląd najważniejszych spraw z zadań, faktur, CRM, dokumentów i rozliczeń. Widok jest tylko do odczytu."
         eyebrow="Pulpit dnia"
         title="Co dzisiaj wymaga mojej uwagi?"
         actions={
           <Button disabled={status === "loading"} icon={<RefreshCw size={15} />} onClick={loadDailyBrief} size="sm" variant="secondary">
-            Odswiez
+            {DAILY_BRIEF_REFRESH_LABEL}
           </Button>
         }
       />
 
       {status === "loading" ? <LoadingState /> : null}
-      {status === "error" && errorMessage ? <ErrorState description={errorMessage} title="Nie udalo sie zbudowac Pulpitu dnia" /> : null}
+      {status === "error" && errorMessage ? <ErrorState description={errorMessage} title="Nie udało się zbudować Pulpitu dnia" /> : null}
       {organizationMissing ? (
         <EmptyState description={DAILY_BRIEF_ORGANIZATION_REQUIRED_DESCRIPTION} title={DAILY_BRIEF_ORGANIZATION_REQUIRED_TITLE} />
       ) : null}
       {empty ? (
         <EmptyState
-          description={`Backend odpowiedzial poprawnie, ale nie ma dzis spraw wymagajacych uwagi dla organizacji ${selectedOrganization?.name ?? selectedOrganizationId}.`}
-          title="Brak pilnych sygnalow na dzis"
+          description={`Nie ma dziś spraw wymagających pilnej uwagi dla organizacji ${selectedOrganization?.name ?? selectedOrganizationId}.`}
+          title="Spokojny poranek"
         />
       ) : null}
 
@@ -144,28 +146,28 @@ export function DailyBriefPage() {
             <DailyBriefKpi icon={<AlertTriangle size={17} />} label="Krytyczne" value={brief.kpis.criticalCount} />
             <DailyBriefKpi icon={<ListChecks size={17} />} label="Pilne sprawy" value={brief.kpis.urgentCount} />
             <DailyBriefKpi icon={<FileText size={17} />} label="Faktury i finanse" value={brief.kpis.invoiceCount} />
-            <DailyBriefKpi icon={<ShieldCheck size={17} />} label="Do odlozenia" value={brief.kpis.laterCount} />
+            <DailyBriefKpi icon={<ShieldCheck size={17} />} label="Można odłożyć" value={brief.kpis.laterCount} />
           </section>
 
           <section className="daily-brief-layout" aria-label="Sekcje Pulpitu dnia">
             <div className="daily-brief-layout__main">
               <DailyBriefSection
-                description="Krotka mieszanka spraw, ktore najlepiej opisuje dzisiejszy rytm firmy."
-                emptyText="Brak najwazniejszych sygnalow."
+                description="Krótka mieszanka spraw, które najlepiej opisują dzisiejszy rytm firmy."
+                emptyText="Brak najważniejszych sygnałów."
                 items={brief.sections.top}
-                title="Najwazniejsze dzis"
+                title={DAILY_BRIEF_SECTION_LABELS.top}
               />
               <DailyBriefSection
-                description="Zadania, sprawy operacyjne i terminy, ktore najlatwiej zgubic w codziennej pracy."
+                description="Zadania, sprawy operacyjne i terminy, które najłatwiej zgubić w codziennej pracy."
                 emptyText="Brak pilnych spraw operacyjnych."
                 items={brief.sections.urgent}
-                title="Sprawy pilne"
+                title={DAILY_BRIEF_SECTION_LABELS.urgent}
               />
               <DailyBriefSection
-                description="Inbox faktur, saldo platnikow i finansowe sygnaly wymagajace spojrzenia."
-                emptyText="Brak pilnych sygnalow finansowych."
+                description="Faktury, salda płatników i finansowe sygnały wymagające spojrzenia."
+                emptyText="Brak pilnych sygnałów finansowych."
                 items={brief.sections.invoicesFinance}
-                title="Faktury i finanse"
+                title={DAILY_BRIEF_SECTION_LABELS.invoicesFinance}
               />
             </div>
 
@@ -176,7 +178,7 @@ export function DailyBriefPage() {
                     <div className="daily-brief-source" key={source.key}>
                       <span>{source.label}</span>
                       <StatusBadge status={source.status === "ready" ? "ok" : source.status === "empty" ? "neutral" : "warning"}>
-                        {source.status === "ready" ? "OK" : source.status === "empty" ? "Pusto" : "Blad"}
+                        {source.status === "ready" ? "OK" : source.status === "empty" ? "Brak spraw" : "Błąd"}
                       </StatusBadge>
                     </div>
                   ))}
@@ -185,23 +187,23 @@ export function DailyBriefPage() {
               <DailyBriefSection
                 compact
                 description="Nowi kontrahenci, braki kontaktowe i relacje do sprawdzenia."
-                emptyText="Brak pilnych sygnalow CRM."
+                emptyText="Brak pilnych sygnałów CRM."
                 items={brief.sections.contractors}
-                title="Kontrahenci"
+                title={DAILY_BRIEF_SECTION_LABELS.contractors}
               />
               <DailyBriefSection
                 compact
-                description="Dokumenty w przetwarzaniu, z bledem albo wymagajace decyzji."
-                emptyText="Brak pilnych dokumentow."
+                description="Dokumenty w przetwarzaniu, z błędem albo wymagające decyzji."
+                emptyText="Brak pilnych dokumentów."
                 items={brief.sections.documents}
-                title="Dokumenty"
+                title={DAILY_BRIEF_SECTION_LABELS.documents}
               />
               <DailyBriefSection
                 compact
-                description="Rzeczy widoczne w systemie, ale bez pilnej reakcji."
-                emptyText="Nie widze spokojnych tematow do odlozenia. To zwykle znaczy, ze dzisiejsza lista jest krotka albo wymaga normalnej uwagi."
+                description="Sprawy widoczne w systemie, ale bez pilnej reakcji."
+                emptyText="Dziś nie ma oczywistych spraw do odłożenia. To zwykle znaczy, że lista jest krótka albo wymaga normalnej uwagi."
                 items={brief.sections.later}
-                title="Mozna odlozyc"
+                title={DAILY_BRIEF_SECTION_LABELS.later}
               />
             </aside>
           </section>
@@ -224,7 +226,7 @@ async function loadSource<TPayload, TData>(
   } catch (error) {
     return {
       data: null,
-      state: sourceState(key, "error", error instanceof Error ? error.message : "Blad pobierania zrodla"),
+      state: sourceState(key, "error", error instanceof Error ? error.message : "Błąd pobierania danych"),
     };
   }
 }
@@ -260,6 +262,7 @@ function DailyBriefSection({
             <Link className="daily-brief-item" href={item.href} key={item.id}>
               <span className={`daily-brief-item__tone daily-brief-item__tone--${item.tone}`} aria-hidden="true" />
               <span className="daily-brief-item__copy">
+                <span className="daily-brief-item__category">{item.source}</span>
                 <strong>{item.title}</strong>
                 <span>{item.description}</span>
               </span>

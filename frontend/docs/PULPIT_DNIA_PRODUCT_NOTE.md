@@ -1,12 +1,12 @@
-﻿# Pulpit Dnia Product Note
+﻿# Pulpit dnia - produkt v1
 
 Last checked: 2026-07-03
 
-`Pulpit dnia` is a read-only operational view in the active Next frontend. Its product question is:
+`Pulpit dnia` jest produktowym ekranem v1 w aktywnym froncie Next. Jest prawdziwym ekranem CASI, a nie pokazowka ani ekranem tymczasowym. Its product question is:
 
 > Co dzisiaj wymaga mojej uwagi?
 
-This screen is not an AI agent, not a workflow engine, and not a write surface. It is a deterministic daily triage view assembled from existing organization-scoped read APIs.
+Ekran odpowiada na poranne pytanie wlasciciela lub osoby operacyjnej: czym trzeba zajac sie dzis najpierw. Jest deterministycznym, organizacyjnie zawezonym widokiem tylko do odczytu, skladanym z istniejacych zrodel danych.
 
 ## Scope
 
@@ -38,22 +38,22 @@ The first version uses existing read-only endpoints:
 - `GET /api/contractors?organization_id=...`
 - `GET /api/knowledge/documents?organization_id=...`
 
-No new backend aggregation endpoint was added because the existing endpoints are enough for the first read-only version.
+Nie dodano nowego endpointu agregujacego, poniewaz obecne zrodla wystarczaja do wersji produktowej v1.
 
 ## Sections
 
 The screen groups signals into:
 
-- Najwazniejsze dzis
+- Najważniejsze dziś
 - Sprawy pilne
 - Faktury i finanse
 - Kontrahenci
 - Dokumenty
-- Mozna odlozyc
+- Można odłożyć
 
 Prioritization is deterministic and based on existing fields such as severity, priority, SLA state, invoice inbox sections, balance due, document status, and CRM freshness/contact gaps.
 
-The `Najwazniejsze dzis` section is intentionally balanced. It is not a pure score ranking, because one noisy domain could otherwise dominate the morning view. Current rules:
+Sekcja `Najważniejsze dziś` jest celowo zbalansowana. It is not a pure score ranking, because one noisy domain could otherwise dominate the morning view. Current rules:
 
 - maximum 7 items,
 - maximum 2 invoice items,
@@ -65,11 +65,11 @@ The `Najwazniejsze dzis` section is intentionally balanced. It is not a pure sco
 - first pass tries to include a mix of tasks, invoices, CRM, documents, finance, and other signals,
 - second pass fills remaining slots by priority while respecting category limits.
 
-Invoice duplicates and invoice exceptions remain visible in `Faktury i finanse`, but only the strongest invoice signals can enter `Najwazniejsze dzis`.
+Duplikaty i wyjatki faktur pozostaja widoczne w `Faktury i finanse`, ale tylko najsilniejsze sygnaly fakturowe moga wejsc do `Najważniejsze dziś`.
 
-`Mozna odlozyc` tries to surface low-urgency work items, stable contractors, calm documents, low-priority reminders, and settled billing signals. If there is truly nothing calm to show, the UI uses a product empty state instead of a technical error-like message.
+`Można odłożyć` pokazuje spokojniejsze sprawy: mniej pilne sprawy operacyjne, stabilnych kontrahentow, dokumenty bez blokady, przypomnienia niskiej pilnosci i stabilne rozliczenia. If there is truly nothing calm to show, the UI uses a product empty state instead of a technical error-like message.
 
-## Local Sandbox Scenario
+## Scenariusz lokalnego sandboxu danych
 
 `Pulpit dnia` is a real application screen. The current local data is a fictional sandbox used to verify the product experience safely before any real customer data is connected.
 
@@ -97,7 +97,7 @@ The screen requires an active organization.
 
 Without selected organization it shows:
 
-- `Wybierz organizacje, aby zobaczyc Pulpit dnia`
+- `Wybierz organizację, aby zobaczyć Pulpit dnia`
 
 The screen must not request organization-scoped operational data without `organization_id`.
 
@@ -115,7 +115,7 @@ It must not add:
 - workflow decisions,
 - AI chat or generation actions.
 
-Allowed interactions are navigation links to existing module screens and refresh.
+Dozwolone interakcje to odswiezenie oraz linki do istniejacych modulow.
 
 ## Known Data Gaps
 
@@ -125,14 +125,14 @@ The first version intentionally avoids extra detail requests and backend changes
 - Documents use list/dashboard status fields, not comments or version actions.
 - Finance uses ledger balances, not bank import or matching write flows.
 - Invoice signals use verification inbox and links to detail, not workflow decisions.
-- Existing local databases seeded before the sandbox-data cleanup can still contain older titles until the local sandbox database is reset/reseeded. This document describes the intended fresh sandbox scenario.
+- Existing local databases seeded before the sandbox-data cleanup can still contain older titles dopoki lokalny sandbox danych nie zostanie swiadomie zresetowany i ponownie zasilony. This document describes the intended fresh sandbox scenario.
 
-Before a real pilot, the biggest remaining product gaps are:
+Przed normalnym uzyciem operacyjnym najwieksze ograniczenia to:
 
-- a stable read-only backend aggregation endpoint if frontend-side aggregation becomes too chatty,
+- stabilny read-only endpoint agregujacy, jesli agregacja po stronie frontendu okaze sie zbyt kosztowna lub zbyt rozproszona,
 - client-specific sandbox scenarios that reflect the pilot customer's actual operating rhythm without using production data,
 - better recent-activity signals for CRM notes, document changes, and invoice comments,
-- a clear owner-facing explanation for why each item landed in `Najwazniejsze dzis`.
+- jeszcze lepsze, wlascicielskie wyjasnienie, dlaczego dana sprawa trafila do `Najważniejsze dziś`.
 
 If this view becomes request-heavy or needs richer cross-module signals, the next backend step should be a separate read-only endpoint such as:
 
@@ -148,4 +148,4 @@ Covered by:
 - `frontend/scripts/test-all.js`
 - `python run_quality_checks.py --profile frontend-smoke`
 
-The model test checks grouping, prioritization, organization blocking, read-only contract, links, empty state, and technical-field redaction.
+Test modelowy sprawdza grupowanie, priorytetyzacje, blokade bez organizacji, kontrakt tylko do odczytu, linki, empty state, polskie etykiety sekcji i redakcje pol technicznych.

@@ -108,8 +108,8 @@ function OrganizationContextBanner({
   if (status === "loading") {
     return (
       <div className="app-context-banner" role="status">
-        <strong>Ladowanie kontekstu organizacji</strong>
-        <span>Frontend pobiera aktualna sesje i liste organizacji.</span>
+        <strong>Ładowanie kontekstu organizacji</strong>
+        <span>Frontend pobiera aktualną sesję i listę organizacji.</span>
       </div>
     );
   }
@@ -117,8 +117,8 @@ function OrganizationContextBanner({
   if (status === "unauthenticated") {
     return (
       <div className="app-context-banner app-context-banner--warning" role="status">
-        <strong>{error?.title ?? "Sesja wygasla"}</strong>
-        <span>{error?.description ?? "Zaloguj sie ponownie, aby kontynuowac prace."}</span>
+        <strong>{error?.title ?? "Sesja wygasła"}</strong>
+        <span>{error?.description ?? "Zaloguj się ponownie, aby kontynuować pracę."}</span>
       </div>
     );
   }
@@ -126,8 +126,8 @@ function OrganizationContextBanner({
   if (status === "error") {
     return (
       <div className="app-context-banner app-context-banner--danger" role="alert">
-        <strong>{error?.title ?? "Nie udalo sie pobrac organizacji"}</strong>
-        <span>{error?.description ?? "Odswiez widok albo zaloguj sie ponownie."}</span>
+        <strong>{error?.title ?? "Nie udało się pobrać organizacji"}</strong>
+        <span>{error?.description ?? "Odśwież widok albo zaloguj się ponownie."}</span>
       </div>
     );
   }
@@ -135,8 +135,8 @@ function OrganizationContextBanner({
   if (status === "ready" && organizationCount === 0) {
     return (
       <div className="app-context-banner app-context-banner--warning" role="status">
-        <strong>Brak dostepnych organizacji</strong>
-        <span>Twoje konto nie ma aktywnej organizacji do wyswietlenia danych operacyjnych.</span>
+        <strong>Brak dostępnych organizacji</strong>
+        <span>Twoje konto nie ma aktywnej organizacji do wyświetlenia danych operacyjnych.</span>
       </div>
     );
   }
@@ -144,8 +144,8 @@ function OrganizationContextBanner({
   if (status === "ready" && organizationCount > 1 && !selectedOrganizationId) {
     return (
       <div className="app-context-banner" role="status">
-        <strong>Wybierz organizacje</strong>
-        <span>Moduly operacyjne pobiora dane dopiero po wskazaniu organizacji w topbarze.</span>
+        <strong>Wybierz organizację</strong>
+        <span>Moduły operacyjne pobiorą dane dopiero po wskazaniu organizacji w górnym pasku.</span>
       </div>
     );
   }

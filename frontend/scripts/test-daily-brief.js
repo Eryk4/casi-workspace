@@ -36,6 +36,8 @@ const {
   DAILY_BRIEF_ORGANIZATION_REQUIRED_DESCRIPTION,
   DAILY_BRIEF_ORGANIZATION_REQUIRED_TITLE,
   DAILY_BRIEF_READ_ONLY,
+  DAILY_BRIEF_REFRESH_LABEL,
+  DAILY_BRIEF_SECTION_LABELS,
   DAILY_BRIEF_WRITE_ACTIONS,
   buildDailyBrief,
   canUseDailyBriefOrganizationScope,
@@ -190,15 +192,24 @@ assert.equal(hasDailyBriefWriteActions(), false);
 assert.deepEqual(DAILY_BRIEF_WRITE_ACTIONS, []);
 assert.equal(canUseDailyBriefOrganizationScope("1"), true);
 assert.equal(canUseDailyBriefOrganizationScope(null), false);
-assert.equal(DAILY_BRIEF_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizacje, aby zobaczyc Pulpit dnia");
-assert.match(DAILY_BRIEF_ORGANIZATION_REQUIRED_DESCRIPTION, /organizacje/i);
+assert.equal(DAILY_BRIEF_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć Pulpit dnia");
+assert.match(DAILY_BRIEF_ORGANIZATION_REQUIRED_DESCRIPTION, /organizację/i);
+assert.equal(DAILY_BRIEF_REFRESH_LABEL, "Odśwież");
+assert.deepEqual(DAILY_BRIEF_SECTION_LABELS, {
+  top: "Najważniejsze dziś",
+  urgent: "Sprawy pilne",
+  invoicesFinance: "Faktury i finanse",
+  contractors: "Kontrahenci",
+  documents: "Dokumenty",
+  later: "Można odłożyć",
+});
 
 assert.ok(sections.top.length > 0, "top section should contain prioritized signals");
 assert.equal(sections.top[0].title, "Faktury po terminie");
 assert.ok(sections.top.length <= 7, "top section should stay compact");
 assert.ok(sections.top.filter((item) => item.category === "invoices").length <= 2, "invoice signals should not dominate top section");
 assert.ok(new Set(sections.top.map((item) => item.category)).size >= 3, "top section should mix operational categories");
-assert.ok(sections.urgent.some((item) => item.source === "Work Items"), "urgent section should include work items");
+assert.ok(sections.urgent.some((item) => item.source === "Sprawy"), "urgent section should include operational matters");
 assert.ok(sections.invoicesFinance.some((item) => item.href === "/faktury/9"), "invoice item should link to invoice detail");
 assert.ok(sections.contractors.some((item) => item.href === "/crm/13"), "contractor item should link to contractor detail");
 assert.ok(sections.documents.some((item) => item.href === "/dokumenty/7"), "document item should link to document detail");
@@ -245,7 +256,7 @@ const lowPrioritySnapshot = makeSnapshot({
     {
       work_item_id: 777,
       title: "Spokojna sprawa bez terminu",
-      description: "Mozna do niej wrocic pozniej",
+      description: "Mo?na do niej wr?ci? p??niej",
       status: "nowe",
       priority_level: "niski",
       source_type: "manual",
@@ -293,6 +304,8 @@ assert.ok(lowPriorityLater.some((item) => item.category === "documents"), "calm 
 const allItems = Object.values(sections).flat();
 assert.equal(hasUnsafeTechnicalText(allItems), false, "daily brief must not leak technical storage paths");
 assert.ok(allItems.every((item) => ["/pulpit", "/asystent-szefa", "/work-items", "/faktury", "/rozliczenia", "/crm", "/dokumenty"].some((pathPrefix) => item.href === pathPrefix || item.href.startsWith(`${pathPrefix}/`))));
+assert.ok(sections.top.every((item) => item.title && item.description && item.source && item.href), "top items should have title, reason, category and link");
+assert.equal(allItems.some((item) => item.source === "Work Items"), false, "visible item categories should avoid technical module names");
 
 const emptySnapshot = makeSnapshot({
   dashboard: { cards: snapshot.dashboard.cards, operational_alerts: [], active_reminders: [], knowledge_queue: [], recent_events: [] },

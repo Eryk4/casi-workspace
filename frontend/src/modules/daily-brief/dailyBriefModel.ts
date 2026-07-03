@@ -68,21 +68,30 @@ export type DailyBriefSections = {
 
 export const DAILY_BRIEF_READ_ONLY = true;
 export const DAILY_BRIEF_WRITE_ACTIONS: ReadonlyArray<never> = [];
-export const DAILY_BRIEF_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizacje, aby zobaczyc Pulpit dnia";
+export const DAILY_BRIEF_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć Pulpit dnia";
 export const DAILY_BRIEF_ORGANIZATION_REQUIRED_DESCRIPTION =
-  "Ten widok jest skladany z danych biezacej organizacji. Wybierz organizacje w topbarze, zeby uniknac globalnego albo mylacego stanu.";
+  "Ten widok jest składany z danych bieżącej organizacji. Wybierz organizację w górnym pasku, żeby uniknąć globalnego albo mylącego stanu.";
+export const DAILY_BRIEF_SECTION_LABELS = {
+  top: "Najważniejsze dziś",
+  urgent: "Sprawy pilne",
+  invoicesFinance: "Faktury i finanse",
+  contractors: "Kontrahenci",
+  documents: "Dokumenty",
+  later: "Można odłożyć",
+} as const;
+export const DAILY_BRIEF_REFRESH_LABEL = "Odśwież";
 
 const SOURCE_LABELS: Record<DailyBriefSourceKey, string> = {
   dashboard: "Pulpit",
   taskFocus: "Asystent Szefa",
-  workItems: "Work Items",
+  workItems: "Sprawy",
   invoiceInbox: "Faktury",
   billingBalances: "Rozliczenia",
   contractors: "CRM",
   documents: "Dokumenty",
 };
 
-const TECHNICAL_PATTERNS = [/C:\\Users\\/i, /data\/magazyn/i, /storage_key/i, /connection string/i, /token/i, /secret/i];
+const TECHNICAL_PATTERNS = [/C:\\Users\\/i, /data\/magazyn/i, /storage_key/i, /connection string/i, /token/i, /secret/i, /payload/i, /raw json/i, /debug/i, /fixture/i, /DATABASE_URL/i, /INVOICE_DATABASE_URL/i];
 const TOP_CATEGORY_LIMITS: Record<DailyBriefCategory, number> = {
   tasks: 2,
   invoices: 2,
@@ -155,8 +164,8 @@ export function hasUnsafeTechnicalText(items: DailyBriefItem[]): boolean {
 function buildDashboardAlertItems(snapshot: DashboardSnapshot | null): DailyBriefItem[] {
   return (snapshot?.operational_alerts ?? []).map((alert, index) => ({
     id: `dashboard-alert-${index}`,
-    title: sanitize(alert.title, "Sygnal operacyjny"),
-    description: sanitize(alert.description, "Wymaga uwagi w biezacym pulpicie."),
+    title: sanitize(alert.title, "Sygnał operacyjny"),
+    description: sanitize(alert.description, "Wymaga uwagi w bieżącym pulpicie."),
     meta: dashboardAlertCategoryLabel(alert),
     href: dashboardAlertHref(alert),
     source: "Pulpit",
@@ -186,7 +195,7 @@ function buildTaskFocusItems(snapshot: TaskFocusSnapshot | null): DailyBriefItem
   }
   return buildBossAssistantRows(snapshot, 12).map((row) => ({
     id: `task-focus-${row.id}`,
-    title: sanitize(row.title, "Zadanie wymagajace uwagi"),
+    title: sanitize(row.title, "Zadanie wymagające uwagi"),
     description: sanitize(row.contextLabel, "Sprawa z Asystenta Szefa."),
     meta: sanitize(`${row.focusLabel} · ${row.dueLabel}`, row.focusLabel),
     href: "/asystent-szefa",
@@ -202,11 +211,11 @@ function buildWorkItemItems(items: WorkItemRecord[]): DailyBriefItem[] {
     .filter((row) => row.priorityTone === "danger" || row.priorityTone === "warning" || row.statusTone === "danger")
     .map((row) => ({
       id: `work-item-${row.workItemId}`,
-      title: sanitize(row.title, `Work item #${row.workItemId}`),
-      description: sanitize(`${row.description} · dlatego warto spojrzec na nia dzis.`, "Sprawa operacyjna wymaga uwagi dzis."),
+      title: sanitize(row.title, `Sprawa #${row.workItemId}`),
+      description: sanitize(`${row.description} · dlatego warto spojrzeć na nią dziś.`, "Sprawa operacyjna wymaga uwagi dziś."),
       meta: sanitize(`${row.priorityLabel} · ${row.slaLabel} · ${row.dueLabel}`, row.priorityLabel),
       href: "/work-items",
-      source: "Work Items",
+      source: "Sprawy",
       category: "tasks",
       tone: row.priorityTone === "danger" || row.statusTone === "danger" ? "danger" : row.priorityTone === "warning" ? "warning" : "info",
       priority: row.priorityTone === "danger" ? 92 : row.statusTone === "danger" ? 86 : row.priorityTone === "warning" ? 70 : 44,
@@ -222,7 +231,7 @@ function buildInvoiceItems(inbox: InvoiceVerificationInbox | null): DailyBriefIt
     if (section.count > 0) {
       items.push({
         id: `invoice-section-${sectionKey}`,
-        title: sanitize(section.title, "Faktury wymagaja uwagi"),
+        title: sanitize(section.title, "Faktury wymagają uwagi"),
         description: sanitize(section.description, `${section.count} pozycji w inboxie faktur.`),
         meta: `${section.count} pozycji`,
         href: "/faktury",
@@ -255,7 +264,7 @@ function buildBillingItems(items: BillingBalanceRecord[]): DailyBriefItem[] {
     .filter((row) => row.statusTone === "warning" || row.statusTone === "danger")
     .map((row) => ({
       id: `billing-${row.id}`,
-      title: sanitize(row.payerLabel, "Platnik wymaga uwagi"),
+      title: sanitize(row.payerLabel, "Płatnik wymaga uwagi"),
       description: sanitize(`Saldo: ${row.balanceDueLabel}. Kontakt: ${row.contactLabel}`, "Rozliczenie wymaga uwagi."),
       meta: sanitize(row.lastPaymentLabel, "Rozliczenia"),
       href: "/rozliczenia",
@@ -319,8 +328,8 @@ function buildDocumentItems(items: KnowledgeDocumentRecord[]): DailyBriefItem[] 
   if (kpis.processingOrErrors > 0) {
     result.unshift({
       id: "documents-processing-or-errors",
-      title: "Dokumenty w przetwarzaniu lub z bledem",
-      description: `${kpis.processingOrErrors} dokumentow wymaga kontroli statusu przetwarzania.`,
+      title: "Dokumenty w przetwarzaniu lub z błędem",
+      description: `${kpis.processingOrErrors} dokumentów wymaga kontroli statusu przetwarzania.`,
       meta: `${kpis.needsDecision} do decyzji`,
       href: "/dokumenty",
       source: "Dokumenty",
@@ -346,8 +355,8 @@ function buildLaterItems(snapshot: DailyBriefSnapshot): DailyBriefItem[] {
     calmItems.push({
       id: "billing-settled",
       title: "Rozliczenia stabilne",
-      description: `${billingKpis.paidOrSettledCount} platnikow bez salda do pilnej reakcji.`,
-      meta: "Mozna odlozyc",
+      description: `${billingKpis.paidOrSettledCount} płatników bez salda do pilnej reakcji.`,
+      meta: "Można odłożyć",
       href: "/rozliczenia",
       source: "Rozliczenia",
       category: "finance",
@@ -361,8 +370,8 @@ function buildLaterItems(snapshot: DailyBriefSnapshot): DailyBriefItem[] {
     calmItems.push({
       id: "documents-ready",
       title: "Dokumenty gotowe w bazie wiedzy",
-      description: `${documentKpis.ready} dokumentow wyglada stabilnie i nie wymaga pilnej reakcji.`,
-      meta: "Mozna odlozyc",
+      description: `${documentKpis.ready} dokumentów wygląda stabilnie i nie wymaga pilnej reakcji.`,
+      meta: "Można odłożyć",
       href: "/dokumenty",
       source: "Dokumenty",
       category: "documents",
@@ -396,10 +405,10 @@ function buildLowPriorityWorkItemItems(items: WorkItemRecord[]): DailyBriefItem[
     .map((row) => ({
       id: `later-work-item-${row.workItemId}`,
       title: sanitize(row.title, `Sprawa #${row.workItemId}`),
-      description: "Nie wyglada na ryzyko na dzis, ale warto miec ja w tle.",
-      meta: sanitize(`${row.priorityLabel} · ${row.slaLabel}`, "Niska pilnosc"),
+      description: "Nie wygląda na ryzyko na dziś, ale warto mieć ją w tle.",
+      meta: sanitize(`${row.priorityLabel} · ${row.slaLabel}`, "Niska pilność"),
       href: "/work-items",
-      source: "Work Items",
+      source: "Sprawy",
       category: "tasks",
       tone: "neutral",
       priority: 18,
@@ -413,7 +422,7 @@ function buildLowPriorityContractorItems(items: ContractorRecord[]): DailyBriefI
     .map((row) => ({
       id: `later-contractor-${row.id}`,
       title: sanitize(row.nameLabel, "Kontrahent do spokojnego przejrzenia"),
-      description: "Relacja wyglada stabilnie, bez pilnego sygnalu na dzis.",
+      description: "Relacja wygląda stabilnie, bez pilnego sygnału na dziś.",
       meta: sanitize(row.lastInvoiceLabel, "CRM"),
       href: `/crm/${row.id}`,
       source: "CRM",
