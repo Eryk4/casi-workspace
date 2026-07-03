@@ -16,6 +16,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 - Current write paths and their tenant-scope/security status are tracked in `frontend/docs/WRITE_ACTIONS_STATUS.md`.
 - CRM write readiness is documented in `frontend/docs/CRM_ACTIONS_READINESS.md`; CRM now has only one narrow write action in Next: adding a contractor note. Contractor master data remains read-only.
 - `Pulpit dnia` is documented in `frontend/docs/PULPIT_DNIA_PRODUCT_NOTE.md` and is the first product v1 daily triage screen assembled from existing organization-scoped sources. Current local data is only a safe sandbox for development and verification.
+- `Karta sprawy` is documented in `frontend/docs/WORK_ITEM_CONTEXT_PRODUCT_NOTE.md` and is the second product v1 read-only screen, available at `/work-items/[workItemId]`.
 - Environment and data safety rules are documented in `docs/ENVIRONMENT_AND_DATA_SAFETY.md`.
 
 ## Module Matrix
@@ -25,7 +26,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 | Dashboard / Pulpit | `/pulpit` | Real operational dashboard | Yes, `GET /api/dashboard` | Yes | Yes | Yes | No | `test-dashboard.js` | Keep stable; use as org-scoped landing page. |
 | Pulpit dnia | `/pulpit-dnia` | Product v1 daily triage screen with balanced top priorities | Yes, dashboard/tasks/work-items/invoices/billing/contractors/documents | Yes | Yes for all current sources | Yes | No | `test-daily-brief.js` | Keep stable as the first morning overview; add a read-only backend aggregator only if frontend-side aggregation becomes too request-heavy. |
 | Faktury | `/faktury`, `/faktury/[invoiceId]` | Real invoice inbox, detail preview, and operator comments | Yes, invoice inbox/detail/comment endpoints | Yes | Yes | Mostly read-only; one additive comment form | Yes: add operator comment only | `test-invoices.js` | Keep comments stable; do not expose workflow decisions until state-specific UX and permissions are reviewed. |
-| Work Items | `/work-items` | Real operational work queue | Yes, `GET /api/work-items` and action endpoints | Yes | Yes | No | Yes: assign to self, snooze, close | `test-work-items.js` | Live-verify more tenant cases and then consider one next low-risk action. |
+| Work Items | `/work-items`, `/work-items/[workItemId]` | Real operational work queue and read-only case card | Yes, list/detail/action endpoints | Yes | Yes | List has write actions; case card is read-only | Yes on list only: assign to self, snooze, close | `test-work-items.js`, `test-work-item-detail.js` | Keep the case card stable; local sandbox seed now includes realistic Work Items for positive validation. Consider a read-only context endpoint only if existing detail payload is too thin. |
 | Dokumenty / Knowledge | `/dokumenty`, `/dokumenty/[documentId]` | Real read-only document list and detail | Yes, document list/detail endpoints | Yes | Yes | Yes | No | `test-documents.js`, `test-document-detail.js` | Keep read-only until upload/edit/storage contracts are reviewed. |
 | Kasa | `/kasa` | Real read-only billing ledger view via shared component | Yes, `GET /api/billing/ledger/balances` | Yes | Yes | Yes | No | `test-billing.js` | Keep paired with Rozliczenia; no write actions before import/matching contracts are reviewed. |
 | Rozliczenia | `/rozliczenia` | Real read-only billing ledger view via shared component | Yes, `GET /api/billing/ledger/balances` | Yes | Yes | Yes | No | `test-billing.js` | Same as Kasa; next step should be contract audit before any payment action. |
@@ -76,7 +77,7 @@ Read-only screens:
 
 Screens with real write actions:
 
-- Work Items.
+- Work Items list.
 - Faktury, only the additive operator comment on invoice detail.
 - CRM, only the additive contractor note on contractor detail.
 
@@ -85,6 +86,8 @@ Current Work Items write actions:
 - `POST /api/work-items/{id}/assign`
 - `POST /api/work-items/{id}/snooze`
 - `POST /api/work-items/{id}/close`
+
+The Work Item case card at `/work-items/[workItemId]` is read-only and does not expose these actions.
 
 Current invoice write action:
 
@@ -121,6 +124,7 @@ Covered tests:
 - `test-organization-context.js`
 - `test-invoices.js`
 - `test-work-items.js`
+- `test-work-item-detail.js`
 - `test-documents.js`
 - `test-document-detail.js`
 - `test-billing.js`

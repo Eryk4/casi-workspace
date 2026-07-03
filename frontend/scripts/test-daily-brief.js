@@ -210,6 +210,7 @@ assert.ok(sections.top.length <= 7, "top section should stay compact");
 assert.ok(sections.top.filter((item) => item.category === "invoices").length <= 2, "invoice signals should not dominate top section");
 assert.ok(new Set(sections.top.map((item) => item.category)).size >= 3, "top section should mix operational categories");
 assert.ok(sections.urgent.some((item) => item.source === "Sprawy"), "urgent section should include operational matters");
+assert.ok(sections.urgent.some((item) => item.href === "/work-items/91"), "urgent work item should link to the case card");
 assert.ok(sections.invoicesFinance.some((item) => item.href === "/faktury/9"), "invoice item should link to invoice detail");
 assert.ok(sections.contractors.some((item) => item.href === "/crm/13"), "contractor item should link to contractor detail");
 assert.ok(sections.documents.some((item) => item.href === "/dokumenty/7"), "document item should link to document detail");
@@ -298,6 +299,7 @@ const lowPrioritySnapshot = makeSnapshot({
 });
 const lowPriorityLater = buildDailyBrief(lowPrioritySnapshot).sections.later;
 assert.ok(lowPriorityLater.some((item) => item.category === "tasks"), "low urgency work item should appear in later section");
+assert.ok(lowPriorityLater.some((item) => item.href === "/work-items/777"), "low urgency work item should link to the case card");
 assert.ok(lowPriorityLater.some((item) => item.category === "crm"), "stable contractor should appear in later section");
 assert.ok(lowPriorityLater.some((item) => item.category === "documents"), "calm document should appear in later section");
 

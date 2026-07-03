@@ -8,6 +8,7 @@ const tests = [
   "test-auth-session.js",
   "test-invoices.js",
   "test-work-items.js",
+  "test-work-item-detail.js",
   "test-documents.js",
   "test-document-detail.js",
   "test-billing.js",

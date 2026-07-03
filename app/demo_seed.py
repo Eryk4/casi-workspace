@@ -16,6 +16,7 @@ from app.services.invoice_service import InvoiceService
 from app.services.knowledge_service import KnowledgeService
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.task_service import TaskService
+from app.services.work_item_service import WorkItemService
 
 
 SEED_ORGANIZATIONS = [
@@ -1620,6 +1621,85 @@ SEED_KNOWLEDGE_VERSION_UPDATES = [
     },
 ]
 
+SEED_WORK_ITEMS = [
+    {
+        "organization_slug": "casi",
+        "assigned_login": "casi_ola",
+        "source_type": "invoice",
+        "title": "Uzupelnic opis faktury za hosting i monitoring",
+        "description": (
+            "Brakuje jednoznacznego opisu kosztu przed przekazaniem faktury do rozliczenia. "
+            "Sprawdzic, czy dotyczy infrastruktury CASI czy projektu klienta."
+        ),
+        "status": "w_toku",
+        "priority_level": "wysoki",
+        "due_offset_days": 0,
+        "due_hour": 15,
+        "sla_offset_hours": 5,
+        "invoice_search": "FV/TRAVEL/17/2026",
+        "contractor_search": "Travel Desk",
+        "document_search": "Polityka delegacji CASI",
+        "business_context": "Faktura moze utknac w weryfikacji, jesli opis kosztu nie bedzie jasny.",
+        "attention_reason": "Wplywa na dzisiejsza kolejke faktur do opisania.",
+    },
+    {
+        "organization_slug": "casi",
+        "assigned_login": "casi_admin",
+        "source_type": "knowledge",
+        "title": "Sprawdzic aktualnosc procedury delegacji",
+        "description": (
+            "W dokumentach jest nowsza wersja zasad delegacji. Potwierdzic, czy zespol ma korzystac "
+            "z tej wersji przy najblizszych wyjazdach."
+        ),
+        "status": "nowe",
+        "priority_level": "normalny",
+        "due_offset_days": 2,
+        "due_hour": 12,
+        "sla_offset_hours": 26,
+        "document_search": "Polityka delegacji CASI",
+        "business_context": "Dokument jest wazny operacyjnie, ale nie blokuje pracy na dzis.",
+        "attention_reason": "Warto uporzadkowac przed kolejnym obiegiem delegacji.",
+    },
+    {
+        "organization_slug": "misja-robotyka",
+        "assigned_login": "robotyka_marek",
+        "source_type": "invoice",
+        "title": "Wyjasnic platnosc za zajecia robotyki",
+        "description": (
+            "W rozliczeniach widac wplate, ktora wymaga potwierdzenia z kontrahentem przed oznaczeniem "
+            "jako rozliczona."
+        ),
+        "status": "w_toku",
+        "priority_level": "wysoki",
+        "due_offset_days": 0,
+        "due_hour": 16,
+        "sla_offset_hours": 6,
+        "invoice_search": "FV/MR/LEGO/05/2026",
+        "contractor_search": "Lego Edu Partner",
+        "document_search": "Procedura zastepstw instruktora",
+        "business_context": "Temat dotyczy biezacej platnosci i moze blokowac zamkniecie rozliczen.",
+        "attention_reason": "Wymaga kontaktu przed koncem dnia.",
+    },
+    {
+        "organization_slug": "misja-robotyka",
+        "assigned_login": "robotyka_admin",
+        "source_type": "knowledge",
+        "title": "Potwierdzic zgody rodzicow na warsztaty sobotnie",
+        "description": (
+            "Przed wysylka przypomnienia do grupy trzeba sprawdzic, czy dokumenty zgod sa kompletne "
+            "dla listy uczestnikow."
+        ),
+        "status": "nowe",
+        "priority_level": "normalny",
+        "due_offset_days": 1,
+        "due_hour": 11,
+        "sla_offset_hours": 24,
+        "document_search": "Dostepy do panelu zajec",
+        "business_context": "Sprawa organizacyjna do dopilnowania przed warsztatami.",
+        "attention_reason": "Nie jest krytyczna teraz, ale powinna byc widoczna w karcie sprawy.",
+    },
+]
+
 
 def seed_demo_data(
     invoice_service: InvoiceService,
@@ -1629,6 +1709,7 @@ def seed_demo_data(
     billing_service: BillingService | None = None,
     knowledge_service: KnowledgeService | None = None,
     calendar_service: CalendarService | None = None,
+    work_item_service: WorkItemService | None = None,
 ) -> None:
     if not auth_service:
         _ensure_legacy_default_invoices(invoice_service, invoice_repository)
@@ -1643,6 +1724,13 @@ def seed_demo_data(
         _ensure_demo_invoice_data(auth_service, invoice_service, invoice_repository)
     if auth_service and task_service and calendar_service:
         _ensure_demo_task_data(auth_service, task_service, calendar_service)
+    if auth_service and work_item_service:
+        _ensure_demo_work_item_data(
+            auth_service,
+            work_item_service,
+            invoice_service=invoice_service,
+            knowledge_service=knowledge_service,
+        )
 
 
 def _ensure_legacy_default_invoices(
@@ -1922,6 +2010,178 @@ def _ensure_demo_task_data(
                     actor=actor,
                     organization_id=organization_id,
                 )
+
+
+def _ensure_demo_work_item_data(
+    auth_service: AuthService,
+    work_item_service: WorkItemService,
+    *,
+    invoice_service: InvoiceService,
+    knowledge_service: KnowledgeService | None = None,
+) -> None:
+    users_by_login = {item["login"]: item for item in auth_service.list_users()}
+    actor_user = users_by_login.get(DEFAULT_ADMIN_LOGIN)
+    if not actor_user:
+        return
+
+    organizations_by_slug = _organization_map(auth_service, actor_user)
+    actor = actor_user.get("display_name") or actor_user["login"]
+
+    for seed_item in SEED_WORK_ITEMS:
+        organization = organizations_by_slug.get(
+            _normalize_organization_slug(seed_item["organization_slug"])
+        )
+        if not organization:
+            continue
+        organization_id = int(organization["organization_id"])
+        title = str(seed_item["title"]).strip()
+        existing_items = work_item_service.list_work_items(
+            {"only_open": "0"},
+            organization_id=organization_id,
+            limit=500,
+        )
+        if any(str(item.get("title") or "").strip() == title for item in existing_items):
+            continue
+
+        assigned_user = users_by_login.get(str(seed_item.get("assigned_login") or ""))
+        due_at = _build_demo_datetime(
+            int(seed_item.get("due_offset_days") or 0),
+            int(seed_item.get("due_hour") or 12),
+        )
+        sla_deadline_at = (
+            datetime.strptime(due_at, "%Y-%m-%dT%H:%M")
+            + timedelta(hours=int(seed_item.get("sla_offset_hours") or 24))
+        ).strftime("%Y-%m-%dT%H:%M")
+        metadata = _build_work_item_metadata(
+            seed_item,
+            organization_id=organization_id,
+            invoice_service=invoice_service,
+            knowledge_service=knowledge_service,
+        )
+
+        work_item_service.create_work_item(
+            {
+                "source_type": seed_item.get("source_type") or "manual",
+                "source_id": _work_item_seed_source_id(metadata),
+                "title": title,
+                "description": seed_item.get("description"),
+                "status": seed_item.get("status") or "nowe",
+                "priority_level": seed_item.get("priority_level") or "normalny",
+                "assigned_user_id": assigned_user["user_id"] if assigned_user else None,
+                "due_at": due_at,
+                "sla_deadline_at": sla_deadline_at,
+                "metadata": metadata,
+            },
+            actor_user=actor_user,
+            actor=actor,
+            organization_id=organization_id,
+        )
+
+
+def _work_item_seed_source_id(metadata: dict[str, Any]) -> int | None:
+    invoice_id = metadata.get("invoice_id")
+    if invoice_id not in (None, ""):
+        return int(invoice_id)
+    document_ids = metadata.get("knowledge_document_ids")
+    if isinstance(document_ids, list) and document_ids:
+        return int(document_ids[0])
+    return None
+
+
+def _build_work_item_metadata(
+    seed_item: dict[str, Any],
+    *,
+    organization_id: int,
+    invoice_service: InvoiceService,
+    knowledge_service: KnowledgeService | None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "business_context": seed_item.get("business_context"),
+        "attention_reason": seed_item.get("attention_reason"),
+    }
+    invoice = _find_seed_invoice(
+        invoice_service,
+        organization_id=organization_id,
+        search=str(seed_item.get("invoice_search") or ""),
+    )
+    if invoice:
+        metadata.update(
+            {
+                "invoice_id": int(invoice["id"]),
+                "invoice_number": invoice.get("invoice_number"),
+                "invoice_status": invoice.get("status"),
+                "invoice_contractor_name": invoice.get("contractor_name") or invoice.get("issuer_name"),
+                "invoice_amount_label": _format_amount_label(invoice),
+            }
+        )
+        if invoice.get("contractor_id"):
+            metadata["contractor_id"] = int(invoice["contractor_id"])
+            metadata["contractor_name"] = invoice.get("contractor_name") or invoice.get("issuer_name")
+    contractor = _find_seed_contractor(
+        invoice_service,
+        organization_id=organization_id,
+        search=str(seed_item.get("contractor_search") or ""),
+    )
+    if contractor:
+        metadata["contractor_id"] = int(contractor["contractor_id"])
+        metadata["contractor_name"] = contractor.get("name")
+        metadata["contractor_relation"] = "Powiazany kontrahent operacyjny"
+    document = _find_seed_document(
+        knowledge_service,
+        organization_id=organization_id,
+        search=str(seed_item.get("document_search") or ""),
+    )
+    if document:
+        metadata["knowledge_document_ids"] = [int(document["knowledge_document_id"])]
+        metadata["document_title"] = document.get("title")
+        metadata["document_folder"] = document.get("library_path") or "Baza wiedzy"
+        metadata["document_context"] = "Dokument pomocny przy wyjasnieniu tej sprawy"
+    return {key: value for key, value in metadata.items() if value not in (None, "", [])}
+
+
+def _find_seed_invoice(
+    invoice_service: InvoiceService,
+    *,
+    organization_id: int,
+    search: str,
+) -> dict[str, Any] | None:
+    if not search:
+        return None
+    invoices = invoice_service.list_invoices({"search": search}, organization_id=organization_id)
+    return invoices[0] if invoices else None
+
+
+def _find_seed_contractor(
+    invoice_service: InvoiceService,
+    *,
+    organization_id: int,
+    search: str,
+) -> dict[str, Any] | None:
+    if not search:
+        return None
+    contractors = invoice_service.list_contractors(search=search, organization_id=organization_id)
+    return contractors[0] if contractors else None
+
+
+def _find_seed_document(
+    knowledge_service: KnowledgeService | None,
+    *,
+    organization_id: int,
+    search: str,
+) -> dict[str, Any] | None:
+    if not knowledge_service or not search:
+        return None
+    documents = knowledge_service.list_documents(organization_id=organization_id, search=search)["documents"]
+    return documents[0] if documents else None
+
+
+def _format_amount_label(invoice: dict[str, Any]) -> str:
+    amount = invoice.get("gross_amount")
+    currency = invoice.get("currency") or "PLN"
+    try:
+        return f"{float(amount):.2f} {currency}"
+    except (TypeError, ValueError):
+        return str(currency)
 
 
 def _ensure_demo_organizations_and_users(auth_service: AuthService) -> None:

@@ -40,7 +40,7 @@ const {
   LOGIN_FORM_METHOD,
   resolveLoginRedirect,
 } = require("../src/modules/auth/authModel.ts");
-const { shouldClearSessionAttentionForPath } = require("../src/layouts/appShellModel.ts");
+const { shouldClearSessionAttentionForPath, shouldShowTopbarPrimaryAction } = require("../src/layouts/appShellModel.ts");
 
 assert.equal(LOGIN_FORM_ACTION, "/login");
 assert.equal(LOGIN_FORM_METHOD, "post");
@@ -54,5 +54,8 @@ assert.equal(resolveLoginRedirect("//evil.example.com"), "/pulpit");
 assert.equal(shouldClearSessionAttentionForPath("/login"), true);
 assert.equal(shouldClearSessionAttentionForPath("/login?next=/pulpit-dnia"), false);
 assert.equal(shouldClearSessionAttentionForPath("/pulpit-dnia"), false);
+assert.equal(shouldShowTopbarPrimaryAction({ id: "work-items" }, "/work-items"), true);
+assert.equal(shouldShowTopbarPrimaryAction({ id: "work-items" }, "/work-items/41"), false);
+assert.equal(shouldShowTopbarPrimaryAction({ id: "daily-brief" }, "/pulpit-dnia"), true);
 
 console.log("Auth/session regression tests passed.");

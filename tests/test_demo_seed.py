@@ -22,6 +22,7 @@ class DemoSeedTests(unittest.TestCase):
         self.billing_service = self.services["billing_service"]
         self.calendar_service = self.services["calendar_service"]
         self.knowledge_service = self.services["knowledge_service"]
+        self.work_item_service = self.services["work_item_service"]
         self.dashboard_service = self.services["dashboard_service"]
         self.organization_repository = self.services["organization_repository"]
 
@@ -36,6 +37,7 @@ class DemoSeedTests(unittest.TestCase):
             billing_service=self.billing_service,
             knowledge_service=self.knowledge_service,
             calendar_service=self.calendar_service,
+            work_item_service=self.work_item_service,
         )
 
         organization_names = {item["name"] for item in self.organization_repository.list_organizations()}
@@ -192,6 +194,40 @@ class DemoSeedTests(unittest.TestCase):
         self.assertTrue(any(item["title"] == "Przygotowac zestawienie terminow VAT" for item in alfa_tasks))
         self.assertTrue(any(item["title"] == "Spotkanie statusowe z klientem premium" for item in alfa_tasks))
 
+        casi_work_items = self.work_item_service.list_work_items(
+            organization_id=int(casi["organization_id"]),
+            limit=50,
+        )
+        self.assertGreaterEqual(len(casi_work_items), 2)
+        self.assertTrue(
+            any(item["title"] == "Uzupelnic opis faktury za hosting i monitoring" for item in casi_work_items)
+        )
+        self.assertTrue(any(item["title"] == "Sprawdzic aktualnosc procedury delegacji" for item in casi_work_items))
+        casi_invoice_work_item = next(
+            item for item in casi_work_items if item["title"] == "Uzupelnic opis faktury za hosting i monitoring"
+        )
+        casi_work_item_detail = self.work_item_service.get_work_item_detail(
+            int(casi_invoice_work_item["work_item_id"]),
+            organization_id=int(casi["organization_id"]),
+        )
+        self.assertIsNotNone(casi_work_item_detail)
+        assert casi_work_item_detail is not None
+        self.assertTrue(casi_work_item_detail["history"])
+        casi_metadata = casi_work_item_detail["work_item"]["metadata"]
+        self.assertTrue(casi_metadata.get("invoice_id"))
+        self.assertTrue(casi_metadata.get("contractor_id"))
+        self.assertTrue(casi_metadata.get("knowledge_document_ids"))
+
+        robotyka_work_items = self.work_item_service.list_work_items(
+            organization_id=int(robotyka["organization_id"]),
+            limit=50,
+        )
+        self.assertGreaterEqual(len(robotyka_work_items), 2)
+        self.assertTrue(any(item["title"] == "Wyjasnic platnosc za zajecia robotyki" for item in robotyka_work_items))
+        self.assertTrue(
+            any(item["title"] == "Potwierdzic zgody rodzicow na warsztaty sobotnie" for item in robotyka_work_items)
+        )
+
         planner_snapshot = self.task_service.get_planner_snapshot(
             organization_id=int(default_org["organization_id"]),
             viewer_user=users_by_login["admin"],
@@ -225,6 +261,8 @@ class DemoSeedTests(unittest.TestCase):
         first_alfa_doc_count = len(alfa_docs)
         first_default_invoice_count = len(default_invoices)
         first_task_count = len(default_tasks)
+        first_casi_work_item_count = len(casi_work_items)
+        first_robotyka_work_item_count = len(robotyka_work_items)
         seed_demo_data(
             self.invoice_service,
             self.invoice_repository,
@@ -233,6 +271,7 @@ class DemoSeedTests(unittest.TestCase):
             billing_service=self.billing_service,
             knowledge_service=self.knowledge_service,
             calendar_service=self.calendar_service,
+            work_item_service=self.work_item_service,
         )
         self.assertEqual(len(self.auth_service.list_users()), first_count)
         self.assertEqual(len(self.billing_service.list_students(organization_id=robotyka_id)), first_student_count)
@@ -255,6 +294,14 @@ class DemoSeedTests(unittest.TestCase):
             ),
             first_task_count,
         )
+        self.assertEqual(
+            len(self.work_item_service.list_work_items(organization_id=int(casi["organization_id"]), limit=50)),
+            first_casi_work_item_count,
+        )
+        self.assertEqual(
+            len(self.work_item_service.list_work_items(organization_id=int(robotyka["organization_id"]), limit=50)),
+            first_robotyka_work_item_count,
+        )
 
     def test_seed_demo_data_adds_demo_users_even_when_invoices_already_exist(self) -> None:
         self.auth_service.ensure_default_admin()
@@ -268,6 +315,7 @@ class DemoSeedTests(unittest.TestCase):
             billing_service=self.billing_service,
             knowledge_service=self.knowledge_service,
             calendar_service=self.calendar_service,
+            work_item_service=self.work_item_service,
         )
 
         self.assertGreater(self.invoice_repository.count_all(), 1)
@@ -286,6 +334,11 @@ class DemoSeedTests(unittest.TestCase):
             viewer_user=next(item for item in self.auth_service.list_users() if item["login"] == "robotyka_admin"),
         )
         self.assertTrue(robotyka_tasks)
+        robotyka_work_items = self.work_item_service.list_work_items(
+            organization_id=int(robotyka["organization_id"]),
+            limit=50,
+        )
+        self.assertTrue(robotyka_work_items)
 
 
 if __name__ == "__main__":

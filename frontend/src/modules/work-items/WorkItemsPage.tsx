@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClipboardList, RefreshCw } from "lucide-react";
 
@@ -205,7 +206,7 @@ export function WorkItemsPage() {
           <div className="work-item-title-cell">
             <span className="module-row-title">
               <ClipboardList aria-hidden="true" size={16} />
-              {row.title}
+              <Link href={`/work-items/${row.workItemId}`}>{row.title}</Link>
             </span>
             <span className="work-item-description">{row.description}</span>
             <span className="work-item-meta">

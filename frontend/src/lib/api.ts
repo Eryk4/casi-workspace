@@ -145,6 +145,10 @@ export function workItemSnoozePath(workItemId: number | string): string {
   return `/work-items/${workItemId}/snooze`;
 }
 
+export function workItemDetailPath(workItemId: number | string): string {
+  return `/work-items/${workItemId}`;
+}
+
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const url = `${API_BASE_PATH}${normalizedPath}${toQueryString(options.query)}`;
@@ -191,6 +195,8 @@ export const api = {
   tasks: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/tasks", { query }),
   taskFocus: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/tasks/focus", { query }),
   workItems: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/work-items", { query }),
+  workItemDetail: (workItemId: number | string, query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>(workItemDetailPath(workItemId), { query }),
   closeWorkItem: (workItemId: number | string, reason: string, organizationId?: string | null) =>
     apiRequest<Record<string, unknown>>(workItemClosePath(workItemId), {
       method: "POST",

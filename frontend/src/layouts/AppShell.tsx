@@ -79,7 +79,7 @@ function AppShellFrame({
     <div className="app-shell" data-sidebar-collapsed={sidebarCollapsed}>
       <Sidebar activePath={pathname} collapsed={sidebarCollapsed} onToggleCollapsed={onToggleSidebar} />
       <div className="app-shell__workspace">
-        <Topbar currentModule={currentModule} sessionAttention={sessionAttention} />
+        <Topbar currentModule={currentModule} pathname={pathname} sessionAttention={sessionAttention} />
         <OrganizationContextBanner
           error={organizationContext.error}
           organizationCount={organizationContext.organizations.length}

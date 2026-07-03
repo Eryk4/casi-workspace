@@ -149,6 +149,7 @@ def main() -> None:
             billing_service=services.get("billing_service"),
             knowledge_service=services.get("knowledge_service"),
             calendar_service=services.get("calendar_service"),
+            work_item_service=services.get("work_item_service"),
         )
         print("[OK] Seed danych demo zakonczony.", flush=True)
 

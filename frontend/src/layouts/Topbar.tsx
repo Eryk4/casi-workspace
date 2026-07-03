@@ -7,9 +7,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useActiveOrganization } from "@/context/ActiveOrganizationContext";
+import { shouldShowTopbarPrimaryAction } from "./appShellModel";
 
 type TopbarProps = {
   currentModule: NavigationItem;
+  pathname: string;
   sessionAttention?: boolean;
 };
 
@@ -19,7 +21,7 @@ const readinessToneByStatus = {
   planned: "neutral",
 } as const satisfies Record<NavigationItem["readiness"], "neutral" | "success" | "warning" | "danger" | "info">;
 
-export function Topbar({ currentModule, sessionAttention = false }: TopbarProps) {
+export function Topbar({ currentModule, pathname, sessionAttention = false }: TopbarProps) {
   const {
     error: organizationError,
     organizations,
@@ -81,9 +83,11 @@ export function Topbar({ currentModule, sessionAttention = false }: TopbarProps)
             <Link href="/login">Zaloguj się ponownie</Link>
           </div>
         ) : null}
-        <Button icon={currentModule.id === "daily-brief" ? <RefreshCw size={15} /> : <Plus size={15} />} size="sm" variant="primary">
-          {currentModule.actionLabel}
-        </Button>
+        {shouldShowTopbarPrimaryAction(currentModule, pathname) ? (
+          <Button icon={currentModule.id === "daily-brief" ? <RefreshCw size={15} /> : <Plus size={15} />} size="sm" variant="primary">
+            {currentModule.actionLabel}
+          </Button>
+        ) : null}
         <button className="app-topbar__icon-button" type="button" aria-label="Powiadomienia">
           <Bell aria-hidden="true" size={17} />
           <span>3</span>

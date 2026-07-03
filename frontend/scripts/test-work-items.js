@@ -32,7 +32,7 @@ Module._resolveFilename = function resolveAlias(request, parent, isMain, options
   return originalResolveFilename.call(this, request, parent, isMain, options);
 };
 
-const { ApiContractError, ApiError, workItemAssignPath, workItemClosePath, workItemSnoozePath } = require("../src/lib/api.ts");
+const { ApiContractError, ApiError, workItemAssignPath, workItemClosePath, workItemDetailPath, workItemSnoozePath } = require("../src/lib/api.ts");
 const {
   WORK_ITEMS_ENDPOINT,
   WORK_ITEM_ASSIGN_ENDPOINT_SUFFIX,
@@ -210,6 +210,7 @@ assert.equal(canUseWorkItemOrganizationScope(null), false);
 assert.equal(canUseWorkItemOrganizationScope(""), false);
 assert.equal(workItemAssignPath(41), "/work-items/41/assign");
 assert.equal(workItemClosePath(41), "/work-items/41/close");
+assert.equal(workItemDetailPath(41), "/work-items/41");
 assert.equal(workItemSnoozePath(41), "/work-items/41/snooze");
 assert.equal(WORK_ITEMS_READ_ONLY, false);
 
