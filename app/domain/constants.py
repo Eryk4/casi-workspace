@@ -83,6 +83,15 @@ EVENT_TYPES = (
     "task_template_applied",
     "task_reminder_sent",
     "task_reminder_failed",
+    "work_item_created",
+    "work_item_updated",
+    "work_item_assigned",
+    "work_item_snoozed",
+    "work_item_escalated",
+    "work_item_closed",
+    "work_item_reopened",
+    "work_item_sla_warning",
+    "work_item_sla_escalated",
     "intake_form_created",
     "intake_form_updated",
     "intake_form_archived",
@@ -245,6 +254,21 @@ TASK_TYPES = ("zadanie", "wydarzenie", "przypomnienie", "notatka")
 TASK_STATUSES = ("nowe", "w_toku", "oczekuje", "zakonczone", "anulowane")
 
 TASK_PRIORITIES = ("niski", "normalny", "wysoki", "krytyczny")
+
+WORK_ITEM_SOURCE_TYPES = (
+    "manual",
+    "invoice",
+    "task",
+    "support",
+    "knowledge",
+    "automation",
+)
+
+WORK_ITEM_STATUSES = ("nowe", "w_toku", "oczekuje", "zamkniete", "anulowane")
+
+WORK_ITEM_PRIORITY_LEVELS = ("niski", "normalny", "wysoki", "krytyczny")
+
+WORK_ITEM_SLA_STAGES = ("on_track", "warning", "breached", "escalated", "resolved")
 
 TASK_VISIBILITY_SCOPES = ("prywatne", "wybrane_osoby", "organizacja")
 

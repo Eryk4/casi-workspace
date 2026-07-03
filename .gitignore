@@ -1,13 +1,61 @@
+# Python cache / local tooling
 __pycache__/
+**/__pycache__/
 *.pyc
-.env.local
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.local.example
 data/local.env
+data/*.env
+data/**/*.env
+
+# Local sandbox database, backups, and file storage
 data/*.sqlite3
+data/**/*.sqlite3
+data/backup/
+data/backups/
 data/test_runtime/
 data/magazyn/
 data/documents/*.txt
 data/ocr/*.txt
+
+# Logs and temporary files
+*.log
+data/*.log
+data/**/*.log
 _local_server_*.log
 .tmp-ui-server.*.log
 tmp_*.txt
 _tmp_*.log
+*.tmp
+*.temp
+
+# Frontend build/dependencies
+.next/
+node_modules/
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+!frontend/.env.local.example
+frontend/_casi_frontend_start_*.log
+frontend/tsconfig.tsbuildinfo
+
+# Generated local reports
+reports/storage_migration_plan*.json
+reports/storage_migration_plan*.md
+reports/database_migration_audit*.json
+reports/database_migration_audit*.md

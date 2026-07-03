@@ -19,6 +19,7 @@ class TaskReminderService:
         outbox_repository: TaskReminderOutboxRepository,
         organization_repository: OrganizationRepository,
         telegram_adapter: TelegramBotAdapter,
+        work_item_service: Any | None = None,
         *,
         retry_minutes: int = 15,
         processing_timeout_minutes: int = 10,
@@ -29,6 +30,7 @@ class TaskReminderService:
         self.outbox_repository = outbox_repository
         self.organization_repository = organization_repository
         self.telegram_adapter = telegram_adapter
+        self.work_item_service = work_item_service
         self.retry_minutes = max(1, int(retry_minutes))
         self.processing_timeout_minutes = max(1, int(processing_timeout_minutes))
         self.max_attempts = max(1, int(max_attempts))
@@ -196,6 +198,17 @@ class TaskReminderService:
     ) -> dict[str, int]:
         if not self.is_enabled(organization_id=organization_id):
             return {"evaluated": 0, "queued": 0, "deferred": 0, "failed": 0, "skipped": 0}
+
+        if self.work_item_service is not None:
+            try:
+                self.work_item_service.run_sla_sweep(
+                    organization_id=organization_id,
+                    actor=worker_name,
+                    limit=max(10, int(limit) * 2),
+                )
+            except Exception:
+                # SLA sweep nie moze blokowac dostarczenia przypomnien zadan.
+                pass
 
         tasks = self.task_repository.list_due_reminders_for_dispatch(
             due_before=now_local_datetime_value(),

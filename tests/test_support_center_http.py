@@ -92,6 +92,26 @@ class SupportCenterHttpTests(HttpServerTestCase):
 
         response, payload = self._request(
             "POST",
+            f"/api/support/requests/{request_id}/comments",
+            body=json.dumps(
+                {
+                    "note_text": "Nie powinno zapisac komentarza.",
+                    "organization_id": 999,
+                    "request_id": 999,
+                    "author_user_id": 999,
+                    "role": "admin",
+                    "created_at": "2099-01-01T00:00:00",
+                }
+            ),
+            headers={"Cookie": guest_cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("note_text", error_payload["error"])
+        self.assertIn("parent_comment_id", error_payload["error"])
+
+        response, payload = self._request(
+            "POST",
             f"/api/support/requests/{request_id}/attachments",
             body=json.dumps(
                 {
@@ -114,6 +134,7 @@ class SupportCenterHttpTests(HttpServerTestCase):
         detail = json.loads(payload.decode("utf-8"))
         self.assertEqual(detail["item"]["source_kind"], "support")
         self.assertEqual(len(detail["comments"]), 1)
+        self.assertFalse(any(comment["note_text"] == "Nie powinno zapisac komentarza." for comment in detail["comments"]))
         self.assertEqual(len(detail["attachments"]), 1)
 
         response, payload = self._request("GET", "/api/support/requests", headers={"Cookie": other_guest_cookie})
@@ -158,6 +179,42 @@ class SupportCenterHttpTests(HttpServerTestCase):
             headers={"Cookie": operator_cookie, "Content-Type": "application/json"},
         )
         self.assertEqual(response.status, 201, payload.decode("utf-8"))
+        created = json.loads(payload.decode("utf-8"))
+        item_id = int(created["intake_item_id"])
+
+        response, payload = self._request(
+            "POST",
+            f"/api/intake/items/{item_id}/comments",
+            body=json.dumps({"note_text": "Komentarz operacyjny."}),
+            headers={"Cookie": operator_cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 201, payload.decode("utf-8"))
+
+        response, payload = self._request(
+            "POST",
+            f"/api/intake/items/{item_id}/comments",
+            body=json.dumps(
+                {
+                    "note_text": "Nie powinno przejsc.",
+                    "organization_id": 999,
+                    "intake_item_id": 999,
+                    "author_user_id": 999,
+                    "status": "closed",
+                    "created_at": "2099-01-01T00:00:00",
+                }
+            ),
+            headers={"Cookie": operator_cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("note_text", error_payload["error"])
+        self.assertIn("parent_comment_id", error_payload["error"])
+
+        response, payload = self._request("GET", f"/api/intake/items/{item_id}", headers={"Cookie": operator_cookie})
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        detail = json.loads(payload.decode("utf-8"))
+        self.assertEqual(len(detail["comments"]), 1)
+        self.assertFalse(any(comment["note_text"] == "Nie powinno przejsc." for comment in detail["comments"]))
 
         response, payload = self._request("GET", "/api/intake/items", headers={"Cookie": operator_cookie})
         self.assertEqual(response.status, 200, payload.decode("utf-8"))

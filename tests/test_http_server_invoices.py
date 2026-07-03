@@ -45,6 +45,12 @@ class HttpServerInvoiceTests(HttpServerTestCase):
     test_invoice_comment_endpoint_adds_comment_and_detail_contains_it = (
         HttpServerTestMethods.test_invoice_comment_endpoint_adds_comment_and_detail_contains_it
     )
+    test_invoice_comment_endpoint_requires_write_scope = (
+        HttpServerTestMethods.test_invoice_comment_endpoint_requires_write_scope
+    )
+    test_invoice_comment_endpoint_rejects_extra_payload_fields = (
+        HttpServerTestMethods.test_invoice_comment_endpoint_rejects_extra_payload_fields
+    )
     test_invoice_preview_endpoint_returns_preview_payload = (
         HttpServerTestMethods.test_invoice_preview_endpoint_returns_preview_payload
     )

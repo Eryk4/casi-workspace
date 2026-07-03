@@ -19,7 +19,7 @@ from app.repositories.event_repository import EventRepository
 from app.repositories.knowledge_repository import KnowledgeRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.user_repository import UserRepository
-from app.services.storage_service import StorageError, StorageService
+from app.services.storage_service import StorageError, StorageNotFoundError, StorageService
 from app.utils import now_iso
 
 
@@ -2571,12 +2571,11 @@ class KnowledgeService:
 
     def _read_job_source_bytes(self, storage_key: str) -> bytes:
         try:
-            file_path = self.storage_service.resolve_local_path("knowledge", storage_key)
+            return self.storage_service.read_binary("knowledge", storage_key)
+        except StorageNotFoundError as error:
+            raise KnowledgeError("Plik źródłowy dokumentu nie istnieje już w magazynie.") from error
         except StorageError as error:
             raise KnowledgeError("Nie udało się odnaleźć pliku źródłowego dokumentu.") from error
-        if not file_path.exists() or not file_path.is_file():
-            raise KnowledgeError("Plik źródłowy dokumentu nie istnieje już w magazynie.")
-        return file_path.read_bytes()
 
     def _extract_text_with_method(self, file_bytes: bytes, file_name: str, mime_type: str | None) -> tuple[str, str]:
         suffix = Path(file_name).suffix.lower()

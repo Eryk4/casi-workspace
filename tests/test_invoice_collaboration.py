@@ -14,6 +14,9 @@ class InvoiceCollaborationTests(InvoiceMvpTestCase):
     test_invoice_comment_is_added_and_visible_in_detail = (
         InvoiceMvpTests.test_invoice_comment_is_added_and_visible_in_detail
     )
+    test_invoice_comment_history_redacts_legacy_note_text_details = (
+        InvoiceMvpTests.test_invoice_comment_history_redacts_legacy_note_text_details
+    )
     test_verification_workspace_item_exposes_assignee_and_comment_count = (
         InvoiceMvpTests.test_verification_workspace_item_exposes_assignee_and_comment_count
     )

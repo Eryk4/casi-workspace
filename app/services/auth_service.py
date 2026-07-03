@@ -7,7 +7,12 @@ import json
 import secrets
 from typing import Any
 
-from app.config import DEFAULT_ADMIN_LOGIN, DEFAULT_ADMIN_PASSWORD, SESSION_DURATION_HOURS
+from app.config import (
+    DEFAULT_ADMIN_LOGIN,
+    DEFAULT_ADMIN_PASSWORD,
+    SESSION_DURATION_HOURS,
+    SESSION_MAX_ACTIVE_DEVICES_PER_ACCOUNT,
+)
 from app.domain.constants import (
     GUEST_ROLE,
     KNOWLEDGE_ASSISTANT_USE_CAPABILITY,
@@ -44,7 +49,7 @@ class PermissionError(AuthError):
     pass
 
 
-MAX_ACTIVE_DEVICES_PER_ACCOUNT = 3
+MAX_ACTIVE_DEVICES_PER_ACCOUNT = SESSION_MAX_ACTIVE_DEVICES_PER_ACCOUNT
 
 
 class AuthService:
@@ -376,8 +381,11 @@ class AuthService:
             int(user["user_id"]),
             exclude_device_id=normalized_device_id,
         )
-        if active_device_count >= MAX_ACTIVE_DEVICES_PER_ACCOUNT:
-            raise AuthError("To konto moze byc zalogowane jednoczesnie maksymalnie na 3 urzadzeniach.")
+        if MAX_ACTIVE_DEVICES_PER_ACCOUNT > 0 and active_device_count >= MAX_ACTIVE_DEVICES_PER_ACCOUNT:
+            raise AuthError(
+                "To konto moze byc zalogowane jednoczesnie maksymalnie "
+                f"na {MAX_ACTIVE_DEVICES_PER_ACCOUNT} urzadzeniach."
+            )
         session_token = secrets.token_urlsafe(32)
         expires_at = self._expires_at()
         self.session_repository.create(

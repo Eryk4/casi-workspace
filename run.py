@@ -8,13 +8,16 @@ from app.api.http_server import create_server
 from app.bootstrap import build_services
 from app.config import (
     APP_RELEASE_ID,
+    DATA_DIR,
     DEFAULT_ADMIN_LOGIN,
     DEFAULT_ADMIN_PASSWORD,
+    DB_ENGINE,
     EMAIL_AUTOCHECK_SECONDS,
     ENABLE_DEMO_SEED,
     KNOWLEDGE_FOLDER_SCAN_SECONDS,
     KNOWLEDGE_PIPELINE_POLL_SECONDS,
     SECURE_COOKIES,
+    SQLITE_DB_PATH,
     STORAGE_ROOT,
     TASK_REMINDER_POLL_SECONDS,
     TASK_REMINDER_WORKER_POLL_SECONDS,
@@ -25,6 +28,7 @@ from app.config import (
 )
 from app.db import initialize_database, reset_database
 from app.demo_seed import seed_demo_data
+from app.reset_guard import prepare_local_sandbox_reset_from_environment
 from app.workers.email_import_worker import EmailImportSchedulerLoop
 from app.workers.task_reminder_worker import TaskReminderDeliveryLoop, TaskReminderSchedulerLoop
 
@@ -101,11 +105,20 @@ def main() -> None:
             "web startuje tylko panel HTTP, worker uruchamia tylko petle tla."
         ),
     )
-    parser.add_argument("--reset", action="store_true", help="Resetuje skonfigurowana baze i seed demo.")
+    parser.add_argument("--reset", action="store_true", help="Resetuje lokalny sandbox SQLite po guardrailu bezpieczenstwa.")
     args = parser.parse_args()
 
     print("[START] Inicjalizacja bazy...", flush=True)
     if args.reset:
+        reset_plan = prepare_local_sandbox_reset_from_environment(
+            db_engine=DB_ENGINE,
+            sqlite_path=SQLITE_DB_PATH,
+            data_dir=DATA_DIR,
+        )
+        if reset_plan.backup_path is not None:
+            print(f"[OK] Backup lokalnej bazy przed resetem: {reset_plan.backup_path}", flush=True)
+        else:
+            print("[INFO] Brak istniejacego pliku SQLite do backupu przed resetem.", flush=True)
         reset_database()
     else:
         initialize_database()

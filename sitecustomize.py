@@ -28,8 +28,13 @@ def _configure_test_isolation() -> None:
     sqlite_path = runtime_root / "invoice_ops.sqlite3"
     storage_root = runtime_root / "magazyn"
 
+    os.environ["INVOICE_DATABASE_URL"] = ""
+    os.environ["DATABASE_URL"] = ""
+    os.environ["INVOICE_DB_ENGINE"] = "sqlite"
     os.environ.setdefault("INVOICE_SQLITE_PATH", str(sqlite_path))
     os.environ.setdefault("INVOICE_STORAGE_ROOT", str(storage_root))
+    os.environ["INVOICE_STORAGE_BACKEND"] = "local"
+    os.environ["INVOICE_MAX_ACTIVE_DEVICES_PER_ACCOUNT"] = "3"
 
 
 _configure_test_isolation()

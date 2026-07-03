@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.repositories.entity_attachment_repository import EntityAttachmentRepository
-from app.services.storage_service import LocalStorageService, StorageService
+from app.services.storage_service import StorageService
 
 
 class AttachmentService:

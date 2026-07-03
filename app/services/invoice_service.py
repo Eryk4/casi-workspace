@@ -2280,7 +2280,9 @@ class InvoiceService:
             return None
 
         relations = self.invoice_repository.list_relations(invoice_id)
-        history = self.event_repository.list_by_invoice(invoice_id, organization_id=invoice.get("organization_id"))
+        history = self._sanitize_invoice_history_events(
+            self.event_repository.list_by_invoice(invoice_id, organization_id=invoice.get("organization_id"))
+        )
         similar = self.duplicate_detector.similar_invoices(invoice, exclude_invoice_id=invoice_id)
         authoritative_source = self._effective_authoritative_source(invoice)
         ksef_overrides = self.invoice_ksef_override_repository.list_for_invoice(
@@ -2532,6 +2534,19 @@ class InvoiceService:
         except (TypeError, json.JSONDecodeError):
             return {}
         return parsed if isinstance(parsed, dict) else {}
+
+    def _sanitize_invoice_history_events(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        sanitized_events: list[dict[str, Any]] = []
+        for event in events:
+            sanitized = dict(event)
+            if sanitized.get("event_type") == "invoice_comment_added":
+                details = self._parse_event_details(sanitized)
+                note_text = details.pop("note_text", None)
+                if note_text is not None and "note_length" not in details:
+                    details["note_length"] = len(str(note_text))
+                sanitized["details"] = details
+            sanitized_events.append(sanitized)
+        return sanitized_events
 
     def _resolve_invoice_workflow_undo(
         self,
@@ -2943,7 +2958,7 @@ class InvoiceService:
             actor=actor,
             details={
                 "invoice_comment_id": created_comment_id,
-                "note_text": normalized_text,
+                "note_length": len(normalized_text),
             },
         )
         comments = self.invoice_repository.list_comments(invoice_id)
@@ -2981,7 +2996,54 @@ class InvoiceService:
             include_completed=False,
             limit=8,
         )
-        return {"contractor": contractor, "invoices": invoices, "linked_tasks": linked_tasks}
+        notes = self.contractor_repository.list_notes(
+            contractor_id,
+            organization_id=contractor.get("organization_id"),
+        )
+        return {"contractor": contractor, "invoices": invoices, "linked_tasks": linked_tasks, "notes": notes}
+
+    def add_contractor_note(
+        self,
+        contractor_id: int,
+        note_text: str,
+        *,
+        actor_user: dict[str, Any] | None,
+        organization_id: int | None = None,
+    ) -> dict[str, Any]:
+        contractor = self.contractor_repository.get_by_id(contractor_id, organization_id=organization_id)
+        if not contractor:
+            raise ValueError("Nie znaleziono kontrahenta.")
+
+        normalized_text = str(note_text or "").strip()
+        if not normalized_text:
+            raise ValueError("Notatka kontrahenta nie moze byc pusta.")
+        if len(normalized_text) > 2000:
+            raise ValueError("Notatka kontrahenta moze miec maksymalnie 2000 znakow.")
+        if not actor_user or not actor_user.get("user_id"):
+            raise ValueError("Nie mozna dodac notatki bez zalogowanego uzytkownika.")
+
+        created_note_id = self.contractor_repository.add_note(
+            {
+                "organization_id": contractor.get("organization_id"),
+                "contractor_id": contractor_id,
+                "author_user_id": int(actor_user["user_id"]),
+                "note_text": normalized_text,
+            }
+        )
+        notes = self.contractor_repository.list_notes(
+            contractor_id,
+            organization_id=contractor.get("organization_id"),
+        )
+        return next(
+            (item for item in notes if int(item.get("contractor_note_id") or 0) == int(created_note_id)),
+            {
+                "contractor_note_id": created_note_id,
+                "organization_id": contractor.get("organization_id"),
+                "contractor_id": contractor_id,
+                "author_user_id": int(actor_user["user_id"]),
+                "note_text": normalized_text,
+            },
+        )
 
     def global_search(self, query_text: str, organization_id: int | None = None) -> dict[str, Any]:
         if not query_text.strip():

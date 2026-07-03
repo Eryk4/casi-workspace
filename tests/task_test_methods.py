@@ -951,6 +951,44 @@ class TaskMvpTests(unittest.TestCase):
             snoozed = json.loads(payload.decode("utf-8"))
             self.assertEqual(snoozed["task"]["reminder_state"], "zaplanowane")
             self.assertTrue(snoozed["task"]["remind_at"])
+            snoozed_remind_at = str(snoozed["task"]["remind_at"])
+            snoozed_history_count = len(snoozed["history"])
+            connection.close()
+
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            connection.request(
+                "POST",
+                f"/api/tasks/{task_id}/snooze-reminder",
+                body=json.dumps(
+                    {
+                        "mode": "1h",
+                        "task_id": 999,
+                        "user_id": 999,
+                        "organization_id": 999,
+                        "actor_user_id": 999,
+                        "role": "admin",
+                        "status": "zakonczone",
+                        "created_at": "2099-01-01T00:00:00",
+                        "reminder_id": 999,
+                    }
+                ),
+                headers={"Content-Type": "application/json", "Cookie": cookie},
+            )
+            response = connection.getresponse()
+            payload = response.read()
+            self.assertEqual(response.status, 400, payload.decode("utf-8"))
+            error_payload = json.loads(payload.decode("utf-8"))
+            self.assertIn("mode", error_payload["error"])
+            connection.close()
+
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            connection.request("GET", f"/api/tasks/{task_id}", headers={"Cookie": cookie})
+            response = connection.getresponse()
+            payload = response.read()
+            self.assertEqual(response.status, 200, payload.decode("utf-8"))
+            detail_after_rejected_snooze = json.loads(payload.decode("utf-8"))
+            self.assertEqual(detail_after_rejected_snooze["task"]["remind_at"], snoozed_remind_at)
+            self.assertEqual(len(detail_after_rejected_snooze["history"]), snoozed_history_count)
             connection.close()
 
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
@@ -1154,6 +1192,33 @@ class TaskMvpTests(unittest.TestCase):
 
             response, payload = request(
                 "POST",
+                f"/api/tasks/{task_id}/notes",
+                {
+                    "note_text": "Nie powinno zapisac notatki.",
+                    "organization_id": 999,
+                    "task_id": 999,
+                    "author_user_id": 999,
+                    "status": "closed",
+                    "created_at": "2099-01-01T00:00:00",
+                },
+                cookie,
+            )
+            self.assertEqual(response.status, 400, payload.decode("utf-8"))
+            error_payload = json.loads(payload.decode("utf-8"))
+            self.assertIn("note_text", error_payload["error"])
+            self.assertIn("parent_note_id", error_payload["error"])
+            self.assertIn("note_kind", error_payload["error"])
+
+            response, payload = request("GET", f"/api/tasks/{task_id}", cookie=cookie)
+            self.assertEqual(response.status, 200, payload.decode("utf-8"))
+            task_detail_after_rejected_note = json.loads(payload.decode("utf-8"))
+            self.assertEqual(len(task_detail_after_rejected_note["notes"]), 2)
+            self.assertFalse(
+                any(note["note_text"] == "Nie powinno zapisac notatki." for note in task_detail_after_rejected_note["notes"])
+            )
+
+            response, payload = request(
+                "POST",
                 f"/api/tasks/{task_id}/checklist",
                 {"item_text": "Zebrac dane do zatwierdzenia"},
                 cookie,
@@ -1161,6 +1226,49 @@ class TaskMvpTests(unittest.TestCase):
             self.assertEqual(response.status, 201, payload.decode("utf-8"))
             checklist_detail = json.loads(payload.decode("utf-8"))
             checklist_item_id = checklist_detail["checklist_items"][0]["task_checklist_item_id"]
+            checklist_history_count = len(checklist_detail["history"])
+
+            response, payload = request(
+                "POST",
+                f"/api/tasks/{task_id}/checklist",
+                {
+                    "item_text": "Nie powinno dodac elementu checklisty.",
+                    "task_id": 999,
+                    "organization_id": 999,
+                    "user_id": 999,
+                    "actor_user_id": 999,
+                    "role": "admin",
+                    "status": "completed",
+                    "created_at": "2099-01-01T00:00:00",
+                    "completed_at": "2099-01-01T00:05:00",
+                    "completed_by_user_id": 999,
+                    "position": 999,
+                    "checklist_item_id": 999,
+                },
+                cookie,
+            )
+            self.assertEqual(response.status, 400, payload.decode("utf-8"))
+            error_payload = json.loads(payload.decode("utf-8"))
+            self.assertIn("item_text", error_payload["error"])
+
+            response, payload = request("GET", f"/api/tasks/{task_id}", cookie=cookie)
+            self.assertEqual(response.status, 200, payload.decode("utf-8"))
+            task_detail_after_rejected_checklist = json.loads(payload.decode("utf-8"))
+            self.assertEqual(len(task_detail_after_rejected_checklist["checklist_items"]), 1)
+            self.assertFalse(
+                any(
+                    item["item_text"] == "Nie powinno dodac elementu checklisty."
+                    for item in task_detail_after_rejected_checklist["checklist_items"]
+                )
+            )
+            self.assertEqual(len(task_detail_after_rejected_checklist["history"]), checklist_history_count)
+            self.assertFalse(
+                any(
+                    item["action_type"] == "task_checklist_item_added"
+                    and "Nie powinno dodac elementu checklisty." in item["message"]
+                    for item in task_detail_after_rejected_checklist["history"]
+                )
+            )
 
             response, payload = request("PATCH", f"/api/tasks/{task_id}/checklist/{checklist_item_id}", {}, cookie)
             self.assertEqual(response.status, 200, payload.decode("utf-8"))

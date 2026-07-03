@@ -1,0 +1,39 @@
+{
+  "name": "casi-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3000",
+    "build": "node scripts/build-next.js",
+    "start": "next start --hostname 127.0.0.1 --port 3000",
+    "test:dashboard": "node scripts/test-dashboard.js",
+    "test:invoices": "node scripts/test-invoices.js",
+    "test:work-items": "node scripts/test-work-items.js",
+    "test:documents": "node scripts/test-documents.js",
+    "test:document-detail": "node scripts/test-document-detail.js",
+    "test:billing": "node scripts/test-billing.js",
+    "test:boss-assistant": "node scripts/test-boss-assistant.js",
+    "test:company-assistant": "node scripts/test-company-assistant.js",
+    "test:crm": "node scripts/test-crm.js",
+    "test:contractor-detail": "node scripts/test-contractor-detail.js",
+    "test:reports": "node scripts/test-reports.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint",
+    "test:settings": "node scripts/test-settings.js",
+    "test:models": "node scripts/test-all.js"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "next": "^15.0.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.15.0",
+    "eslint-config-next": "^15.0.3",
+    "typescript": "^5.6.3"
+  }
+}

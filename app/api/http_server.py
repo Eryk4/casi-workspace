@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 
 from app.config import (
     APP_RELEASE_ID,
+    CASI_SERVE_LEGACY_STATIC,
     DB_ENGINE,
     ENABLE_DEMO_SEED,
     SECURE_COOKIES,
@@ -64,6 +65,10 @@ from app.domain.constants import (
     TASK_VISIBILITY_SCOPES,
     USER_MANAGEMENT_ROLES,
     USER_ROLES,
+    WORK_ITEM_PRIORITY_LEVELS,
+    WORK_ITEM_SLA_STAGES,
+    WORK_ITEM_SOURCE_TYPES,
+    WORK_ITEM_STATUSES,
     WORKER_CALENDAR_KINDS,
     WORKER_TASK_FOCUS_VIEWS,
     WRITE_ROLES,
@@ -73,7 +78,7 @@ from app.services.auth_service import AuthError, PermissionError
 from app.services.knowledge_service import KnowledgeError
 from app.services.organization_service import OrganizationError, OrganizationPermissionError
 from app.services.system_settings_service import SystemSettingsError
-from app.services.storage_service import StorageError
+from app.services.storage_service import StorageError, StorageNotFoundError
 from app.utils import now_iso
 
 
@@ -93,6 +98,10 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
         @property
         def task_service(self):
             return services["task_service"]
+
+        @property
+        def work_item_service(self):
+            return services["work_item_service"]
 
         @property
         def calendar_service(self):
@@ -274,6 +283,17 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         "task_focus_views_manager": list(MANAGER_TASK_FOCUS_VIEWS),
                         "task_focus_views_worker": list(WORKER_TASK_FOCUS_VIEWS),
                         "task_visibility_scopes": list(TASK_VISIBILITY_SCOPES),
+                        "work_item_statuses": list(WORK_ITEM_STATUSES),
+                        "work_item_priority_levels": list(WORK_ITEM_PRIORITY_LEVELS),
+                        "work_item_source_types": list(WORK_ITEM_SOURCE_TYPES),
+                        "work_item_sla_stages": list(WORK_ITEM_SLA_STAGES),
+                        "work_item_sort_fields": [
+                            "priority_score",
+                            "sla_deadline_at",
+                            "due_at",
+                            "updated_at",
+                            "created_at",
+                        ],
                         "task_note_kinds": list(TASK_NOTE_KINDS),
                         "approval_statuses": list(APPROVAL_STATUSES),
                         "approval_entity_types": list(APPROVAL_ENTITY_TYPES),
@@ -909,6 +929,94 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         viewer_user=user,
                     )
                 )
+            if path == "/api/work-items":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 100
+                filters = {
+                    "search": self._query_one(query, "search"),
+                    "status": self._query_one(query, "status"),
+                    "priority_level": self._query_one(query, "priority_level"),
+                    "sla_stage": self._query_one(query, "sla_stage"),
+                    "source_type": self._query_one(query, "source_type"),
+                    "assigned_user_id": self._query_one(query, "assigned_user_id"),
+                    "only_open": self._query_one(query, "only_open"),
+                    "unassigned_only": self._query_one(query, "unassigned_only"),
+                    "due_before": self._query_one(query, "due_before"),
+                    "due_overdue_only": self._query_one(query, "due_overdue_only"),
+                    "sla_overdue_only": self._query_one(query, "sla_overdue_only"),
+                    "sort_by": self._query_one(query, "sort_by"),
+                    "sort_dir": self._query_one(query, "sort_dir"),
+                }
+                return self._send_json(
+                    self.work_item_service.list_work_items(
+                        filters,
+                        organization_id=organization_id,
+                        limit=min(max(limit, 1), 300),
+                    )
+                )
+            if path == "/api/work-items/summary":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                return self._send_json(
+                    self.work_item_service.get_summary(
+                        organization_id=organization_id,
+                    )
+                )
+            if path == "/api/work-items/sla-policy":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                try:
+                    return self._send_json(
+                        self.work_item_service.get_sla_policy(
+                            organization_id=organization_id,
+                        )
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+            if path == "/api/work-items/workload":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 20
+                return self._send_json(
+                    self.work_item_service.get_workload(
+                        organization_id=organization_id,
+                        limit=min(max(limit, 1), 200),
+                    )
+                )
+            if path.startswith("/api/work-items/"):
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                work_item_id = self._extract_id(path, "/api/work-items/")
+                if work_item_id is None:
+                    return self._not_found()
+                detail = self.work_item_service.get_work_item_detail(
+                    work_item_id,
+                    organization_id=organization_id,
+                )
+                if not detail:
+                    return self._send_json({"error": "Nie znaleziono pozycji pracy."}, status=404)
+                return self._send_json(detail)
             if path == "/api/whiteboard":
                 user = self._require_user(READ_ROLES)
                 if not user:
@@ -1010,13 +1118,12 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     if preview_kind not in {"pdf", "image", "text"}:
                         return self._send_json({"error": "Tego typu pliku nie mozna pokazac inline."}, status=415)
                     try:
-                        safe_path = self.storage_service.resolve_local_path("knowledge", str(detail["file_storage_key"]))
+                        data = self.storage_service.read_binary("knowledge", str(detail["file_storage_key"]))
+                    except StorageNotFoundError:
+                        return self._not_found()
                     except StorageError:
                         return self._send_json({"error": "Nieprawidlowa sciezka pliku."}, status=400)
-                    if not safe_path.exists() or not safe_path.is_file():
-                        return self._not_found()
-                    data = safe_path.read_bytes()
-                    content_type = detail.get("mime_type") or mimetypes.guess_type(str(safe_path))[0] or "application/octet-stream"
+                    content_type = detail.get("mime_type") or mimetypes.guess_type(str(detail.get("file_name") or ""))[0] or "application/octet-stream"
                     if preview_kind == "text":
                         content_type = "text/plain; charset=utf-8"
                     self.send_response(HTTPStatus.OK)
@@ -1044,19 +1151,18 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     if str(detail.get("lifecycle_status") or "active") == "deleted":
                         return self._send_json({"error": "Nie mozna pobrac usunietego dokumentu."}, status=410)
                     try:
-                        safe_path = self.storage_service.resolve_local_path("knowledge", str(detail["file_storage_key"]))
+                        data = self.storage_service.read_binary("knowledge", str(detail["file_storage_key"]))
+                    except StorageNotFoundError:
+                        return self._not_found()
                     except StorageError:
                         return self._send_json({"error": "Nieprawidlowa sciezka pliku."}, status=400)
-                    if not safe_path.exists() or not safe_path.is_file():
-                        return self._not_found()
                     self.knowledge_service.record_document_download(
                         organization_id=organization_id,
                         knowledge_document_id=document_id,
                         actor_user=user,
                         actor=self._actor_label(user),
                     )
-                    data = safe_path.read_bytes()
-                    content_type = mimetypes.guess_type(str(safe_path))[0] or "application/octet-stream"
+                    content_type = mimetypes.guess_type(str(detail.get("file_name") or ""))[0] or "application/octet-stream"
                     self.send_response(HTTPStatus.OK)
                     self.send_header("Content-Type", content_type)
                     self.send_header("Content-Disposition", f'attachment; filename="{detail["file_name"]}"')
@@ -1285,6 +1391,7 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 )
                 if not detail:
                     return self._send_json({"error": "Nie znaleziono faktury."}, status=404)
+                detail["history"] = self.invoice_service._sanitize_invoice_history_events(detail.get("history") or [])
                 return self._send_json(detail)
             if path == "/api/contractors":
                 organization_id = self._resolve_data_scope(user, query)
@@ -1375,7 +1482,11 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         organization_id=organization_id,
                     )
                 )
-            return self._serve_static(path)
+            if "." in path.rsplit("/", 1)[-1]:
+                return self._not_found()
+            if CASI_SERVE_LEGACY_STATIC:
+                return self._serve_static("/")
+            return self._not_found()
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
@@ -1568,6 +1679,27 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if organization_id is ...:
                     return
                 payload = self._read_json()
+                allowed_fields = {
+                    "display_name",
+                    "description",
+                    "provider",
+                    "calendar_kind",
+                    "linked_organization_id",
+                    "default_duration_minutes",
+                    "is_active",
+                    "external_calendar_id",
+                }
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {
+                            "error": (
+                                "user-calendars przyjmuje tylko pola display_name, description, provider, "
+                                "calendar_kind, linked_organization_id, default_duration_minutes, is_active "
+                                "i external_calendar_id."
+                            )
+                        },
+                        status=400,
+                    )
                 try:
                     created = self.calendar_service.create_user_calendar(
                         payload,
@@ -1587,6 +1719,24 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if organization_id is ...:
                     return
                 payload = self._read_json()
+                allowed_fields = {
+                    "telegram_reminders_enabled",
+                    "browser_notifications_enabled",
+                    "quiet_hours_start",
+                    "quiet_hours_end",
+                    "repeat_interval_minutes",
+                }
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {
+                            "error": (
+                                "Endpoint przyjmuje tylko pola telegram_reminders_enabled, "
+                                "browser_notifications_enabled, quiet_hours_start, quiet_hours_end "
+                                "i repeat_interval_minutes."
+                            )
+                        },
+                        status=400,
+                    )
                 try:
                     updated = self.calendar_service.update_reminder_preferences(
                         payload,
@@ -1772,6 +1922,12 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if request_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                allowed_fields = {"note_text", "parent_comment_id"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {"error": "Endpoint przyjmuje tylko pola note_text i parent_comment_id."},
+                        status=400,
+                    )
                 try:
                     detail = self.intake_service.add_support_comment(
                         request_id,
@@ -1861,6 +2017,12 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if item_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                allowed_fields = {"note_text", "parent_comment_id"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {"error": "Endpoint przyjmuje tylko pola note_text i parent_comment_id."},
+                        status=400,
+                    )
                 try:
                     detail = self.intake_service.add_comment(
                         item_id,
@@ -1909,6 +2071,26 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if organization_id is ...:
                     return
                 payload = self._read_json()
+                allowed_fields = {
+                    "module_key",
+                    "view_name",
+                    "view_slug",
+                    "description",
+                    "view_state",
+                    "view_state_json",
+                    "is_shared",
+                    "is_default",
+                }
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {
+                            "error": (
+                                "dashboard views przyjmuje tylko pola module_key, view_name, view_slug, "
+                                "description, view_state, view_state_json, is_shared i is_default."
+                            )
+                        },
+                        status=400,
+                    )
                 try:
                     created = self.dashboard_view_service.create_view(
                         payload,
@@ -2275,6 +2457,9 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if document_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                allowed_fields = {"version_number"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json({"error": "restore-version przyjmuje tylko pole version_number."}, status=400)
                 try:
                     updated = self.knowledge_service.restore_document_version(
                         organization_id=organization_id,
@@ -2298,6 +2483,12 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if document_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                allowed_fields = {"version_number"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {"error": "mark-official-version przyjmuje tylko pole version_number."},
+                        status=400,
+                    )
                 try:
                     updated = self.knowledge_service.mark_document_official_version(
                         organization_id=organization_id,
@@ -2391,6 +2582,17 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if document_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                allowed_fields = {"note_text", "version_number", "annotation_kind", "anchor_label", "anchor_excerpt"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {
+                            "error": (
+                                "Endpoint przyjmuje tylko pola note_text, version_number, "
+                                "annotation_kind, anchor_label i anchor_excerpt."
+                            )
+                        },
+                        status=400,
+                    )
                 try:
                     updated = self.knowledge_service.add_document_comment(
                         organization_id=organization_id,
@@ -2605,13 +2807,15 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 return self._send_json(result, status=201)
 
             if path.startswith("/api/invoices/") and path.endswith("/comments"):
-                organization_id = self._resolve_data_scope(user, query)
+                organization_id = self._resolve_write_scope(user, query)
                 if organization_id is ...:
                     return
                 invoice_id = self._extract_id(path, "/api/invoices/", suffix="/comments")
                 if invoice_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                if any(key != "note_text" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole note_text."}, status=400)
                 try:
                     comment = self.invoice_service.add_invoice_comment(
                         invoice_id,
@@ -2619,11 +2823,227 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         actor_user=user,
                         actor=self._actor_label(user),
                         organization_id=organization_id,
-                        parent_comment_id=payload.get("parent_comment_id"),
                     )
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(comment, status=201)
+
+            if path.startswith("/api/contractors/") and path.endswith("/notes"):
+                user = self._require_user(WRITE_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                contractor_id = self._extract_id(path, "/api/contractors/", suffix="/notes")
+                if contractor_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                if any(key != "note_text" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole note_text."}, status=400)
+                try:
+                    note = self.invoice_service.add_contractor_note(
+                        contractor_id,
+                        str(payload.get("note_text") or ""),
+                        actor_user=user,
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(note, status=201)
+
+            if path == "/api/work-items/sla/sweep":
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                payload = self._read_json()
+                if any(key != "limit" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole limit."}, status=400)
+                limit = self._parse_optional_int(str(payload.get("limit") or "")) or 50
+                result = self.work_item_service.run_sla_sweep(
+                    organization_id=organization_id,
+                    actor=self._actor_label(user),
+                    limit=min(max(limit, 1), 300),
+                )
+                return self._send_json({"result": result})
+
+            if path == "/api/work-items":
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                payload = self._read_json()
+                try:
+                    created = self.work_item_service.create_work_item(
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(created, status=201)
+
+            if path == "/api/work-items/bulk":
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                payload = self._read_json()
+                try:
+                    result = self.work_item_service.bulk_apply(
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result, status=200)
+
+            if path == "/api/work-items/sla-policy":
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                payload = self._read_json()
+                try:
+                    result = self.work_item_service.update_sla_policy(
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result, status=200)
+
+            if path.startswith("/api/work-items/") and path.endswith("/assign"):
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                work_item_id = self._extract_id(path, "/api/work-items/", suffix="/assign")
+                if work_item_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                if any(key != "assigned_user_id" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole assigned_user_id."}, status=400)
+                assigned_user_id = self._parse_optional_int(str(payload.get("assigned_user_id") or ""))
+                try:
+                    updated = self.work_item_service.assign_work_item(
+                        work_item_id,
+                        assigned_user_id,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                if not updated:
+                    return self._send_json({"error": "Nie znaleziono pozycji pracy."}, status=404)
+                return self._send_json(updated)
+
+            if path.startswith("/api/work-items/") and path.endswith("/snooze"):
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                work_item_id = self._extract_id(path, "/api/work-items/", suffix="/snooze")
+                if work_item_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                if any(key != "mode" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole mode."}, status=400)
+                try:
+                    updated = self.work_item_service.snooze_work_item(
+                        work_item_id,
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                if not updated:
+                    return self._send_json({"error": "Nie znaleziono pozycji pracy."}, status=404)
+                return self._send_json(updated)
+
+            if path.startswith("/api/work-items/") and path.endswith("/escalate"):
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                work_item_id = self._extract_id(path, "/api/work-items/", suffix="/escalate")
+                if work_item_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                if any(key != "assigned_user_id" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole assigned_user_id."}, status=400)
+                try:
+                    updated = self.work_item_service.escalate_work_item(
+                        work_item_id,
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                if not updated:
+                    return self._send_json({"error": "Nie znaleziono pozycji pracy."}, status=404)
+                return self._send_json(updated)
+
+            if path.startswith("/api/work-items/") and path.endswith("/close"):
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                work_item_id = self._extract_id(path, "/api/work-items/", suffix="/close")
+                if work_item_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                if any(key != "reason" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole reason."}, status=400)
+                try:
+                    updated = self.work_item_service.close_work_item(
+                        work_item_id,
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                if not updated:
+                    return self._send_json({"error": "Nie znaleziono pozycji pracy."}, status=404)
+                return self._send_json(updated)
+
+            if path.startswith("/api/work-items/") and path.endswith("/reopen"):
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                work_item_id = self._extract_id(path, "/api/work-items/", suffix="/reopen")
+                if work_item_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                allowed_fields = {"status", "reason", "due_at", "sla_deadline_at", "sla_warning_minutes", "sla_warning_at"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {
+                            "error": (
+                                "Endpoint przyjmuje tylko pola status, reason, due_at, "
+                                "sla_deadline_at, sla_warning_minutes i sla_warning_at."
+                            )
+                        },
+                        status=400,
+                    )
+                try:
+                    updated = self.work_item_service.reopen_work_item(
+                        work_item_id,
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                if not updated:
+                    return self._send_json({"error": "Nie znaleziono pozycji pracy."}, status=404)
+                return self._send_json(updated)
 
             if path == "/api/tasks":
                 organization_id = self._resolve_manager_assistant_scope(user, query, require_write=True)
@@ -2743,6 +3163,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if task_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                if any(key != "mode" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole mode."}, status=400)
                 try:
                     detail = self.task_service.snooze_task_reminder(
                         task_id,
@@ -2793,6 +3215,12 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if task_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                allowed_fields = {"note_text", "parent_note_id", "note_kind"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {"error": "Endpoint przyjmuje tylko pola note_text, parent_note_id i note_kind."},
+                        status=400,
+                    )
                 try:
                     detail = self.task_service.add_task_note(
                         task_id,
@@ -2820,6 +3248,9 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if task_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                allowed_fields = {"item_text"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json({"error": "checklist przyjmuje tylko pole item_text."}, status=400)
                 try:
                     detail = self.task_service.add_task_checklist_item(
                         task_id,
@@ -3198,6 +3629,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if not user:
                     return
                 payload = self._read_json()
+                if any(key != "shared_note_text" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole shared_note_text."}, status=400)
                 requested_organization_id = self._requested_organization_id(query)
                 try:
                     note = self.organization_service.update_shared_note(
@@ -3215,6 +3648,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if not user:
                     return
                 payload = self._read_json()
+                if any(key != "personal_note_text" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole personal_note_text."}, status=400)
                 try:
                     note = self.auth_service.update_personal_note(
                         user,
@@ -3224,6 +3659,31 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except AuthError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(note)
+
+            if path.startswith("/api/work-items/"):
+                user = self._require_user(WRITE_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                work_item_id = self._extract_id(path, "/api/work-items/")
+                if work_item_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                try:
+                    updated = self.work_item_service.update_work_item(
+                        work_item_id,
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                if not updated:
+                    return self._send_json({"error": "Nie znaleziono pozycji pracy."}, status=404)
+                return self._send_json(updated)
 
             if path.startswith("/api/whiteboard/images/"):
                 user = self._require_user(READ_ROLES)
@@ -3315,6 +3775,26 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if view_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                allowed_fields = {
+                    "module_key",
+                    "view_name",
+                    "view_slug",
+                    "description",
+                    "view_state",
+                    "view_state_json",
+                    "is_shared",
+                    "is_default",
+                }
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {
+                            "error": (
+                                "dashboard views przyjmuje tylko pola module_key, view_name, view_slug, "
+                                "description, view_state, view_state_json, is_shared i is_default."
+                            )
+                        },
+                        status=400,
+                    )
                 try:
                     updated = self.dashboard_view_service.update_view(
                         view_id,
@@ -3435,6 +3915,27 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if user_calendar_id is None:
                     return self._not_found()
                 payload = self._read_json()
+                allowed_fields = {
+                    "display_name",
+                    "description",
+                    "provider",
+                    "calendar_kind",
+                    "linked_organization_id",
+                    "default_duration_minutes",
+                    "is_active",
+                    "external_calendar_id",
+                }
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {
+                            "error": (
+                                "user-calendars przyjmuje tylko pola display_name, description, provider, "
+                                "calendar_kind, linked_organization_id, default_duration_minutes, is_active "
+                                "i external_calendar_id."
+                            )
+                        },
+                        status=400,
+                    )
                 try:
                     updated = self.calendar_service.update_user_calendar(
                         user_calendar_id,
@@ -3703,6 +4204,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
             self.wfile.write(data)
 
         def _is_public_static_path(self, path: str) -> bool:
+            if not CASI_SERVE_LEGACY_STATIC:
+                return False
             if path.startswith("/api/"):
                 return False
             if self._match_storage_path(path):
@@ -3741,14 +4244,12 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         )
 
             try:
-                safe_path = self.storage_service.resolve_local_path(artifact_type, normalized_key)
+                data = self.storage_service.read_binary(artifact_type, normalized_key)
+            except StorageNotFoundError:
+                return self._not_found()
             except StorageError:
                 return self._send_json({"error": "Nieprawidlowa sciezka pliku."}, status=400)
-
-            if not safe_path.exists() or not safe_path.is_file():
-                return self._not_found()
-            data = safe_path.read_bytes()
-            content_type = mimetypes.guess_type(str(safe_path))[0] or "text/plain; charset=utf-8"
+            content_type = mimetypes.guess_type(normalized_key)[0] or "text/plain; charset=utf-8"
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))

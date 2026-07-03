@@ -24,6 +24,7 @@ from app.repositories.task_template_repository import TaskTemplateRepository
 from app.repositories.task_reminder_outbox_repository import TaskReminderOutboxRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
+from app.repositories.work_item_repository import WorkItemRepository
 from app.repositories.whiteboard_repository import WhiteboardRepository
 from app.services.auth_service import AuthService
 from app.services.billing_service import BillingService
@@ -42,14 +43,27 @@ from app.services.notification_service import NotificationService
 from app.services.organization_service import OrganizationService
 from app.services.intake_service import IntakeService
 from app.services.search_service import SearchService
-from app.services.storage_service import LocalStorageService
+from app.services.storage_service import LocalStorageService, S3StorageService, StorageError, StorageService
 from app.services.system_settings_service import SystemSettingsService
 from app.services.task_service import TaskService
 from app.services.task_reminder_service import TaskReminderService
+from app.services.work_item_service import WorkItemService
 from app.services.whiteboard_service import WhiteboardService
 from app.integrations.email_google_oauth import EmailGoogleOAuthAdapter
-from app.config import DEFAULT_ADMIN_LOGIN, TASK_REMINDER_RETRY_MINUTES
+from app.config import DEFAULT_ADMIN_LOGIN, STORAGE_BACKEND, TASK_REMINDER_RETRY_MINUTES
 from app.config import TASK_REMINDER_MAX_ATTEMPTS, TASK_REMINDER_PROCESSING_TIMEOUT_MINUTES
+
+
+def build_storage_service(storage_backend: str | None = None) -> StorageService:
+    normalized_backend = str(storage_backend or STORAGE_BACKEND or "local").strip().lower()
+    if normalized_backend == "local":
+        return LocalStorageService()
+    if normalized_backend == "s3":
+        return S3StorageService()
+    raise StorageError(
+        "Nieprawidlowa wartosc INVOICE_STORAGE_BACKEND. "
+        "Dozwolone wartosci: local, s3."
+    )
 
 
 def build_services() -> dict[str, object]:
@@ -68,6 +82,7 @@ def build_services() -> dict[str, object]:
     session_repository = SessionRepository()
     system_settings_repository = SystemSettingsRepository()
     task_repository = TaskRepository()
+    work_item_repository = WorkItemRepository()
     task_reminder_outbox_repository = TaskReminderOutboxRepository()
     approval_repository = ApprovalRepository()
     automation_repository = AutomationRepository()
@@ -80,7 +95,7 @@ def build_services() -> dict[str, object]:
     task_template_repository = TaskTemplateRepository()
     duplicate_detector = DuplicateDetector(invoice_repository)
     notification_service = NotificationService(event_repository)
-    storage_service = LocalStorageService()
+    storage_service = build_storage_service()
     email_google_oauth_adapter = EmailGoogleOAuthAdapter()
     organization_service = OrganizationService(
         organization_repository=organization_repository,
@@ -145,6 +160,12 @@ def build_services() -> dict[str, object]:
         task_template_repository=task_template_repository,
         approval_repository=approval_repository,
     )
+    work_item_service = WorkItemService(
+        work_item_repository=work_item_repository,
+        event_repository=event_repository,
+        user_repository=user_repository,
+        organization_repository=organization_repository,
+    )
     natural_task_command_service = NaturalTaskCommandService(
         user_repository=user_repository,
         calendar_service=calendar_service,
@@ -155,6 +176,7 @@ def build_services() -> dict[str, object]:
         outbox_repository=task_reminder_outbox_repository,
         organization_repository=organization_repository,
         telegram_adapter=invoice_service.telegram_adapter,
+        work_item_service=work_item_service,
         retry_minutes=TASK_REMINDER_RETRY_MINUTES,
         processing_timeout_minutes=TASK_REMINDER_PROCESSING_TIMEOUT_MINUTES,
         max_attempts=TASK_REMINDER_MAX_ATTEMPTS,
@@ -218,6 +240,7 @@ def build_services() -> dict[str, object]:
         invoice_repository=invoice_repository,
         contractor_repository=contractor_repository,
         task_repository=task_repository,
+        work_item_repository=work_item_repository,
         knowledge_repository=knowledge_repository,
         billing_repository=billing_repository,
         event_repository=event_repository,
@@ -235,6 +258,7 @@ def build_services() -> dict[str, object]:
         "calendar_repository": calendar_repository,
         "whiteboard_repository": whiteboard_repository,
         "task_repository": task_repository,
+        "work_item_repository": work_item_repository,
         "task_reminder_outbox_repository": task_reminder_outbox_repository,
         "approval_repository": approval_repository,
         "automation_repository": automation_repository,
@@ -259,6 +283,7 @@ def build_services() -> dict[str, object]:
         "knowledge_service": knowledge_service,
         "calendar_service": calendar_service,
         "task_service": task_service,
+        "work_item_service": work_item_service,
         "natural_task_command_service": natural_task_command_service,
         "task_reminder_service": task_reminder_service,
         "intake_service": intake_service,

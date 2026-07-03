@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from app.db import execute_insert_returning_id, get_connection
+from app.domain.constants import SYSTEM_OWNER_ROLE
 from app.utils import now_iso
 
 
@@ -353,6 +354,7 @@ class OrganizationRepository:
                 """
                 INSERT INTO organizations (
                     name, slug, module_shortcuts_json, communication_provider, communication_config_json,
+                    work_item_sla_policy_json,
                     shared_note_text, shared_note_updated_at, shared_note_updated_by_user_id,
                     telegram_chat_id, telegram_chat_name,
                     email_inbox_address, email_allowed_sender, email_subject_keyword,
@@ -363,7 +365,7 @@ class OrganizationRepository:
                     ksef_last_connection_tested_at, ksef_last_connection_status,
                     ksef_correction_delegate_user_id, ksef_correction_delegate_assigned_at, ksef_correction_delegate_expires_at,
                     is_active, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["name"],
@@ -371,6 +373,7 @@ class OrganizationRepository:
                     payload.get("module_shortcuts_json") or json.dumps({}, ensure_ascii=True, sort_keys=True),
                     payload.get("communication_provider") or "telegram",
                     payload.get("communication_config_json") or json.dumps({}, ensure_ascii=True, sort_keys=True),
+                    payload.get("work_item_sla_policy_json") or json.dumps({}, ensure_ascii=True, sort_keys=True),
                     payload.get("shared_note_text") or "",
                     payload.get("shared_note_updated_at"),
                     payload.get("shared_note_updated_by_user_id"),
@@ -410,6 +413,7 @@ class OrganizationRepository:
             "module_shortcuts_json",
             "communication_provider",
             "communication_config_json",
+            "work_item_sla_policy_json",
             "shared_note_text",
             "shared_note_updated_at",
             "shared_note_updated_by_user_id",
@@ -511,6 +515,7 @@ class OrganizationRepository:
                 SET organization_id = ?
                 WHERE organization_id IS NULL
                   AND login <> ?
+                  AND role <> ?
                 """,
-                (default_organization_id, default_admin_login),
+                (default_organization_id, default_admin_login, SYSTEM_OWNER_ROLE),
             )

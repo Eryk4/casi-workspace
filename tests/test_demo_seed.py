@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import shutil
 import unittest
@@ -90,9 +90,9 @@ class DemoSeedTests(unittest.TestCase):
         users_by_login = {item["login"]: item for item in self.auth_service.list_users()}
         admin_calendars = self.calendar_service.list_user_calendars(users_by_login["admin"])
         self.assertGreaterEqual(len(admin_calendars), 3)
-        self.assertTrue(any(item["display_name"] == "Kalendarz zarzadzczy demo" for item in admin_calendars))
+        self.assertTrue(any(item["display_name"] == "Kalendarz zarzadczy firmy" for item in admin_calendars))
         self.assertTrue(any(item["display_name"] == "Prezentacje produktu" for item in admin_calendars))
-        self.assertTrue(any(item["display_name"] == "Demo rodzinne i wyjazdy" for item in admin_calendars))
+        self.assertTrue(any(item["display_name"] == "Sprawy prywatne i wyjazdy" for item in admin_calendars))
         casi_admin_calendars = self.calendar_service.list_user_calendars(users_by_login["casi_admin"])
         self.assertGreaterEqual(len(casi_admin_calendars), 2)
         self.assertTrue(any(item["display_name"] == "CASI - rekrutacje i eventy" for item in casi_admin_calendars))
@@ -208,7 +208,7 @@ class DemoSeedTests(unittest.TestCase):
         self.assertGreater(dashboard_snapshot["cards"]["nowi_kontrahenci"], 0)
         self.assertGreater(dashboard_snapshot["cards"]["aktywne_przypomnienia"], 0)
         self.assertTrue(dashboard_snapshot["recent_events"])
-        task_with_attachment = next(item for item in default_tasks if item["title"] == "Domknac konfiguracje srodowiska demo")
+        task_with_attachment = next(item for item in default_tasks if item["title"] == "Sprawdzic poranny przeglad operacyjny")
         detail = self.task_service.get_task_detail(
             int(task_with_attachment["task_id"]),
             organization_id=int(default_org["organization_id"]),
@@ -290,3 +290,4 @@ class DemoSeedTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

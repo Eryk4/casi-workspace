@@ -128,6 +128,44 @@ class ContractorRepository:
                 values,
             )
 
+    def add_note(self, payload: dict[str, Any]) -> int:
+        with get_connection() as connection:
+            return execute_insert_returning_id(
+                connection,
+                """
+                INSERT INTO contractor_notes (
+                    organization_id, contractor_id, author_user_id, note_text, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["organization_id"],
+                    payload["contractor_id"],
+                    payload["author_user_id"],
+                    payload["note_text"],
+                    now_iso(),
+                ),
+                "contractor_note_id",
+            )
+
+    def list_notes(self, contractor_id: int, organization_id: int | None = None) -> list[dict[str, Any]]:
+        params: list[Any] = [contractor_id]
+        query = """
+            SELECT
+                n.*,
+                COALESCE(u.display_name, u.login) AS author_user_name,
+                u.role AS author_user_role
+            FROM contractor_notes n
+            LEFT JOIN users u ON u.user_id = n.author_user_id
+            WHERE n.contractor_id = ?
+        """
+        if organization_id is not None:
+            query += " AND n.organization_id = ?"
+            params.append(organization_id)
+        query += " ORDER BY n.created_at ASC, n.contractor_note_id ASC"
+        with get_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
     def refresh_invoice_stats(self, contractor_id: int) -> None:
         with get_connection() as connection:
             stats = connection.execute(

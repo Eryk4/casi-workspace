@@ -21,6 +21,7 @@ from app.repositories.knowledge_repository import KnowledgeRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
+from app.repositories.work_item_repository import WorkItemRepository
 from app.services.auth_service import AuthService
 
 
@@ -176,6 +177,17 @@ class SearchService:
             "planner",
             "asystent",
         },
+        "work_items": {
+            "work item",
+            "workitem",
+            "work_items",
+            "triage",
+            "sla",
+            "escalacja",
+            "eskalacja",
+            "kolejka",
+            "obsluga",
+        },
         "contractors": {
             "kontrahent",
             "kontrahenci",
@@ -248,7 +260,7 @@ class SearchService:
     MODULE_TO_GROUPS = {
         "dashboard": {"dashboard"},
         "invoices": {"invoices"},
-        "tasks": {"tasks"},
+        "tasks": {"tasks", "work_items"},
         "contractors": {"contractors"},
         "billing": {"billing_bank_accounts", "billing_transactions"},
         "billing_bank_accounts": {"billing_bank_accounts"},
@@ -290,9 +302,9 @@ class SearchService:
         {
             "key": "tasks",
             "title": "Asystent Szefa",
-            "subtitle": "Zadania, wydarzenia, przypomnienia i plan dnia.",
+            "subtitle": "Zadania, work items SLA, wydarzenia, przypomnienia i plan dnia.",
             "view": "tasks",
-            "aliases": ("zadanie", "zadania", "task", "tasks", "asystent szefa", "planner"),
+            "aliases": ("zadanie", "zadania", "task", "tasks", "asystent szefa", "planner", "work item", "sla"),
             "allowed_roles": MANAGER_ASSISTANT_MANAGER_ROLES,
             "requires_org_module": MANAGER_ASSISTANT_MODULE,
         },
@@ -366,6 +378,7 @@ class SearchService:
         invoice_repository: InvoiceRepository,
         contractor_repository: ContractorRepository,
         task_repository: TaskRepository,
+        work_item_repository: WorkItemRepository,
         knowledge_repository: KnowledgeRepository,
         billing_repository: BillingRepository,
         event_repository: EventRepository,
@@ -376,6 +389,7 @@ class SearchService:
         self.invoice_repository = invoice_repository
         self.contractor_repository = contractor_repository
         self.task_repository = task_repository
+        self.work_item_repository = work_item_repository
         self.knowledge_repository = knowledge_repository
         self.billing_repository = billing_repository
         self.event_repository = event_repository
@@ -430,6 +444,20 @@ class SearchService:
             )
             if task_group:
                 groups.append(task_group)
+
+            work_item_group = self._build_group(
+                group_key="work_items",
+                label="Work Items i SLA",
+                analysis=analysis,
+                fetcher=lambda term, limit: self.work_item_repository.search_work_items(
+                    term,
+                    organization_id=organization_id,
+                    limit=limit,
+                ),
+                serializer=self._serialize_work_item,
+            )
+            if work_item_group:
+                groups.append(work_item_group)
 
         contractor_group = self._build_group(
             group_key="contractors",
@@ -1052,6 +1080,30 @@ class SearchService:
             category="Kontrahenci",
             badge=f"#{item['contractor_id']}",
             title=item.get("name") or f"Kontrahent #{item['contractor_id']}",
+            subtitle=subtitle,
+            meta=meta,
+        )
+
+    def _serialize_work_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        subtitle = self._join_parts(
+            item.get("assigned_user_name"),
+            item.get("source_type"),
+        )
+        meta = self._join_parts(
+            item.get("organization_name"),
+            item.get("status"),
+            item.get("sla_stage"),
+            item.get("priority_level"),
+            item.get("sla_deadline_at"),
+        )
+        return self._result_item(
+            entity_type="work_item",
+            entity_id=item["work_item_id"],
+            organization_id=item.get("organization_id"),
+            view="tasks",
+            category="Work Items i SLA",
+            badge=f"WI#{item['work_item_id']}",
+            title=item.get("title") or f"Work item #{item['work_item_id']}",
             subtitle=subtitle,
             meta=meta,
         )

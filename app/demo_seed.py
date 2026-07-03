@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 from datetime import datetime, timedelta
@@ -212,7 +212,7 @@ SEED_INVOICES = [
         "currency": "PLN",
         "status": "poprawna",
         "source_external_id": "ksef-fv-biuroserwis-2026-04-01",
-        "notes": "Przykład poprawnej faktury z KSeF.",
+        "notes": "Faktura potwierdzona w KSeF; nie wymaga reakcji wlasciciela.",
     },
     {
         "incoming_date": "2026-04-02",
@@ -230,7 +230,7 @@ SEED_INVOICES = [
         "status": "nowa",
         "source_external_id": "email-duplikat-ksef-2026-04-02",
         "source_sender_name": "faktury@biuroserwis.pl",
-        "notes": "Przykład pewnego duplikatu po numerze KSeF.",
+        "notes": "Ten sam numer KSeF dotarl drugim kanalem, dlatego sprawa wymaga tylko potwierdzenia duplikatu.",
     },
     {
         "incoming_date": "2026-04-03",
@@ -248,7 +248,7 @@ SEED_INVOICES = [
         "status": "weryfikacja",
         "source_external_id": "email-druksystem-2026-04-03",
         "source_sender_name": "ksiegowosc@druksystem.pl",
-        "notes": "Faktura bazowa do przykładu podejrzenia duplikatu.",
+        "notes": "Faktura bazowa od stalego dostawcy materialow drukowanych.",
     },
     {
         "incoming_date": "2026-04-04",
@@ -278,7 +278,7 @@ SEED_INVOICES = [
             "Kwota brutto 650.50 PLN\n"
         ),
         "ocr_confidence": 0.88,
-        "notes": "Przykład podejrzenia duplikatu po numerze faktury i NIP.",
+        "notes": "Zdjecie z Telegrama wyglada na druga kopie tej samej faktury od Druk-System.",
     },
     {
         "incoming_date": "2026-04-05",
@@ -308,7 +308,7 @@ SEED_INVOICES = [
             "Kwota brutto 812.30 PLN\n"
         ),
         "ocr_confidence": 0.91,
-        "notes": "Przykład nowego kontrahenta z Telegrama.",
+        "notes": "Nowy dostawca transportu wymaga sprawdzenia danych przed akceptacja kosztu.",
     },
 ]
 
@@ -330,7 +330,7 @@ SEED_EXTRA_INVOICES = [
         "status": "zaksiegowana",
         "source_external_id": "email-marketing-2026-04-06",
         "source_sender_name": "faktury@marketingstudio.pl",
-        "notes": "Dodatkowa faktura demo dla organizacji domyslnej.",
+        "notes": "Koszt kampanii wizerunkowej gotowy do rutynowego opisu.",
     },
     {
         "organization_slug": "casi",
@@ -348,7 +348,7 @@ SEED_EXTRA_INVOICES = [
         "currency": "PLN",
         "status": "zaksiegowana",
         "source_external_id": "ksef-casi-szkolenia-2026-04-07",
-        "notes": "Zaksiegowana faktura demo dla CASI.",
+        "notes": "Szkolenie zespolu operacyjnego zostalo juz opisane i zaksiegowane.",
     },
     {
         "organization_slug": "casi",
@@ -367,7 +367,7 @@ SEED_EXTRA_INVOICES = [
         "status": "odrzucona",
         "source_external_id": "email-casi-hr-2026-04-08",
         "source_sender_name": "biuro@hrpartner.pl",
-        "notes": "Przyklad faktury odrzuconej po weryfikacji kosztu.",
+        "notes": "Koszt rekrutacyjny odrzucony po porownaniu z zaakceptowanym budzetem.",
     },
     {
         "organization_slug": "casi",
@@ -399,7 +399,7 @@ SEED_EXTRA_INVOICES = [
             "Kwota brutto 1240.00 PLN\n"
         ),
         "ocr_confidence": 0.79,
-        "notes": "Faktura demo weryfikowana po imporcie z Telegrama dla CASI.",
+        "notes": "Skan z wydarzenia wymaga dopisania projektu i osoby odpowiedzialnej.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -418,7 +418,7 @@ SEED_EXTRA_INVOICES = [
         "status": "poprawna",
         "source_external_id": "email-robotyka-lego-2026-04-09",
         "source_sender_name": "faktury@legoedu.pl",
-        "notes": "Poprawna faktura demo dla Misji Robotyka.",
+        "notes": "Materialy edukacyjne dla grup robotyki sa zgodne z zamowieniem.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -450,7 +450,7 @@ SEED_EXTRA_INVOICES = [
             "Kwota brutto 440.00 PLN\n"
         ),
         "ocr_confidence": 0.82,
-        "notes": "Przyklad faktury weryfikowanej po imporcie z Telegrama.",
+        "notes": "Transport na warsztaty wymaga potwierdzenia trasy przez koordynatora.",
     },
     {
         "organization_slug": "biuro-rachunkowe-alfa",
@@ -487,7 +487,7 @@ SEED_EXTRA_INVOICES = [
         "status": "weryfikacja",
         "source_external_id": "email-alfa-media-2026-04-12",
         "source_sender_name": "fv@mediasupport.pl",
-        "notes": "Przyklad faktury do weryfikacji w Biurze Alfa.",
+        "notes": "Koszt mediow klienta premium wymaga opisania przed zamknieciem miesiaca.",
     },
     {
         "organization_slug": "biuro-rachunkowe-alfa",
@@ -506,7 +506,7 @@ SEED_EXTRA_INVOICES = [
         "status": "zaksiegowana",
         "source_external_id": "email-alfa-consulting-2026-04-13",
         "source_sender_name": "faktury@consultingtax.pl",
-        "notes": "Dodatkowa zaksiegowana faktura demo dla Biura Alfa.",
+        "notes": "Staly koszt doradztwa podatkowego jest juz opisany i zamkniety.",
     },
     {
         "organization_slug": "organizacja-domyslna",
@@ -627,11 +627,11 @@ SEED_EXTRA_INVOICES = [
 SEED_USER_CALENDARS = [
     {
         "owner_login": "admin",
-        "display_name": "Kalendarz zarzadzczy demo",
+        "display_name": "Kalendarz zarzadczy firmy",
         "calendar_kind": "organizacja",
         "organization_slug": "organizacja-domyslna",
         "default_duration_minutes": 45,
-        "description": "Glowny kalendarz demonstracyjny dla organizacji domyslnej.",
+        "description": "Glowny kalendarz terminow operacyjnych i decyzji wlasciciela.",
         "is_active": 1,
     },
     {
@@ -640,12 +640,12 @@ SEED_USER_CALENDARS = [
         "calendar_kind": "prywatny",
         "organization_slug": "organizacja-domyslna",
         "default_duration_minutes": 50,
-        "description": "Kalendarz pokazowy do scenariuszy prezentacyjnych i spotkan z klientami.",
+        "description": "Kalendarz rozmow z klientami, follow-upow i spotkan decyzyjnych.",
         "is_active": 1,
     },
     {
         "owner_login": "admin",
-        "display_name": "Demo rodzinne i wyjazdy",
+        "display_name": "Sprawy prywatne i wyjazdy",
         "calendar_kind": "rodzinny",
         "organization_slug": "organizacja-domyslna",
         "default_duration_minutes": 120,
@@ -658,7 +658,7 @@ SEED_USER_CALENDARS = [
         "calendar_kind": "organizacja",
         "organization_slug": "casi",
         "default_duration_minutes": 60,
-        "description": "Kalendarz demonstracyjny terminow operacyjnych CASI.",
+        "description": "Kalendarz terminow operacyjnych CASI: delegacje, spotkania i decyzje zespolu.",
         "is_active": 1,
     },
     {
@@ -667,7 +667,7 @@ SEED_USER_CALENDARS = [
         "calendar_kind": "inne",
         "organization_slug": "casi",
         "default_duration_minutes": 45,
-        "description": "Dodatkowy kalendarz pokazowy dla rekrutacji i wydarzen CASI.",
+        "description": "Kalendarz rekrutacji, spotkan kandydatow i wydarzen zespolowych CASI.",
         "is_active": 1,
     },
     {
@@ -676,7 +676,7 @@ SEED_USER_CALENDARS = [
         "calendar_kind": "inne",
         "organization_slug": "casi",
         "default_duration_minutes": 30,
-        "description": "Osobisty sluzbowy kalendarz demonstracyjny Oli.",
+        "description": "Osobisty kalendarz sluzbowy Oli: onboarding, dostepy i zadania operacyjne.",
         "is_active": 1,
     },
     {
@@ -685,7 +685,7 @@ SEED_USER_CALENDARS = [
         "calendar_kind": "organizacja",
         "organization_slug": "misja-robotyka",
         "default_duration_minutes": 90,
-        "description": "Kalendarz demonstracyjny zajec i spotkan z rodzicami.",
+        "description": "Kalendarz zajec, zastepstw instruktorow i spotkan z rodzicami.",
         "is_active": 1,
     },
     {
@@ -703,7 +703,7 @@ SEED_USER_CALENDARS = [
         "calendar_kind": "organizacja",
         "organization_slug": "biuro-rachunkowe-alfa",
         "default_duration_minutes": 60,
-        "description": "Kalendarz demonstracyjny terminow klientowskich Biura Alfa.",
+        "description": "Kalendarz terminow klientowskich, VAT i akceptacji platnosci Biura Alfa.",
         "is_active": 1,
     },
     {
@@ -721,7 +721,7 @@ SEED_TASK_SCENARIOS = [
     {
         "organization_slug": "organizacja-domyslna",
         "owner_login": "admin",
-        "title": "Domknac konfiguracje srodowiska demo",
+        "title": "Sprawdzic poranny przeglad operacyjny",
         "task_type": "zadanie",
         "visibility_scope": "organizacja",
         "status": "w_toku",
@@ -730,13 +730,13 @@ SEED_TASK_SCENARIOS = [
         "due_hour": 14,
         "due_minute": 0,
         "remind_minutes_before": 60,
-        "calendar_name": "Kalendarz zarzadzczy demo",
+        "calendar_name": "Kalendarz zarzadczy firmy",
         "assigned_login": "demo_operator",
-        "description": "Sprawdzic poprawne ladowanie zakladek i gotowosc danych demonstracyjnych.",
-        "notes": ["Zweryfikowano logowanie kont demo i aktywna baze SQLite."],
+        "description": "Przejrzec poranne sygnaly: zalegle zadania, faktury do opisania i dokumenty wymagajace decyzji.",
+        "notes": ["Wlasciciel chce zaczac dzien od trzech najpilniejszych spraw, nie od pelnej listy systemowej."],
         "attachment": {
-            "file_name": "checklista_demo.txt",
-            "content": "1. Logowanie\n2. Organizacje\n3. Asystent Firmowy\n4. Rozliczenia\n",
+            "file_name": "checklista_porannego_przegladu.txt",
+            "content": "1. Sprawy pilne\n2. Faktury do opisania\n3. Dokumenty do decyzji\n4. Rzeczy do odlozenia\n",
         },
     },
     {
@@ -752,7 +752,7 @@ SEED_TASK_SCENARIOS = [
     {
         "organization_slug": "organizacja-domyslna",
         "owner_login": "admin",
-        "title": "Pilne przypomnienie przed prezentacja demo",
+        "title": "Oddzwonic do klienta po brakujace dane do faktury",
         "task_type": "przypomnienie",
         "visibility_scope": "organizacja",
         "status": "nowe",
@@ -763,13 +763,13 @@ SEED_TASK_SCENARIOS = [
         "remind_minutes_before": 120,
         "calendar_name": "Prezentacje produktu",
         "assigned_login": "demo_operator",
-        "description": "Przypomnienie specjalnie pod dashboard i planer, zeby pokazac zalegle wpisy i aktywne alerty.",
-        "notes": ["Ten wpis powinien wpasc do sekcji zaleglych lub aktywnych przypomnien."],
+        "description": "Klient nie uzupelnil numeru zamowienia, a faktura czeka na opis przed platnoscia.",
+        "notes": ["Jesli numer zamowienia nie przyjdzie rano, przenies sprawdzanie platnosci na jutro."],
     },
     {
         "organization_slug": "organizacja-domyslna",
         "owner_login": "admin",
-        "title": "Przygotowac scenariusz pokazu dla klienta",
+        "title": "Przygotowac liste spraw na rozmowe z wlascicielem",
         "task_type": "zadanie",
         "visibility_scope": "organizacja",
         "status": "nowe",
@@ -780,12 +780,12 @@ SEED_TASK_SCENARIOS = [
         "remind_minutes_before": 90,
         "calendar_name": "Prezentacje produktu",
         "assigned_login": "demo_operator",
-        "description": "Zebrac flow klikow po dashboardzie, kontrahentach, zadaniach i bazie wiedzy.",
+        "description": "Zebrac trzy decyzje operacyjne: ktore faktury opisac dzis, do kogo oddzwonic i co mozna odlozyc.",
     },
     {
         "organization_slug": "organizacja-domyslna",
         "owner_login": "admin",
-        "title": "Weekendowy przeglad roadmapy demo",
+        "title": "Przejrzec plan spokojnych usprawnien na weekend",
         "task_type": "wydarzenie",
         "visibility_scope": "prywatne",
         "status": "oczekuje",
@@ -794,8 +794,8 @@ SEED_TASK_SCENARIOS = [
         "due_hour": 11,
         "due_minute": 30,
         "remind_minutes_before": 60,
-        "calendar_name": "Demo rodzinne i wyjazdy",
-        "description": "Prywatny wpis pokazowy, zeby planer mial tez pozycje w koszyku tygodniowym.",
+        "calendar_name": "Sprawy prywatne i wyjazdy",
+        "description": "Niepilny przeglad usprawnien procesu, dobry do odlozenia po zamknieciu spraw dzisiejszych.",
     },
     {
         "organization_slug": "casi",
@@ -849,7 +849,7 @@ SEED_TASK_SCENARIOS = [
         "calendar_name": "CASI Operacje",
         "assigned_login": "casi_ola",
         "description": "Cotygodniowe spotkanie zespolu z przegladem delegacji, urlopow i nowych wnioskow.",
-        "notes": ["Widoczne dla calej organizacji jako przyklad wydarzenia zespolowego."],
+        "notes": ["Na spotkaniu trzeba domknac delegacje, urlopy i wnioski kosztowe przed koncem dnia."],
     },
     {
         "organization_slug": "casi",
@@ -865,8 +865,8 @@ SEED_TASK_SCENARIOS = [
         "remind_minutes_before": 45,
         "calendar_name": "CASI - rekrutacje i eventy",
         "assigned_login": "casi_ola",
-        "description": "Scenariusz pokazowy dla widoku przypomnien i kalendarza w organizacji CASI.",
-        "notes": ["Widoczne dla calej organizacji wraz z osobnym kalendarzem rekrutacyjnym."],
+        "description": "Kandydat ma dzisiaj potwierdzic termin rozmowy, a zespol potrzebuje decyzji o kolejnym kroku.",
+        "notes": ["Jesli kandydat nie odpowie do 16:00, przenies follow-up na jutro rano."],
     },
     {
         "organization_slug": "misja-robotyka",
@@ -913,7 +913,7 @@ SEED_TASK_SCENARIOS = [
         "due_minute": 15,
         "remind_minutes_before": 30,
         "calendar_name": "Robotyka - grafik instruktorow",
-        "description": "Zadanie zakonczone, zostawione w demo jako przyklad zamknietego wpisu z historia.",
+        "description": "Zastepstwo instruktora zostalo potwierdzone, a wpis zostaje w historii dla kontekstu grafiku.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -928,7 +928,7 @@ SEED_TASK_SCENARIOS = [
         "due_minute": 45,
         "remind_minutes_before": 120,
         "calendar_name": "Robotyka - grafik instruktorow",
-        "description": "Dodatkowe wydarzenie demo do koszyka tygodniowego i dla bardziej pelnego kalendarza.",
+        "description": "Ustalic materialy, sale i osobe prowadzaca przed wyslaniem zaproszenia do szkoly.",
     },
     {
         "organization_slug": "biuro-rachunkowe-alfa",
@@ -960,7 +960,7 @@ SEED_TASK_SCENARIOS = [
         "due_minute": 0,
         "remind_minutes_before": 30,
         "visible_logins": ["alfa_ania"],
-        "description": "Przyklad anulowanego wpisu widocznego tylko dla wybranych osob.",
+        "description": "Sprawa zamknieta po doslaniu umowy przez klienta; zostaje w historii jako kontekst kontaktu.",
     },
     {
         "organization_slug": "biuro-rachunkowe-alfa",
@@ -987,7 +987,7 @@ SEED_TASK_SCENARIOS = [
         "calendar_name": "Biuro Alfa - terminy klientow",
         "assigned_login": "alfa_ania",
         "description": "Przypomnienie o przygotowaniu zestawienia terminow VAT i statusow dokumentow klientowskich.",
-        "notes": ["W demo pokazuje typ przypomnienie widoczny dla calej organizacji."],
+        "notes": ["Najpierw sprawdz klientow z dokumentami niekompletnymi, potem przygotuj podsumowanie dla zespolu."],
     },
     {
         "organization_slug": "biuro-rachunkowe-alfa",
@@ -1047,7 +1047,7 @@ SEED_BILLING_MODELS = [
         "large_family_discount_amount": 50,
         "intro_free_lessons_count": 1,
         "contract_required": 1,
-        "notes": "Model demo dla poniedzialkowych zajec szkolnych.",
+        "notes": "Standardowy model miesieczny dla poniedzialkowych zajec szkolnych.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -1061,7 +1061,7 @@ SEED_BILLING_MODELS = [
         "large_family_discount_amount": 50,
         "intro_free_lessons_count": 1,
         "contract_required": 1,
-        "notes": "Model demo dla wtorkowych zajec szkolnych.",
+        "notes": "Standardowy model miesieczny dla wtorkowych zajec szkolnych.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -1075,7 +1075,7 @@ SEED_BILLING_MODELS = [
         "large_family_discount_amount": 50,
         "intro_free_lessons_count": 1,
         "contract_required": 1,
-        "notes": "Model demo dla grup semestralnych rozliczanych z gory.",
+        "notes": "Model semestralny rozliczany z gory dla rodzin wybierajacych platnosc jednorazowa.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -1089,7 +1089,7 @@ SEED_BILLING_MODELS = [
         "large_family_discount_amount": 50,
         "intro_free_lessons_count": 1,
         "contract_required": 1,
-        "notes": "Model demo dla piatkowych zajec szkolnych.",
+        "notes": "Model miesieczny dla piatkowych grup popoludniowych.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -1103,7 +1103,7 @@ SEED_BILLING_MODELS = [
         "large_family_discount_amount": 50,
         "intro_free_lessons_count": 1,
         "contract_required": 0,
-        "notes": "Model demo pod przyszly tryb wlasnego rozliczenia.",
+        "notes": "Model indywidualny dla rodzin z niestandardowa liczba zajec.",
     },
 ]
 
@@ -1114,7 +1114,7 @@ SEED_BILLING_PAYERS = [
         "contact_phone": "500600700",
         "has_large_family_card": 1,
         "email": "kruk@example.com",
-        "notes": "Rodzina demo z KDR i dwojka dzieci.",
+        "notes": "Rodzina z KDR i dwojka dzieci w grupach miesiecznych.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -1122,7 +1122,7 @@ SEED_BILLING_PAYERS = [
         "contact_phone": "501600700",
         "has_large_family_card": 0,
         "email": "nowak@example.com",
-        "notes": "Rodzina demo z jednym uczniem.",
+        "notes": "Rodzina z jednym uczniem w grupie wtorkowej.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -1130,7 +1130,7 @@ SEED_BILLING_PAYERS = [
         "contact_phone": "502700800",
         "has_large_family_card": 0,
         "email": "zielinscy@example.com",
-        "notes": "Rodzina demo z trojka dzieci i jednym przelewem zbiorczym.",
+        "notes": "Rodzina z trojka dzieci i jednym przelewem zbiorczym.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -1138,7 +1138,7 @@ SEED_BILLING_PAYERS = [
         "contact_phone": "503700800",
         "has_large_family_card": 0,
         "email": "adamscy@example.com",
-        "notes": "Rodzina demo z platnoscia semestralna.",
+        "notes": "Rodzina rozliczana semestralnie z gory.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -1146,7 +1146,7 @@ SEED_BILLING_PAYERS = [
         "contact_phone": "504700800",
         "has_large_family_card": 0,
         "email": "wisniewscy@example.com",
-        "notes": "Rodzina demo z modelem wlasnym.",
+        "notes": "Rodzina z indywidualnym modelem rozliczenia.",
     },
     {
         "organization_slug": "misja-robotyka",
@@ -1154,7 +1154,7 @@ SEED_BILLING_PAYERS = [
         "contact_phone": "505700800",
         "has_large_family_card": 0,
         "email": "dabrowscy@example.com",
-        "notes": "Rodzina demo z pojedynczym dzieckiem w grupie piatkowej.",
+        "notes": "Rodzina z pojedynczym dzieckiem w grupie piatkowej.",
     },
 ]
 
@@ -1474,12 +1474,12 @@ SEED_BILLING_STATEMENT_ROWS = [
 SEED_KNOWLEDGE_MANUAL_DOCUMENTS = [
     {
         "organization_slug": "organizacja-domyslna",
-        "title": "Polityka pracy demo",
-        "file_name": "polityka_pracy_demo.txt",
+        "title": "Zasady porannego przegladu operacyjnego",
+        "file_name": "zasady_porannego_przegladu_operacyjnego.txt",
         "library_path": "Procedury/Operacyjne",
         "content_text": (
-            "W organizacji domyslnej zadania administracyjne zatwierdza wlasciciel systemu. "
-            "Zglaszanie urlopu odbywa sie przez modul zadan."
+            "Poranny przeglad ma wskazac, co wymaga decyzji wlasciciela jeszcze dzisiaj. "
+            "Lista powinna laczyc pilne zadania, faktury, kontrahentow i dokumenty bez pokazywania calego backlogu."
         ),
     },
     {
@@ -1577,28 +1577,28 @@ SEED_KNOWLEDGE_MANUAL_DOCUMENTS = [
 SEED_KNOWLEDGE_FOLDER_DOCUMENTS = [
     {
         "organization_slug": "organizacja-domyslna",
-        "relative_path": "Procedury/Wsparcie/folder_wsparcie_demo.txt",
+        "relative_path": "Procedury/Wsparcie/instrukcja_obslugi_zgloszen_klientow.txt",
         "content_text": (
-            "Problemy z konfiguracja demonstracyjna eskalujemy do wlasciciela systemu razem ze zrzutem ekranu i opisem kroku."
+            "Zgloszenia klientow z brakujacymi dokumentami opisujemy krotko: czego brakuje, kto odpowiada i do kiedy trzeba wrocic z informacja."
         ),
     },
     {
         "organization_slug": "casi",
-        "relative_path": "HR/Urlopy/folder_procedura_urlopowa.txt",
+        "relative_path": "HR/Urlopy/zasady_urlopow_i_zastepstw_w_zespole.txt",
         "content_text": (
             "Urlop okolicznosciowy w CASI zglaszamy bezposrednio do lidera zespolu i potwierdzamy wpisem w systemie."
         ),
     },
     {
         "organization_slug": "misja-robotyka",
-        "relative_path": "Komunikacja/Rodzice/folder_komunikacja_z_rodzicami.txt",
+        "relative_path": "Komunikacja/Rodzice/plan_komunikacji_z_rodzicami_przed_zajeciami.txt",
         "content_text": (
             "Wiadomosci do rodzicow wysylamy przez panel organizacji, a tresc komunikatu zatwierdza koordynator."
         ),
     },
     {
         "organization_slug": "biuro-rachunkowe-alfa",
-        "relative_path": "Systemy/Dostepy/folder_dostepy_systemowe.txt",
+        "relative_path": "Systemy/Dostepy/procedura_nadawania_dostepow_systemowych.txt",
         "content_text": (
             "Dostep do systemu obiegu faktur w Biurze Alfa nadaje koordynator organizacji po zatwierdzeniu przez glowna ksiegowa."
         ),
@@ -2154,7 +2154,7 @@ def _ensure_demo_billing_data(auth_service: AuthService, billing_service: Billin
                 "period_label": payload["period_label"],
                 "due_date": payload["due_date"],
                 "lesson_count": payload["lesson_count"],
-                "notes": "Demo seed rozliczen.",
+                "notes": "Naliczono z harmonogramu zajec i przypisano do platnika.",
             },
             actor_user=actor_user,
             actor=actor,
@@ -2221,7 +2221,7 @@ def _ensure_demo_billing_data(auth_service: AuthService, billing_service: Billin
         billing_service.import_statement_csv(
             account_id,
             csv_content,
-            source_file_name=f"demo_misja_robotyka_{safe_account_name}.csv",
+            source_file_name=f"wyciag_misja_robotyka_{safe_account_name}.csv",
             actor_user=actor_user,
             actor=actor,
             organization_id=organization_id,
@@ -2330,3 +2330,5 @@ def _ensure_demo_knowledge_data(auth_service: AuthService, knowledge_service: Kn
 
     if version_jobs:
         knowledge_service.process_pending_jobs(limit=max(version_jobs * 3, 12))
+
+

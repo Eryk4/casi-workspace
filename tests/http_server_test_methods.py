@@ -23,6 +23,20 @@ class HttpServerTestMethods(HttpServerTestCase):
         self.assertIn("default-login-hint", body)
         self.assertIn("subtle-note hidden", body)
 
+    def test_root_does_not_serve_static_html_when_legacy_static_is_disabled(self) -> None:
+        with patch("app.api.http_server.CASI_SERVE_LEGACY_STATIC", False):
+            response, payload = self._request("GET", "/")
+        self.assertEqual(response.status, 401, payload.decode("utf-8"))
+        self.assertNotIn("text/html", response.getheader("Content-Type", ""))
+        self.assertIn("Brak aktywnej sesji", payload.decode("utf-8"))
+
+    def test_spa_fallback_does_not_serve_static_html_when_legacy_static_is_disabled(self) -> None:
+        with patch("app.api.http_server.CASI_SERVE_LEGACY_STATIC", False):
+            response, payload = self._request("GET", "/pulpit")
+        self.assertEqual(response.status, 401, payload.decode("utf-8"))
+        self.assertNotIn("text/html", response.getheader("Content-Type", ""))
+        self.assertIn("Brak aktywnej sesji", payload.decode("utf-8"))
+
     def test_meta_exposes_storage_backend(self) -> None:
         response, payload = self._request("GET", "/api/meta")
         self.assertEqual(response.status, 200)
@@ -2073,6 +2087,63 @@ class HttpServerTestMethods(HttpServerTestCase):
         self.assertEqual(official_payload["official_version_number"], 2)
 
         response, payload = self._request(
+            "GET",
+            f"/api/knowledge/documents/{document['knowledge_document_id']}?organization_id={organization['organization_id']}",
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        detail_after_official = json.loads(payload.decode("utf-8"))
+        audit_count_after_official = len(detail_after_official["audit_events"])
+        official_event_count = sum(
+            1
+            for item in detail_after_official["audit_events"]
+            if item["event_type"] == "knowledge_document_official_version_marked"
+        )
+
+        response, payload = self._request(
+            "POST",
+            f"/api/knowledge/documents/{document['knowledge_document_id']}/mark-official-version?organization_id={organization['organization_id']}",
+            body=json.dumps(
+                {
+                    "version_number": 1,
+                    "organization_id": 999,
+                    "document_id": 999,
+                    "knowledge_document_id": 999,
+                    "author_user_id": 999,
+                    "actor_user_id": 999,
+                    "role": "admin",
+                    "status": "official",
+                    "created_at": "2099-01-01T00:00:00",
+                    "storage_key": "secret/storage-key",
+                    "file_path": "C:\\Users\\secret\\document.txt",
+                    "is_official": True,
+                }
+            ),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("version_number", error_payload["error"])
+
+        response, payload = self._request(
+            "GET",
+            f"/api/knowledge/documents/{document['knowledge_document_id']}?organization_id={organization['organization_id']}",
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        detail_after_rejected_official = json.loads(payload.decode("utf-8"))
+        self.assertEqual(detail_after_rejected_official["official_version_number"], 2)
+        self.assertEqual(len(detail_after_rejected_official["audit_events"]), audit_count_after_official)
+        self.assertEqual(
+            sum(
+                1
+                for item in detail_after_rejected_official["audit_events"]
+                if item["event_type"] == "knowledge_document_official_version_marked"
+            ),
+            official_event_count,
+        )
+
+        response, payload = self._request(
             "POST",
             f"/api/knowledge/documents/{document['knowledge_document_id']}/comments?organization_id={organization['organization_id']}",
             body=json.dumps(
@@ -2092,6 +2163,30 @@ class HttpServerTestMethods(HttpServerTestCase):
         self.assertEqual(comment_payload["comments"][0]["annotation_kind"], "annotation")
 
         response, payload = self._request(
+            "POST",
+            f"/api/knowledge/documents/{document['knowledge_document_id']}/comments?organization_id={organization['organization_id']}",
+            body=json.dumps(
+                {
+                    "note_text": "Nie powinno zapisac komentarza wiedzy.",
+                    "version_number": 2,
+                    "annotation_kind": "annotation",
+                    "anchor_label": "nadmiar",
+                    "organization_id": 999,
+                    "knowledge_document_id": 999,
+                    "author_user_id": 999,
+                    "role": "admin",
+                    "created_at": "2099-01-01T00:00:00",
+                }
+            ),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("note_text", error_payload["error"])
+        self.assertIn("annotation_kind", error_payload["error"])
+        self.assertIn("anchor_excerpt", error_payload["error"])
+
+        response, payload = self._request(
             "GET",
             f"/api/knowledge/documents/{document['knowledge_document_id']}?organization_id={organization['organization_id']}",
             headers={"Cookie": cookie},
@@ -2101,8 +2196,73 @@ class HttpServerTestMethods(HttpServerTestCase):
         self.assertEqual(detail_payload["official_version_number"], 2)
         self.assertTrue(detail_payload["versions"][0]["is_official"])
         self.assertEqual(detail_payload["comment_summary"]["comment_count"], 1)
+        self.assertFalse(
+            any(comment["note_text"] == "Nie powinno zapisac komentarza wiedzy." for comment in detail_payload["comments"])
+        )
         self.assertTrue(any(item["event_type"] == "knowledge_document_official_version_marked" for item in detail_payload["audit_events"]))
         self.assertTrue(any(item["event_type"] == "knowledge_document_comment_added" for item in detail_payload["audit_events"]))
+
+        audit_count_before_restore = len(detail_payload["audit_events"])
+        processing_status_before_restore = detail_payload["processing_status"]
+        response, payload = self._request(
+            "POST",
+            f"/api/knowledge/documents/{document['knowledge_document_id']}/restore-version?organization_id={organization['organization_id']}",
+            body=json.dumps(
+                {
+                    "version_number": 1,
+                    "organization_id": 999,
+                    "document_id": 999,
+                    "knowledge_document_id": 999,
+                    "author_user_id": 999,
+                    "actor_user_id": 999,
+                    "role": "admin",
+                    "status": "restored",
+                    "created_at": "2099-01-01T00:00:00",
+                    "storage_key": "secret/storage-key",
+                    "file_path": "C:\\Users\\secret\\document.txt",
+                    "is_official": True,
+                }
+            ),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("version_number", error_payload["error"])
+
+        response, payload = self._request(
+            "GET",
+            f"/api/knowledge/documents/{document['knowledge_document_id']}?organization_id={organization['organization_id']}",
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        detail_after_rejected_restore = json.loads(payload.decode("utf-8"))
+        self.assertEqual(detail_after_rejected_restore["processing_status"], processing_status_before_restore)
+        self.assertEqual(len(detail_after_rejected_restore["audit_events"]), audit_count_before_restore)
+        self.assertFalse(
+            any(
+                item["event_type"] == "knowledge_document_version_restored"
+                for item in detail_after_rejected_restore["audit_events"]
+            )
+        )
+
+        response, payload = self._request(
+            "POST",
+            f"/api/knowledge/documents/{document['knowledge_document_id']}/restore-version?organization_id={organization['organization_id']}",
+            body=json.dumps({"version_number": 1}),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 202, payload.decode("utf-8"))
+
+        response, payload = self._request(
+            "GET",
+            f"/api/knowledge/documents/{document['knowledge_document_id']}?organization_id={organization['organization_id']}",
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        detail_after_restore = json.loads(payload.decode("utf-8"))
+        self.assertTrue(
+            any(item["event_type"] == "knowledge_document_version_restored" for item in detail_after_restore["audit_events"])
+        )
 
     def test_knowledge_document_compare_endpoint_returns_diff(self) -> None:
         admin = self.services["auth_service"].list_users()[0]
@@ -3298,6 +3458,29 @@ class HttpServerTestMethods(HttpServerTestCase):
         self.assertEqual(updated["shared_note_text"], "Sprawdzamy dzis korekty od dostawcy Alfa.")
         self.assertEqual(updated["shared_note_updated_by_name"], "Alpha Jeden")
 
+        response, payload = self._request(
+            "PATCH",
+            "/api/organization-shared-note",
+            body=json.dumps(
+                {
+                    "shared_note_text": "Nie powinno nadpisac notatki.",
+                    "organization_id": organization_beta["organization_id"],
+                    "shared_note_updated_by_user_id": 999,
+                    "role": "admin",
+                    "created_at": "2099-01-01T00:00:00",
+                }
+            ),
+            headers={"Cookie": alpha_cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("shared_note_text", error_payload["error"])
+
+        response, payload = self._request("GET", "/api/organization-shared-note", headers={"Cookie": alpha_cookie})
+        self.assertEqual(response.status, 200)
+        unchanged_note = json.loads(payload.decode("utf-8"))
+        self.assertEqual(unchanged_note["shared_note_text"], "Sprawdzamy dzis korekty od dostawcy Alfa.")
+
         response, _ = self._request(
             "POST",
             "/api/session/login",
@@ -3390,6 +3573,24 @@ class HttpServerTestMethods(HttpServerTestCase):
         self.assertEqual(first_note["personal_note_text"], "Moja prywatna lista spraw.")
         self.assertIsNotNone(first_note["personal_note_updated_at"])
 
+        response, payload = self._request(
+            "PATCH",
+            "/api/user-personal-note",
+            body=json.dumps(
+                {
+                    "personal_note_text": "Nie powinno nadpisac prywatnej notatki.",
+                    "user_id": 999,
+                    "organization_id": 999,
+                    "role": "admin",
+                    "personal_note_updated_at": "2099-01-01T00:00:00",
+                }
+            ),
+            headers={"Cookie": first_cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("personal_note_text", error_payload["error"])
+
         response, payload = self._request("GET", "/api/user-personal-note", headers={"Cookie": first_cookie})
         self.assertEqual(response.status, 200)
         same_user_note = json.loads(payload.decode("utf-8"))
@@ -3409,6 +3610,97 @@ class HttpServerTestMethods(HttpServerTestCase):
         self.assertEqual(response.status, 200)
         second_note = json.loads(payload.decode("utf-8"))
         self.assertEqual(second_note["personal_note_text"], "")
+
+    def test_user_reminder_preferences_reject_extra_payload_fields(self) -> None:
+        admin = self.services["auth_service"].list_users()[0]
+        organization = self.services["organization_service"].create_organization(
+            {
+                "name": "Klient Reminder Prefs",
+                "slug": "klient-reminder-prefs",
+                "is_active": 1,
+                "enabled_modules": [MANAGER_ASSISTANT_MODULE],
+            },
+            actor_user=admin,
+            actor_login="admin",
+        )
+        self.services["auth_service"].create_user(
+            {
+                "login": "reminder-prefs-user",
+                "display_name": "Reminder Prefs User",
+                "password": "1234",
+                "role": "operator",
+                "is_active": 1,
+                "organization_id": organization["organization_id"],
+            },
+            actor_login="admin",
+            actor_user_id=admin["user_id"],
+            actor_user=admin,
+        )
+
+        headers = {"Content-Type": "application/json"}
+        response, _ = self._request(
+            "POST",
+            "/api/session/login",
+            body=json.dumps({"login": "reminder-prefs-user", "password": "1234"}),
+            headers=headers,
+        )
+        self.assertEqual(response.status, 200)
+        cookie = response.getheader("Set-Cookie")
+        self.assertTrue(cookie)
+
+        response, payload = self._request(
+            "POST",
+            "/api/user-reminder-preferences",
+            body=json.dumps(
+                {
+                    "telegram_reminders_enabled": True,
+                    "browser_notifications_enabled": True,
+                    "quiet_hours_start": "22:00",
+                    "quiet_hours_end": "06:30",
+                    "repeat_interval_minutes": 45,
+                }
+            ),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        updated = json.loads(payload.decode("utf-8"))
+        self.assertEqual(updated["quiet_hours_start"], "22:00")
+        self.assertEqual(updated["quiet_hours_end"], "06:30")
+        self.assertEqual(int(updated["repeat_interval_minutes"]), 45)
+        self.assertEqual(int(updated["telegram_reminders_enabled"]), 1)
+        self.assertEqual(int(updated["browser_notifications_enabled"]), 1)
+
+        response, payload = self._request(
+            "POST",
+            "/api/user-reminder-preferences",
+            body=json.dumps(
+                {
+                    "telegram_reminders_enabled": False,
+                    "browser_notifications_enabled": False,
+                    "quiet_hours_start": "20:00",
+                    "quiet_hours_end": "07:00",
+                    "repeat_interval_minutes": 10,
+                    "user_id": 999,
+                    "organization_id": 999,
+                    "role": "admin",
+                    "created_at": "2099-01-01T00:00:00",
+                }
+            ),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("telegram_reminders_enabled", error_payload["error"])
+        self.assertIn("repeat_interval_minutes", error_payload["error"])
+
+        response, payload = self._request("GET", "/api/user-reminder-preferences", headers={"Cookie": cookie})
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        unchanged = json.loads(payload.decode("utf-8"))
+        self.assertEqual(unchanged["quiet_hours_start"], "22:00")
+        self.assertEqual(unchanged["quiet_hours_end"], "06:30")
+        self.assertEqual(int(unchanged["repeat_interval_minutes"]), 45)
+        self.assertEqual(int(unchanged["telegram_reminders_enabled"]), 1)
+        self.assertEqual(int(unchanged["browser_notifications_enabled"]), 1)
 
     def test_only_decision_roles_can_confirm_duplicate(self) -> None:
         admin = self.services["auth_service"].list_users()[0]
@@ -3701,6 +3993,264 @@ class HttpServerTestMethods(HttpServerTestCase):
         detail = json.loads(payload.decode("utf-8"))
         self.assertTrue(any(item["note_text"] == "Komentarz HTTP do faktury." for item in detail["comments"]))
 
+    def test_invoice_comment_endpoint_requires_write_scope(self) -> None:
+        admin = self.services["auth_service"].list_users()[0]
+        default_organization = self.services["organization_repository"].ensure_default_organization()
+        beta_organization = self.services["organization_service"].create_organization(
+            {"name": "Beta Invoice Comments", "slug": "beta-invoice-comments", "is_active": 1},
+            actor_user=admin,
+            actor_login="admin",
+        )
+        beta_invoice = self.services["invoice_service"].create_invoice(
+            {
+                "source": "MANUAL",
+                "file_name": "beta-invoice-comment.pdf",
+                "invoice_number": "BETA/COMMENT/1",
+                "issuer_name": "Beta Comment Sp. z o.o.",
+                "issuer_nip": "5566778890",
+                "gross_amount": 321.11,
+                "currency": "PLN",
+                "issue_date": "2026-07-02",
+                "sale_date": "2026-07-02",
+            },
+            actor="admin",
+            organization_id=int(beta_organization["organization_id"]),
+        )
+        cookie = self._login_default_admin()
+
+        response, _payload = self._request(
+            "POST",
+            "/api/invoices/1/comments",
+            body=json.dumps({"note_text": "Komentarz bez organizacji."}),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400)
+
+        response, _payload = self._request(
+            "POST",
+            f"/api/invoices/{beta_invoice['id']}/comments?organization_id={default_organization['organization_id']}",
+            body=json.dumps({"note_text": "Komentarz przez zly scope."}),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400)
+
+        beta_detail = self.services["invoice_service"].get_invoice_detail(
+            int(beta_invoice["id"]),
+            organization_id=int(beta_organization["organization_id"]),
+        )
+        self.assertIsNotNone(beta_detail)
+        assert beta_detail is not None
+        self.assertFalse(
+            any(item["note_text"] == "Komentarz przez zly scope." for item in beta_detail["comments"])
+        )
+
+    def test_invoice_comment_endpoint_rejects_extra_payload_fields(self) -> None:
+        default_organization = self.services["organization_repository"].ensure_default_organization()
+        cookie = self._login_default_admin()
+        before_detail = self.services["invoice_service"].get_invoice_detail(
+            1,
+            organization_id=int(default_organization["organization_id"]),
+        )
+        self.assertIsNotNone(before_detail)
+        assert before_detail is not None
+        before_comment_count = len(before_detail["comments"])
+        before_event_count = len(
+            [item for item in before_detail["history"] if item["event_type"] == "invoice_comment_added"]
+        )
+
+        response, payload = self._request(
+            "POST",
+            f"/api/invoices/1/comments?organization_id={default_organization['organization_id']}",
+            body=json.dumps(
+                {
+                    "note_text": "Komentarz z nadmiarowym payloadem.",
+                    "organization_id": 999,
+                    "invoice_id": 999,
+                    "author_user_id": 999,
+                    "created_at": "2026-07-02T12:00:00",
+                    "role": "admin",
+                }
+            ),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400)
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("note_text", error_payload["error"])
+
+        after_detail = self.services["invoice_service"].get_invoice_detail(
+            1,
+            organization_id=int(default_organization["organization_id"]),
+        )
+        self.assertIsNotNone(after_detail)
+        assert after_detail is not None
+        self.assertEqual(len(after_detail["comments"]), before_comment_count)
+        after_comment_events = [item for item in after_detail["history"] if item["event_type"] == "invoice_comment_added"]
+        self.assertEqual(len(after_comment_events), before_event_count)
+        self.assertFalse(
+            any(item["note_text"] == "Komentarz z nadmiarowym payloadem." for item in after_detail["comments"])
+        )
+
+    def test_contractor_note_endpoint_adds_note_and_detail_contains_it(self) -> None:
+        default_organization = self.services["organization_repository"].ensure_default_organization()
+        invoice = self.services["invoice_service"].get_invoice_detail(
+            1,
+            organization_id=int(default_organization["organization_id"]),
+        )
+        self.assertIsNotNone(invoice)
+        assert invoice is not None
+        contractor_id = int(invoice["invoice"]["contractor_id"])
+        before_detail = self.services["invoice_service"].get_contractor_detail(
+            contractor_id,
+            organization_id=int(default_organization["organization_id"]),
+            viewer_user=self.services["auth_service"].list_users()[0],
+        )
+        self.assertIsNotNone(before_detail)
+        assert before_detail is not None
+        cookie = self._login_default_admin()
+
+        response, payload = self._request(
+            "POST",
+            f"/api/contractors/{contractor_id}/notes?organization_id={default_organization['organization_id']}",
+            body=json.dumps({"note_text": "Notatka HTTP do kontrahenta."}),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 201, payload.decode("utf-8"))
+        note = json.loads(payload.decode("utf-8"))
+        self.assertEqual(note["note_text"], "Notatka HTTP do kontrahenta.")
+        self.assertEqual(int(note["contractor_id"]), contractor_id)
+        self.assertEqual(int(note["organization_id"]), int(default_organization["organization_id"]))
+
+        response, payload = self._request(
+            "GET",
+            f"/api/contractors/{contractor_id}?organization_id={default_organization['organization_id']}",
+            headers={"Cookie": cookie},
+        )
+        self.assertEqual(response.status, 200)
+        detail = json.loads(payload.decode("utf-8"))
+        self.assertTrue(any(item["note_text"] == "Notatka HTTP do kontrahenta." for item in detail["notes"]))
+        self.assertEqual(before_detail["contractor"], detail["contractor"])
+
+    def test_contractor_note_endpoint_rejects_invalid_payloads(self) -> None:
+        default_organization = self.services["organization_repository"].ensure_default_organization()
+        invoice = self.services["invoice_service"].get_invoice_detail(
+            1,
+            organization_id=int(default_organization["organization_id"]),
+        )
+        self.assertIsNotNone(invoice)
+        assert invoice is not None
+        contractor_id = int(invoice["invoice"]["contractor_id"])
+        cookie = self._login_default_admin()
+
+        response, _payload = self._request(
+            "POST",
+            f"/api/contractors/{contractor_id}/notes?organization_id={default_organization['organization_id']}",
+            body=json.dumps({"note_text": ""}),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400)
+
+        response, _payload = self._request(
+            "POST",
+            f"/api/contractors/{contractor_id}/notes?organization_id={default_organization['organization_id']}",
+            body=json.dumps({"note_text": "x" * 2001}),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400)
+
+        response, _payload = self._request(
+            "POST",
+            f"/api/contractors/{contractor_id}/notes?organization_id={default_organization['organization_id']}",
+            body=json.dumps({"note_text": "Poprawna tresc.", "status": "nowy"}),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400)
+
+    def test_contractor_note_endpoint_requires_session_and_organization_access(self) -> None:
+        admin = self.services["auth_service"].list_users()[0]
+        default_organization = self.services["organization_repository"].ensure_default_organization()
+        beta_organization = self.services["organization_service"].create_organization(
+            {"name": "Beta CRM Notes", "slug": "beta-crm-notes", "is_active": 1},
+            actor_user=admin,
+            actor_login="admin",
+        )
+        beta_invoice = self.services["invoice_service"].create_invoice(
+            {
+                "source": "MANUAL",
+                "file_name": "beta-crm-note.pdf",
+                "invoice_number": "BETA/CRM/1",
+                "issuer_name": "Beta CRM Sp. z o.o.",
+                "issuer_nip": "7778889990",
+                "gross_amount": 123.45,
+                "currency": "PLN",
+                "issue_date": "2026-07-02",
+                "sale_date": "2026-07-02",
+            },
+            actor="admin",
+            organization_id=int(beta_organization["organization_id"]),
+        )
+        contractor_id = int(beta_invoice["contractor_id"])
+
+        response, _payload = self._request(
+            "POST",
+            f"/api/contractors/{contractor_id}/notes?organization_id={beta_organization['organization_id']}",
+            body=json.dumps({"note_text": "Bez sesji."}),
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 401)
+
+        self.services["auth_service"].create_user(
+            {
+                "login": "crm-note-alpha",
+                "display_name": "CRM Note Alpha",
+                "password": "1234",
+                "role": "operator",
+                "is_active": 1,
+                "organization_id": default_organization["organization_id"],
+            },
+            actor_login="admin",
+            actor_user_id=admin["user_id"],
+            actor_user=admin,
+        )
+        alpha_cookie = self._login("crm-note-alpha", "1234")
+        response, _payload = self._request(
+            "POST",
+            f"/api/contractors/{contractor_id}/notes?organization_id={beta_organization['organization_id']}",
+            body=json.dumps({"note_text": "Nie powinna przejsc."}),
+            headers={"Cookie": alpha_cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400)
+
+        self.services["auth_service"].create_user(
+            {
+                "login": "crm-note-guest",
+                "display_name": "CRM Note Guest",
+                "password": "1234",
+                "role": "guest",
+                "is_active": 1,
+                "organization_id": default_organization["organization_id"],
+            },
+            actor_login="admin",
+            actor_user_id=admin["user_id"],
+            actor_user=admin,
+        )
+        guest_cookie = self._login("crm-note-guest", "1234")
+        response, _payload = self._request(
+            "POST",
+            f"/api/contractors/{contractor_id}/notes?organization_id={default_organization['organization_id']}",
+            body=json.dumps({"note_text": "Guest bez prawa zapisu."}),
+            headers={"Cookie": guest_cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 403)
+
+        beta_detail = self.services["invoice_service"].get_contractor_detail(
+            contractor_id,
+            organization_id=int(beta_organization["organization_id"]),
+            viewer_user=admin,
+        )
+        self.assertIsNotNone(beta_detail)
+        assert beta_detail is not None
+        self.assertFalse(any(item["note_text"] == "Nie powinna przejsc." for item in beta_detail["notes"]))
+
     def test_invoice_preview_endpoint_returns_preview_payload(self) -> None:
         default_organization = self.services["organization_repository"].ensure_default_organization()
         created = self.services["invoice_service"].create_invoice(
@@ -3765,6 +4315,95 @@ class HttpServerTestMethods(HttpServerTestCase):
         self.assertEqual(created["module_key"], "invoices")
 
         response, payload = self._request(
+            "POST",
+            f"/api/dashboard/views?organization_id={default_organization['organization_id']}",
+            body=json.dumps(
+                {
+                    "module_key": "invoices",
+                    "view_name": "Nie powinien powstac",
+                    "view_slug": f"nadmiarowy-dashboard-view-{uuid.uuid4().hex[:8]}",
+                    "view_state": {"filters": {"status": "draft"}},
+                    "user_id": 999,
+                    "organization_id": 999,
+                    "owner_user_id": 999,
+                    "dashboard_view_id": 999,
+                    "actor_user_id": 999,
+                    "role": "admin",
+                    "created_at": "2099-01-01T00:00:00",
+                    "updated_at": "2099-01-01T00:00:00",
+                    "is_admin": True,
+                    "shared_with_all": True,
+                    "system_default": True,
+                }
+            ),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("module_key", error_payload["error"])
+        self.assertIn("is_default", error_payload["error"])
+
+        response, payload = self._request(
+            "PATCH",
+            f"/api/dashboard/views/{created['saved_view_id']}?organization_id={default_organization['organization_id']}",
+            body=json.dumps(
+                {
+                    "view_name": "Moje faktury po korekcie",
+                    "description": "Widok po poprawnym PATCH.",
+                    "view_state": {"filters": {"status": "weryfikacja", "assigned_user_id": 1, "priority": "high"}},
+                    "is_shared": True,
+                }
+            ),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        updated = json.loads(payload.decode("utf-8"))
+        self.assertEqual(updated["view_name"], "Moje faktury po korekcie")
+        self.assertEqual(updated["description"], "Widok po poprawnym PATCH.")
+        self.assertEqual(updated["view_state_json"]["filters"]["priority"], "high")
+
+        response, payload = self._request(
+            "PATCH",
+            f"/api/dashboard/views/{created['saved_view_id']}?organization_id={default_organization['organization_id']}",
+            body=json.dumps(
+                {
+                    "view_name": "Nie powinno zmienic widoku",
+                    "description": "Nadmiarowy PATCH nie powinien zapisac zmian.",
+                    "view_state": {"filters": {"status": "zamknieta"}},
+                    "user_id": 999,
+                    "organization_id": 999,
+                    "owner_user_id": 999,
+                    "dashboard_view_id": 999,
+                    "actor_user_id": 999,
+                    "role": "admin",
+                    "created_at": "2099-01-01T00:00:00",
+                    "updated_at": "2099-01-01T00:00:00",
+                    "is_admin": True,
+                    "shared_with_all": True,
+                    "system_default": True,
+                }
+            ),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("module_key", error_payload["error"])
+        self.assertIn("is_default", error_payload["error"])
+
+        other_organization = self.services["organization_service"].create_organization(
+            {"name": "Inny dashboard klient", "slug": f"inny-dashboard-klient-{uuid.uuid4().hex[:8]}", "is_active": 1},
+            actor_user=self.services["auth_service"].list_users()[0],
+            actor_login="admin",
+        )
+        response, payload = self._request(
+            "PATCH",
+            f"/api/dashboard/views/{created['saved_view_id']}?organization_id={other_organization['organization_id']}",
+            body=json.dumps({"view_name": "Nie powinno zmienic widoku z innej organizacji"}),
+            headers={"Cookie": cookie, "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 404, payload.decode("utf-8"))
+
+        response, payload = self._request(
             "GET",
             f"/api/dashboard/views?organization_id={default_organization['organization_id']}&module_key=invoices&include_hidden=1",
             headers={"Cookie": cookie},
@@ -3772,6 +4411,12 @@ class HttpServerTestMethods(HttpServerTestCase):
         self.assertEqual(response.status, 200, payload.decode("utf-8"))
         views = json.loads(payload.decode("utf-8"))
         self.assertTrue(any(int(item["saved_view_id"]) == int(created["saved_view_id"]) for item in views))
+        persisted_view = next(item for item in views if int(item["saved_view_id"]) == int(created["saved_view_id"]))
+        self.assertEqual(persisted_view["view_name"], "Moje faktury po korekcie")
+        self.assertEqual(persisted_view["description"], "Widok po poprawnym PATCH.")
+        self.assertFalse(any(item["view_name"] == "Nie powinien powstac" for item in views))
+        self.assertFalse(any(item["view_name"] == "Nie powinno zmienic widoku" for item in views))
+        self.assertFalse(any(item["view_name"] == "Nie powinno zmienic widoku z innej organizacji" for item in views))
 
     def test_invoice_list_can_filter_by_workflow_state(self) -> None:
         default_organization = self.services["organization_repository"].ensure_default_organization()

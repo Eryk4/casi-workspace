@@ -9,6 +9,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 STATIC_DIR = BASE_DIR / "static"
 RAILWAY_VOLUME_MOUNT_PATH = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+# TODO: Final frontend should live in frontend/ (Next). static/ remains legacy UI until deploy is switched.
+CASI_SERVE_LEGACY_STATIC = os.getenv("CASI_SERVE_LEGACY_STATIC", "1").strip().lower() in {
+    "1",
+    "true",
+    "tak",
+    "yes",
+    "on",
+}
+
+
+def normalize_storage_backend(raw_value: str | None) -> str:
+    normalized = str(raw_value or "").strip().lower()
+    return normalized or "local"
 
 
 def _looks_like_test_run() -> bool:
@@ -100,6 +113,7 @@ ENABLE_DEMO_SEED = os.getenv(
 SECURE_COOKIES = os.getenv("INVOICE_SECURE_COOKIES", "0").strip().lower() in {"1", "true", "tak", "yes"}
 SESSION_COOKIE_NAME = os.getenv("INVOICE_SESSION_COOKIE_NAME", "sesja_panelu")
 SESSION_DURATION_HOURS = _env_int("INVOICE_SESSION_DURATION_HOURS", 24, minimum=1)
+SESSION_MAX_ACTIVE_DEVICES_PER_ACCOUNT = _env_int("INVOICE_MAX_ACTIVE_DEVICES_PER_ACCOUNT", 3, minimum=0)
 DEFAULT_ADMIN_LOGIN = os.getenv("INVOICE_DEFAULT_ADMIN_LOGIN", "admin").strip() or "admin"
 DEFAULT_ADMIN_PASSWORD = os.getenv("INVOICE_DEFAULT_ADMIN_PASSWORD", "Admin1234").strip() or "Admin1234"
 TELEGRAM_BOT_TOKEN = os.getenv("INVOICE_TELEGRAM_BOT_TOKEN", "").strip()
@@ -193,6 +207,14 @@ OCR_DIR = STORAGE_ROOT / "ocr"
 KNOWLEDGE_DIR = STORAGE_ROOT / "wiedza"
 WHITEBOARD_DIR = STORAGE_ROOT / "tablica"
 BACKUPS_DIR = STORAGE_ROOT / "backup"
+STORAGE_BACKEND = normalize_storage_backend(os.getenv("INVOICE_STORAGE_BACKEND", "local"))
+S3_ENDPOINT_URL = os.getenv("INVOICE_S3_ENDPOINT_URL", "").strip()
+S3_REGION = os.getenv("INVOICE_S3_REGION", "").strip()
+S3_BUCKET = os.getenv("INVOICE_S3_BUCKET", "").strip()
+S3_ACCESS_KEY_ID = os.getenv("INVOICE_S3_ACCESS_KEY_ID", "").strip()
+S3_SECRET_ACCESS_KEY = os.getenv("INVOICE_S3_SECRET_ACCESS_KEY", "")
+S3_PREFIX = os.getenv("INVOICE_S3_PREFIX", "").strip().strip("/")
+S3_PUBLIC_BASE_URL = os.getenv("INVOICE_S3_PUBLIC_BASE_URL", "").strip().rstrip("/")
 PUBLIC_BASE_URL = os.getenv("INVOICE_PUBLIC_BASE_URL", "").strip().rstrip("/")
 
 DOCUMENTS_ROUTE_PREFIX = "/pliki/dokumenty/"

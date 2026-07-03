@@ -627,6 +627,42 @@ class CalendarHttpTests(unittest.TestCase):
 
         response, payload = self._request(
             "POST",
+            "/api/user-calendars",
+            body=json.dumps(
+                {
+                    "display_name": "Nie powinien powstac",
+                    "description": "Nadmiarowy payload nie moze utworzyc kalendarza.",
+                    "calendar_kind": "inne",
+                    "default_duration_minutes": 30,
+                    "user_id": 999,
+                    "organization_id": 999,
+                    "calendar_id": 999,
+                    "actor_user_id": 999,
+                    "role": "admin",
+                    "created_at": "2099-01-01T00:00:00",
+                    "updated_at": "2099-01-01T00:00:00",
+                    "google_access_token": "secret-access-token",
+                    "google_refresh_token": "secret-refresh-token",
+                    "oauth_state": "secret-state",
+                    "is_admin": True,
+                    "owner_user_id": 999,
+                }
+            ),
+            headers={"Content-Type": "application/json", "Cookie": cookie},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("display_name", error_payload["error"])
+        self.assertIn("external_calendar_id", error_payload["error"])
+
+        response, payload = self._request("GET", "/api/user-calendars", headers={"Cookie": cookie})
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        calendars_after_rejected_create = json.loads(payload.decode("utf-8"))
+        self.assertEqual(len(calendars_after_rejected_create), 1)
+        self.assertFalse(any(item["display_name"] == "Nie powinien powstac" for item in calendars_after_rejected_create))
+
+        response, payload = self._request(
+            "POST",
             f"/api/tasks?organization_id={self.organization['organization_id']}",
             body=json.dumps(
                 {
@@ -654,6 +690,66 @@ class CalendarHttpTests(unittest.TestCase):
         ics_body = payload.decode("utf-8")
         self.assertIn("SUMMARY:Obiad rodzinny", ics_body)
         self.assertIn("X-WR-CALNAME:Sluzbowy plan dnia", ics_body)
+
+        response, payload = self._request(
+            "PATCH",
+            f"/api/user-calendars/{created_calendar['user_calendar_id']}",
+            body=json.dumps({"display_name": "Sluzbowy plan dnia po korekcie", "default_duration_minutes": 90}),
+            headers={"Content-Type": "application/json", "Cookie": cookie},
+        )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        updated_calendar = json.loads(payload.decode("utf-8"))
+        self.assertEqual(updated_calendar["display_name"], "Sluzbowy plan dnia po korekcie")
+        self.assertEqual(updated_calendar["default_duration_minutes"], 90)
+
+        response, payload = self._request(
+            "PATCH",
+            f"/api/user-calendars/{created_calendar['user_calendar_id']}",
+            body=json.dumps(
+                {
+                    "display_name": "Nie powinno zmienic kalendarza",
+                    "default_duration_minutes": 15,
+                    "user_id": 999,
+                    "organization_id": 999,
+                    "calendar_id": 999,
+                    "actor_user_id": 999,
+                    "role": "admin",
+                    "created_at": "2099-01-01T00:00:00",
+                    "updated_at": "2099-01-01T00:00:00",
+                    "google_access_token": "secret-access-token",
+                    "google_refresh_token": "secret-refresh-token",
+                    "oauth_state": "secret-state",
+                    "is_admin": True,
+                    "owner_user_id": 999,
+                }
+            ),
+            headers={"Content-Type": "application/json", "Cookie": cookie},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        error_payload = json.loads(payload.decode("utf-8"))
+        self.assertIn("display_name", error_payload["error"])
+        self.assertIn("external_calendar_id", error_payload["error"])
+
+        response, payload = self._request("GET", "/api/user-calendars", headers={"Cookie": cookie})
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        calendars_after_rejected_update = json.loads(payload.decode("utf-8"))
+        self.assertEqual(len(calendars_after_rejected_update), 1)
+        self.assertEqual(calendars_after_rejected_update[0]["display_name"], "Sluzbowy plan dnia po korekcie")
+        self.assertEqual(calendars_after_rejected_update[0]["default_duration_minutes"], 90)
+
+        admin_cookie = self._login("ewa-admin", "1234")
+        response, payload = self._request(
+            "PATCH",
+            f"/api/user-calendars/{created_calendar['user_calendar_id']}",
+            body=json.dumps({"display_name": "Nie powinno zmienic cudzego kalendarza"}),
+            headers={"Content-Type": "application/json", "Cookie": admin_cookie},
+        )
+        self.assertEqual(response.status, 404, payload.decode("utf-8"))
+
+        response, payload = self._request("GET", "/api/user-calendars", headers={"Cookie": cookie})
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        calendars_after_cross_user_update = json.loads(payload.decode("utf-8"))
+        self.assertEqual(calendars_after_cross_user_update[0]["display_name"], "Sluzbowy plan dnia po korekcie")
 
     def test_http_operator_cannot_create_family_calendar(self) -> None:
         cookie = self._login("ewa-http", "1234")

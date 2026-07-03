@@ -39,7 +39,7 @@ from app.repositories.task_template_repository import TaskTemplateRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.services.calendar_service import CalendarService
-from app.services.storage_service import LocalStorageService
+from app.services.storage_service import StorageService
 from app.utils import json_dumps, now_iso, now_local_datetime_value
 
 TASK_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024
@@ -56,7 +56,7 @@ class TaskService:
         contractor_repository: ContractorRepository,
         knowledge_repository: KnowledgeRepository | None,
         calendar_service: CalendarService,
-        storage_service: LocalStorageService,
+        storage_service: StorageService,
         task_template_repository: TaskTemplateRepository | None = None,
         approval_repository: ApprovalRepository | None = None,
     ) -> None:

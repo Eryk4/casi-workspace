@@ -529,6 +529,68 @@ CREATE TABLE IF NOT EXISTS task_history (
 
 CREATE INDEX IF NOT EXISTS idx_task_history_task_id ON task_history(task_id);
 
+CREATE TABLE IF NOT EXISTS work_items (
+    work_item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'manual',
+    source_id INTEGER,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'nowe',
+    priority_level TEXT NOT NULL DEFAULT 'normalny',
+    priority_score REAL NOT NULL DEFAULT 0,
+    assigned_user_id INTEGER,
+    created_by_user_id INTEGER NOT NULL,
+    updated_by_user_id INTEGER,
+    due_at TEXT,
+    sla_deadline_at TEXT,
+    sla_warning_minutes INTEGER NOT NULL DEFAULT 120,
+    sla_warning_at TEXT,
+    sla_stage TEXT NOT NULL DEFAULT 'on_track',
+    reminder_sent_at TEXT,
+    escalation_sent_at TEXT,
+    resolved_at TEXT,
+    last_sla_transition_at TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    FOREIGN KEY (assigned_user_id) REFERENCES users(user_id),
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id),
+    FOREIGN KEY (updated_by_user_id) REFERENCES users(user_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_work_items_org_source
+    ON work_items(organization_id, source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_work_items_org_status
+    ON work_items(organization_id, status);
+CREATE INDEX IF NOT EXISTS idx_work_items_org_priority_score
+    ON work_items(organization_id, priority_score);
+CREATE INDEX IF NOT EXISTS idx_work_items_org_sla_deadline
+    ON work_items(organization_id, sla_deadline_at);
+CREATE INDEX IF NOT EXISTS idx_work_items_org_sla_stage
+    ON work_items(organization_id, sla_stage);
+CREATE INDEX IF NOT EXISTS idx_work_items_assigned_user_id
+    ON work_items(assigned_user_id);
+
+CREATE TABLE IF NOT EXISTS work_item_history (
+    work_item_history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_item_id INTEGER NOT NULL,
+    organization_id INTEGER NOT NULL,
+    action_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    message TEXT NOT NULL,
+    details TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (work_item_id) REFERENCES work_items(work_item_id) ON DELETE CASCADE,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_item_history_item_id
+    ON work_item_history(work_item_id);
+CREATE INDEX IF NOT EXISTS idx_work_item_history_org_id
+    ON work_item_history(organization_id);
+
 CREATE TABLE IF NOT EXISTS task_reminder_outbox (
     task_reminder_outbox_id INTEGER PRIMARY KEY AUTOINCREMENT,
     organization_id INTEGER NOT NULL,
@@ -1748,6 +1810,74 @@ CREATE TABLE IF NOT EXISTS task_history (
 
 CREATE INDEX IF NOT EXISTS idx_task_history_task_id ON task_history(task_id);
 
+CREATE TABLE IF NOT EXISTS work_items (
+    work_item_id BIGSERIAL PRIMARY KEY,
+    organization_id BIGINT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'manual',
+    source_id BIGINT,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'nowe',
+    priority_level TEXT NOT NULL DEFAULT 'normalny',
+    priority_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    assigned_user_id BIGINT,
+    created_by_user_id BIGINT NOT NULL,
+    updated_by_user_id BIGINT,
+    due_at TEXT,
+    sla_deadline_at TEXT,
+    sla_warning_minutes INTEGER NOT NULL DEFAULT 120,
+    sla_warning_at TEXT,
+    sla_stage TEXT NOT NULL DEFAULT 'on_track',
+    reminder_sent_at TEXT,
+    escalation_sent_at TEXT,
+    resolved_at TEXT,
+    last_sla_transition_at TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CONSTRAINT fk_work_items_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    CONSTRAINT fk_work_items_assigned_user
+        FOREIGN KEY (assigned_user_id) REFERENCES users(user_id),
+    CONSTRAINT fk_work_items_created_by_user
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id),
+    CONSTRAINT fk_work_items_updated_by_user
+        FOREIGN KEY (updated_by_user_id) REFERENCES users(user_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_work_items_org_source
+    ON work_items(organization_id, source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_work_items_org_status
+    ON work_items(organization_id, status);
+CREATE INDEX IF NOT EXISTS idx_work_items_org_priority_score
+    ON work_items(organization_id, priority_score);
+CREATE INDEX IF NOT EXISTS idx_work_items_org_sla_deadline
+    ON work_items(organization_id, sla_deadline_at);
+CREATE INDEX IF NOT EXISTS idx_work_items_org_sla_stage
+    ON work_items(organization_id, sla_stage);
+CREATE INDEX IF NOT EXISTS idx_work_items_assigned_user_id
+    ON work_items(assigned_user_id);
+
+CREATE TABLE IF NOT EXISTS work_item_history (
+    work_item_history_id BIGSERIAL PRIMARY KEY,
+    work_item_id BIGINT NOT NULL,
+    organization_id BIGINT NOT NULL,
+    action_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    message TEXT NOT NULL,
+    details TEXT,
+    created_at TEXT NOT NULL,
+    CONSTRAINT fk_work_item_history_item
+        FOREIGN KEY (work_item_id) REFERENCES work_items(work_item_id) ON DELETE CASCADE,
+    CONSTRAINT fk_work_item_history_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_item_history_item_id
+    ON work_item_history(work_item_id);
+CREATE INDEX IF NOT EXISTS idx_work_item_history_org_id
+    ON work_item_history(organization_id);
+
 CREATE TABLE IF NOT EXISTS task_reminder_outbox (
     task_reminder_outbox_id BIGSERIAL PRIMARY KEY,
     organization_id BIGINT NOT NULL,
@@ -2515,6 +2645,7 @@ DROP TABLE IF EXISTS billing_schools;
 DROP TABLE IF EXISTS billing_transactions;
   DROP TABLE IF EXISTS billing_statement_imports;
   DROP TABLE IF EXISTS billing_bank_accounts;
+  DROP TABLE IF EXISTS contractor_notes;
   DROP TABLE IF EXISTS invoice_comments;
   DROP TABLE IF EXISTS knowledge_document_comments;
   DROP TABLE IF EXISTS invoice_relations;
@@ -2522,6 +2653,8 @@ DROP TABLE IF EXISTS email_import_items;
 DROP TABLE IF EXISTS email_import_runs;
 DROP TABLE IF EXISTS ksef_import_items;
 DROP TABLE IF EXISTS ksef_import_runs;
+DROP TABLE IF EXISTS work_item_history;
+DROP TABLE IF EXISTS work_items;
 DROP TABLE IF EXISTS task_history;
 DROP TABLE IF EXISTS task_reminder_outbox_attempts;
 DROP TABLE IF EXISTS task_reminder_outbox;
@@ -2566,6 +2699,7 @@ DROP TABLE IF EXISTS billing_schools CASCADE;
 DROP TABLE IF EXISTS billing_transactions CASCADE;
   DROP TABLE IF EXISTS billing_statement_imports CASCADE;
   DROP TABLE IF EXISTS billing_bank_accounts CASCADE;
+  DROP TABLE IF EXISTS contractor_notes CASCADE;
   DROP TABLE IF EXISTS invoice_comments CASCADE;
   DROP TABLE IF EXISTS knowledge_document_comments CASCADE;
   DROP TABLE IF EXISTS invoice_relations CASCADE;
@@ -2573,6 +2707,8 @@ DROP TABLE IF EXISTS email_import_items CASCADE;
 DROP TABLE IF EXISTS email_import_runs CASCADE;
 DROP TABLE IF EXISTS ksef_import_items CASCADE;
 DROP TABLE IF EXISTS ksef_import_runs CASCADE;
+DROP TABLE IF EXISTS work_item_history CASCADE;
+DROP TABLE IF EXISTS work_items CASCADE;
 DROP TABLE IF EXISTS task_history CASCADE;
 DROP TABLE IF EXISTS task_reminder_outbox_attempts CASCADE;
 DROP TABLE IF EXISTS task_reminder_outbox CASCADE;
@@ -2606,6 +2742,7 @@ ADDITIVE_COLUMNS = {
         "module_shortcuts_json": "TEXT NOT NULL DEFAULT '{}'",
         "communication_provider": "TEXT NOT NULL DEFAULT 'telegram'",
         "communication_config_json": "TEXT NOT NULL DEFAULT '{}'",
+        "work_item_sla_policy_json": "TEXT NOT NULL DEFAULT '{}'",
         "shared_note_text": "TEXT NOT NULL DEFAULT ''",
         "shared_note_updated_at": "TEXT",
         "shared_note_updated_by_user_id": "INTEGER",
@@ -2826,6 +2963,16 @@ ADDITIVE_INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_tasks_external_calendar_event_id ON tasks(external_calendar_event_id)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_recurrence_pattern ON tasks(recurrence_pattern)",
     "CREATE INDEX IF NOT EXISTS idx_tasks_recurrence_series_id ON tasks(recurrence_series_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_work_items_org_source ON work_items(organization_id, source_type, source_id)",
+    "CREATE INDEX IF NOT EXISTS idx_work_items_org_status ON work_items(organization_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_work_items_org_priority_score ON work_items(organization_id, priority_score)",
+    "CREATE INDEX IF NOT EXISTS idx_work_items_org_sla_deadline ON work_items(organization_id, sla_deadline_at)",
+    "CREATE INDEX IF NOT EXISTS idx_work_items_org_sla_stage ON work_items(organization_id, sla_stage)",
+    "CREATE INDEX IF NOT EXISTS idx_work_items_org_due_at ON work_items(organization_id, due_at)",
+    "CREATE INDEX IF NOT EXISTS idx_work_items_assigned_user_id ON work_items(assigned_user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_work_items_org_assigned_status ON work_items(organization_id, assigned_user_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_work_item_history_item_id ON work_item_history(work_item_id)",
+    "CREATE INDEX IF NOT EXISTS idx_work_item_history_org_id ON work_item_history(organization_id)",
     "CREATE INDEX IF NOT EXISTS idx_task_notes_parent_note_id ON task_notes(parent_note_id)",
     "CREATE INDEX IF NOT EXISTS idx_task_attachments_task_id ON task_attachments(task_id)",
     "CREATE INDEX IF NOT EXISTS idx_task_attachments_org_id ON task_attachments(organization_id)",
@@ -3991,6 +4138,53 @@ def _ensure_invoice_comment_schema(connection: DatabaseConnection) -> None:
         connection.execute(statement)
 
 
+def _ensure_contractor_note_schema(connection: DatabaseConnection) -> None:
+    if connection.backend == "sqlite":
+        connection.raw_connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS contractor_notes (
+                contractor_note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                organization_id INTEGER NOT NULL,
+                contractor_id INTEGER NOT NULL,
+                author_user_id INTEGER NOT NULL,
+                note_text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+                FOREIGN KEY (contractor_id) REFERENCES contractors(contractor_id) ON DELETE CASCADE,
+                FOREIGN KEY (author_user_id) REFERENCES users(user_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_contractor_notes_contractor_id
+                ON contractor_notes(contractor_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_contractor_notes_organization_id
+                ON contractor_notes(organization_id);
+            """
+        )
+        return
+
+    for statement in (
+        """
+        CREATE TABLE IF NOT EXISTS contractor_notes (
+            contractor_note_id BIGSERIAL PRIMARY KEY,
+            organization_id BIGINT NOT NULL,
+            contractor_id BIGINT NOT NULL,
+            author_user_id BIGINT NOT NULL,
+            note_text TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            CONSTRAINT fk_contractor_notes_organization
+                FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+            CONSTRAINT fk_contractor_notes_contractor
+                FOREIGN KEY (contractor_id) REFERENCES contractors(contractor_id) ON DELETE CASCADE,
+            CONSTRAINT fk_contractor_notes_author
+                FOREIGN KEY (author_user_id) REFERENCES users(user_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_contractor_notes_contractor_id ON contractor_notes(contractor_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_contractor_notes_organization_id ON contractor_notes(organization_id)",
+    ):
+        connection.execute(statement)
+
+
 def _ensure_module_inbox_schema(connection: DatabaseConnection) -> None:
     if connection.backend == "sqlite":
         connection.raw_connection.executescript(
@@ -4836,6 +5030,7 @@ def _apply_database_schema_bootstrap(connection: DatabaseConnection) -> None:
     _ensure_knowledge_comment_schema(connection)
     _ensure_google_calendar_schema(connection)
     _ensure_invoice_comment_schema(connection)
+    _ensure_contractor_note_schema(connection)
     _ensure_module_inbox_schema(connection)
     _ensure_system_email_oauth_schema(connection)
     _ensure_system_settings_schema(connection)

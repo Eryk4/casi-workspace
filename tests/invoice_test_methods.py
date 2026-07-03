@@ -52,6 +52,64 @@ class InvoiceMvpTests(unittest.TestCase):
         self.assertEqual(detail["contractor"]["is_new"], 1)
         self.assertFalse(detail["contractor_known_before"])
 
+    def test_contractor_note_is_additive_and_visible_in_detail(self) -> None:
+        invoice_detail = self.services["invoice_service"].get_invoice_detail(
+            1,
+            organization_id=int(self.default_organization["organization_id"]),
+        )
+        self.assertIsNotNone(invoice_detail)
+        assert invoice_detail is not None
+        contractor_id = int(invoice_detail["invoice"]["contractor_id"])
+        contractor_before = self.services["invoice_service"].get_contractor_detail(
+            contractor_id,
+            organization_id=int(self.default_organization["organization_id"]),
+            viewer_user=self.admin,
+        )
+        self.assertIsNotNone(contractor_before)
+        assert contractor_before is not None
+        invoice_before = self.services["invoice_service"].get_invoice_detail(
+            1,
+            organization_id=int(self.default_organization["organization_id"]),
+        )
+        with get_connection() as connection:
+            ledger_count_before = connection.execute("SELECT COUNT(*) AS count FROM billing_payer_ledger_entries").fetchone()[
+                "count"
+            ]
+
+        note = self.services["invoice_service"].add_contractor_note(
+            contractor_id,
+            "Notatka CRM do kontrahenta.",
+            actor_user=self.admin,
+            organization_id=int(self.default_organization["organization_id"]),
+        )
+
+        self.assertEqual(note["note_text"], "Notatka CRM do kontrahenta.")
+        self.assertEqual(int(note["contractor_id"]), contractor_id)
+        self.assertEqual(int(note["organization_id"]), int(self.default_organization["organization_id"]))
+        self.assertEqual(int(note["author_user_id"]), int(self.admin["user_id"]))
+        contractor_after = self.services["invoice_service"].get_contractor_detail(
+            contractor_id,
+            organization_id=int(self.default_organization["organization_id"]),
+            viewer_user=self.admin,
+        )
+        self.assertIsNotNone(contractor_after)
+        assert contractor_after is not None
+        self.assertTrue(any(item["note_text"] == "Notatka CRM do kontrahenta." for item in contractor_after["notes"]))
+        self.assertEqual(contractor_before["contractor"], contractor_after["contractor"])
+
+        invoice_after = self.services["invoice_service"].get_invoice_detail(
+            1,
+            organization_id=int(self.default_organization["organization_id"]),
+        )
+        assert invoice_before is not None
+        assert invoice_after is not None
+        self.assertEqual(invoice_before["invoice"], invoice_after["invoice"])
+        with get_connection() as connection:
+            ledger_count_after = connection.execute("SELECT COUNT(*) AS count FROM billing_payer_ledger_entries").fetchone()[
+                "count"
+            ]
+        self.assertEqual(ledger_count_before, ledger_count_after)
+
     def test_rejecting_duplicate_clears_flag(self) -> None:
         self.services["invoice_service"].reject_duplicate(4, actor="test")
         detail = self.services["invoice_service"].get_invoice_detail(4)
@@ -823,6 +881,42 @@ class InvoiceMvpTests(unittest.TestCase):
         assert detail is not None
         self.assertTrue(any("Sprawdzic zgodnosc numeru" in item["note_text"] for item in detail["comments"]))
         self.assertTrue(any(item["event_type"] == "invoice_comment_added" for item in detail["history"]))
+        comment_events = [item for item in detail["history"] if item["event_type"] == "invoice_comment_added"]
+        self.assertTrue(comment_events)
+        self.assertFalse(any("note_text" in (item.get("details") or {}) for item in comment_events))
+        self.assertTrue(any("note_length" in (item.get("details") or {}) for item in comment_events))
+
+    def test_invoice_comment_history_redacts_legacy_note_text_details(self) -> None:
+        self.services["event_repository"].log(
+            event_type="invoice_comment_added",
+            invoice_id=1,
+            organization_id=int(self.default_organization["organization_id"]),
+            source="MANUAL",
+            status_before="nowa",
+            status_after="nowa",
+            decision_reason="Starszy event komentarza.",
+            actor="legacy",
+            details={
+                "invoice_comment_id": 999,
+                "note_text": "Starsza tresc komentarza nie moze wyciec w historii.",
+            },
+        )
+
+        detail = self.services["invoice_service"].get_invoice_detail(
+            1,
+            organization_id=int(self.default_organization["organization_id"]),
+        )
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        legacy_events = [
+            item
+            for item in detail["history"]
+            if item["event_type"] == "invoice_comment_added"
+            and (item.get("details") or {}).get("invoice_comment_id") == 999
+        ]
+        self.assertTrue(legacy_events)
+        self.assertFalse(any("note_text" in (item.get("details") or {}) for item in legacy_events))
+        self.assertTrue(any("note_length" in (item.get("details") or {}) for item in legacy_events))
 
     def test_verification_workspace_item_exposes_assignee_and_comment_count(self) -> None:
         coordinator = self.auth_service.create_user(
