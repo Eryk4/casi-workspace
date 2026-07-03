@@ -1,8 +1,16 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { ArrowLeft, Building2, MessageSquareText, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  FileText,
+  ListChecks,
+  MessageSquareText,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -20,7 +28,6 @@ import {
   CONTRACTOR_DETAIL_CREATE_ENABLED,
   CONTRACTOR_DETAIL_DELETE_ENABLED,
   CONTRACTOR_DETAIL_EDIT_ENABLED,
-  CONTRACTOR_DETAIL_ENDPOINT_PREFIX,
   CONTRACTOR_DETAIL_IMPORT_ENABLED,
   CONTRACTOR_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
   CONTRACTOR_DETAIL_ORGANIZATION_REQUIRED_TITLE,
@@ -28,13 +35,17 @@ import {
   CONTRACTOR_DETAIL_READ_ONLY,
   CONTRACTOR_NOTE_MAX_LENGTH,
   buildContractorDetailFacts,
+  buildContractorDocumentRows,
   buildContractorInvoiceRows,
   buildContractorNoteRequest,
   buildContractorNoteRows,
+  buildContractorRelationshipSummary,
   buildContractorTaskRows,
+  buildContractorWorkItemRows,
   canRenderContractorDetail,
   canUseContractorDetailOrganizationScope,
   createContractorNoteSubmitter,
+  enrichContractorDetailWithWorkItems,
   getContractorDetailErrorState,
   getContractorDetailTitle,
   getContractorStatusTone,
@@ -44,16 +55,23 @@ import {
   type ContractorDetail,
   type ContractorDetailErrorState,
   type ContractorDetailStatus,
+  type ContractorDocumentRow,
   type ContractorInvoiceRow,
   type ContractorNoteErrorState,
   type ContractorTaskRow,
+  type ContractorWorkItemRow,
 } from "./contractorDetailModel";
+import { readWorkItems, type WorkItemRecord } from "../work-items/workItemsModel";
 
 const invoiceColumns: Array<TableColumn<ContractorInvoiceRow>> = [
   {
     key: "number",
     header: "Faktura",
-    render: (row) => row.numberLabel,
+    render: (row) => (
+      <Link className="module-link" href={row.href}>
+        {row.numberLabel}
+      </Link>
+    ),
   },
   {
     key: "status",
@@ -74,11 +92,46 @@ const invoiceColumns: Array<TableColumn<ContractorInvoiceRow>> = [
   },
 ];
 
-const taskColumns: Array<TableColumn<ContractorTaskRow>> = [
+const workItemColumns: Array<TableColumn<ContractorWorkItemRow>> = [
   {
     key: "title",
     header: "Sprawa",
-    render: (row) => row.titleLabel,
+    render: (row) => (
+      <Link className="module-link" href={row.href}>
+        {row.titleLabel}
+      </Link>
+    ),
+  },
+  {
+    key: "status",
+    header: "Status",
+    render: (row) => row.statusLabel,
+  },
+  {
+    key: "priority",
+    header: "Priorytet",
+    render: (row) => row.priorityLabel,
+  },
+  {
+    key: "due",
+    header: "Termin",
+    align: "right",
+    render: (row) => row.dueLabel,
+  },
+];
+
+const taskColumns: Array<TableColumn<ContractorTaskRow>> = [
+  {
+    key: "title",
+    header: "Zadanie",
+    render: (row) =>
+      row.href ? (
+        <Link className="module-link" href={row.href}>
+          {row.titleLabel}
+        </Link>
+      ) : (
+        row.titleLabel
+      ),
   },
   {
     key: "status",
@@ -90,6 +143,28 @@ const taskColumns: Array<TableColumn<ContractorTaskRow>> = [
     header: "Termin",
     align: "right",
     render: (row) => row.dueLabel,
+  },
+];
+
+const documentColumns: Array<TableColumn<ContractorDocumentRow>> = [
+  {
+    key: "title",
+    header: "Dokument",
+    render: (row) => (
+      <Link className="module-link" href={row.href}>
+        {row.titleLabel}
+      </Link>
+    ),
+  },
+  {
+    key: "status",
+    header: "Kontekst",
+    render: (row) => row.statusLabel,
+  },
+  {
+    key: "description",
+    header: "Powiazanie",
+    render: (row) => row.contextLabel,
   },
 ];
 
@@ -125,8 +200,19 @@ export function ContractorDetailPage({ contractorId: requestedContractorId }: { 
         requestedContractorId,
         withActiveOrganizationQuery(selectedOrganizationId),
       );
-      const nextDetail = readContractorDetail(payload, requestedContractorId);
-      setDetail(nextDetail);
+      const baseDetail = readContractorDetail(payload, requestedContractorId);
+      let workItems: WorkItemRecord[] = [];
+
+      try {
+        const workItemsPayload = await api.workItems(
+          withActiveOrganizationQuery(selectedOrganizationId, { limit: 100, only_open: 1 }),
+        );
+        workItems = readWorkItems(workItemsPayload);
+      } catch {
+        workItems = [];
+      }
+
+      setDetail(enrichContractorDetailWithWorkItems(baseDetail, workItems));
       setStatus("ready");
     } catch (nextError) {
       const nextErrorState = getContractorDetailErrorState(nextError);
@@ -186,7 +272,10 @@ export function ContractorDetailPage({ contractorId: requestedContractorId }: { 
   const facts = useMemo(() => (detail ? buildContractorDetailFacts(detail) : []), [detail]);
   const invoices = useMemo(() => (detail ? buildContractorInvoiceRows(detail) : []), [detail]);
   const linkedTasks = useMemo(() => (detail ? buildContractorTaskRows(detail) : []), [detail]);
+  const workItems = useMemo(() => (detail ? buildContractorWorkItemRows(detail) : []), [detail]);
+  const documents = useMemo(() => (detail ? buildContractorDocumentRows(detail) : []), [detail]);
   const notes = useMemo(() => (detail ? buildContractorNoteRows(detail) : []), [detail]);
+  const summary = useMemo(() => (detail ? buildContractorRelationshipSummary(detail) : null), [detail]);
   const title = getContractorDetailTitle(detail, requestedContractorId);
   const canShowDetail = canRenderContractorDetail(status, detail);
   const organizationMissing =
@@ -197,8 +286,8 @@ export function ContractorDetailPage({ contractorId: requestedContractorId }: { 
     <div className="module-page contractor-detail-page">
       <PageHeader
         badgeTone={status === "ready" ? "success" : status === "error" ? "danger" : "info"}
-        description={`Read-only szczegol kontrahenta pobierany z ${CONTRACTOR_DETAIL_ENDPOINT_PREFIX}/{id}. Bez tworzenia, edycji, usuwania i automatyzacji CRM.`}
-        eyebrow={status === "ready" ? "Dane live" : "CRM"}
+        description="Relacja, faktury, sprawy, dokumenty i notatki w jednym miejscu. Dane kontrahenta pozostaja tylko do odczytu."
+        eyebrow="Centrum kontrahenta"
         title={title}
         actions={
           <>
@@ -222,15 +311,16 @@ export function ContractorDetailPage({ contractorId: requestedContractorId }: { 
         />
       ) : null}
       {readyWithoutDetail ? (
-        <EmptyState description="Backend nie zwrocil danych dla tego kontrahenta." title="Brak kontrahenta" />
+        <EmptyState description="Nie znaleziono kontrahenta w wybranej organizacji." title="Brak kontrahenta" />
       ) : null}
 
-      {canShowDetail && detail ? (
+      {canShowDetail && detail && summary ? (
         <section className="invoice-detail-grid contractor-detail-grid">
           <div className="invoice-detail-grid__main">
             <Card
               action={<StatusBadge status={getContractorStatusTone(detail.contractor)}>{facts[0]?.value ?? "Status"}</StatusBadge>}
-              title="Dane kontrahenta"
+              description="Najwazniejsze informacje potrzebne do oceny relacji z kontrahentem."
+              title="Profil kontrahenta"
             >
               <div className="invoice-fact-grid">
                 {facts.map((fact) => (
@@ -243,35 +333,78 @@ export function ContractorDetailPage({ contractorId: requestedContractorId }: { 
             </Card>
 
             <Card
-              action={<Badge tone="info">Read-only</Badge>}
-              description="Frontend pokazuje tylko bezpieczne pola biznesowe. Nie pokazuje debug payloadow, sekretow ani technicznych connection stringow."
-              title="Bezpieczny podglad"
+              action={<Badge tone={CONTRACTOR_DETAIL_READ_ONLY ? "info" : "warning"}>Tylko do odczytu</Badge>}
+              description="Szybki obraz tego, co dzieje sie wokol kontrahenta."
+              title="Podsumowanie relacji"
             >
-              <div className="module-readiness">
-                <div className="module-readiness__item">
-                  <Building2 aria-hidden="true" size={17} />
-                  <div>
-                    <strong>{getContractorTypeLabel(detail.contractor)}</strong>
-                    <span>{detail.safeNotes || "API nie zwrocilo notatki kontrahenta albo notatka zostala ukryta."}</span>
-                  </div>
-                </div>
-                <div className="module-readiness__item">
-                  <ShieldCheck aria-hidden="true" size={17} />
-                  <div>
-                    <strong>Tylko notatki CRM</strong>
-                    <span>
-                      Tworzenie: {CONTRACTOR_DETAIL_CREATE_ENABLED ? "wlaczone" : "wylaczone"} · Edycja:{" "}
-                      {CONTRACTOR_DETAIL_EDIT_ENABLED ? "wlaczona" : "wylaczona"} · Pipeline:{" "}
-                      {CONTRACTOR_DETAIL_PIPELINE_ENABLED ? "aktywny" : "nieaktywny"}
-                    </span>
-                  </div>
-                </div>
+              <div className="invoice-fact-grid">
+                <article className="invoice-fact">
+                  <span>Otwarte sprawy</span>
+                  <strong>{summary.activeWorkItemsLabel}</strong>
+                </article>
+                <article className="invoice-fact">
+                  <span>Faktury</span>
+                  <strong>{summary.invoicesLabel}</strong>
+                </article>
+                <article className="invoice-fact">
+                  <span>Dokumenty</span>
+                  <strong>{summary.documentsLabel}</strong>
+                </article>
+                <article className="invoice-fact">
+                  <span>Notatki</span>
+                  <strong>{summary.notesLabel}</strong>
+                </article>
+                <article className="invoice-fact">
+                  <span>Ostatnia aktywnosc</span>
+                  <strong>{summary.lastActivityLabel}</strong>
+                </article>
+                <article className="invoice-fact">
+                  <span>Sygnał</span>
+                  <strong>{summary.riskLabel}</strong>
+                </article>
               </div>
             </Card>
 
             <Card
+              action={<Badge tone={workItems.length ? "warning" : "neutral"}>{workItems.length} otwarte</Badge>}
+              description="Sprawy operacyjne powiazane z kontrahentem."
+              title="Sprawy do uwagi"
+            >
+              <Table
+                columns={workItemColumns}
+                data={workItems}
+                emptyMessage="Nie ma otwartych spraw powiazanych z tym kontrahentem."
+                getRowKey={(row) => row.id}
+              />
+            </Card>
+
+            <Card
+              description="Faktury powiazane z kontrahentem. Szczegoly otwieraja istniejacy modul Faktury."
+              title="Faktury i rozliczenia"
+            >
+              <Table
+                columns={invoiceColumns}
+                data={invoices}
+                emptyMessage="Brak faktur powiazanych z tym kontrahentem."
+                getRowKey={(row) => row.id}
+              />
+            </Card>
+
+            <Card
+              description="Dokumenty widoczne przez powiazane sprawy. Jezeli brak danych, relacja nie zostala jeszcze opisana w sandboxie danych."
+              title="Dokumenty"
+            >
+              <Table
+                columns={documentColumns}
+                data={documents}
+                emptyMessage="Brak dokumentow powiazanych z tym kontrahentem."
+                getRowKey={(row) => row.id}
+              />
+            </Card>
+
+            <Card
               action={<Badge tone="success">Addytywne</Badge>}
-              description="Dodaje tylko notatke operatora. Nie zmienia danych kontrahenta, faktur, rozliczen ani pipeline CRM."
+              description="Notatka nie zmienia danych kontrahenta, faktur ani rozliczen. Zapis jest potwierdzany przez backend."
               title="Notatki CRM"
             >
               <form className="invoice-comment-form" onSubmit={handleNoteSubmit}>
@@ -333,63 +466,64 @@ export function ContractorDetailPage({ contractorId: requestedContractorId }: { 
                     <MessageSquareText aria-hidden="true" size={17} />
                     <div>
                       <strong>Brak notatek CRM</strong>
-                      <span>Dodaj pierwsza addytywna notatke operatora dla tego kontrahenta.</span>
+                      <span>Mozesz dodac pierwsza notatke operatora dla tego kontrahenta.</span>
                     </div>
                   </div>
                 )}
               </div>
             </Card>
 
-            <Card title="Powiazane faktury">
-              <Table
-                columns={invoiceColumns}
-                data={invoices}
-                emptyMessage="Backend nie zwrocil faktur powiazanych z kontrahentem."
-                getRowKey={(row) => row.id}
-              />
-            </Card>
-
-            <Card title="Powiazane sprawy">
+            <Card
+              description="Zadania z istniejacego modulu Asystenta Szefa powiazane z kontrahentem."
+              title="Zadania i przypomnienia"
+            >
               <Table
                 columns={taskColumns}
                 data={linkedTasks}
-                emptyMessage="Brak otwartych spraw powiazanych z kontrahentem."
+                emptyMessage="Brak otwartych zadan powiazanych z tym kontrahentem."
                 getRowKey={(row) => row.id}
               />
             </Card>
           </div>
 
           <aside className="module-activity-panel" aria-label="Kontekst kontrahenta">
-            <Card
-              action={<Badge tone={CONTRACTOR_DETAIL_READ_ONLY ? "info" : "warning"}>Read-only</Badge>}
-              title="Zakres tego widoku"
-            >
-              <ol className="module-activity-list">
-                <li className="module-activity-list__item">
-                  <span>Organizacja</span>
-                  <strong>{detail.contractor.organization_name || selectedOrganizationId || "-"}</strong>
-                  <p>organization_id jest wymagane przy pobieraniu szczegolu.</p>
-                </li>
-                <li className="module-activity-list__item">
-                  <span>Faktury</span>
-                  <strong>{invoices.length}</strong>
-                  <p>Lista powiazan tylko do odczytu, bez zmian w module Faktury.</p>
-                </li>
-                <li className="module-activity-list__item">
-                  <span>Sprawy</span>
-                  <strong>{linkedTasks.length}</strong>
-                  <p>Widoczne tylko otwarte sprawy zwrocone przez backend dla tego uzytkownika.</p>
-                </li>
-                <li className="module-activity-list__item">
-                  <span>Blokady funkcji</span>
-                  <strong>
-                    {CONTRACTOR_DETAIL_DELETE_ENABLED || CONTRACTOR_DETAIL_IMPORT_ENABLED
-                      ? "Akcje wlaczone"
-                      : "Tylko notatki"}
-                  </strong>
-                  <p>Create, edit, delete, import, pipeline i automatyzacje sa poza zakresem.</p>
-                </li>
-              </ol>
+            <Card title="Kontekst biznesowy">
+              <div className="module-readiness">
+                <div className="module-readiness__item">
+                  <Building2 aria-hidden="true" size={17} />
+                  <div>
+                    <strong>{getContractorTypeLabel(detail.contractor)}</strong>
+                    <span>{detail.safeNotes || "Brak dodatkowego opisu relacji."}</span>
+                  </div>
+                </div>
+                <div className="module-readiness__item">
+                  <ListChecks aria-hidden="true" size={17} />
+                  <div>
+                    <strong>{summary.riskLabel}</strong>
+                    <span>Najkrotszy sygnal, czy kontrahent wymaga dzis uwagi.</span>
+                  </div>
+                </div>
+                <div className="module-readiness__item">
+                  <FileText aria-hidden="true" size={17} />
+                  <div>
+                    <strong>{summary.documentsLabel}</strong>
+                    <span>Dokumenty sa pokazywane tylko wtedy, gdy wynikaja z istniejacych powiazan.</span>
+                  </div>
+                </div>
+                <div className="module-readiness__item">
+                  <ShieldCheck aria-hidden="true" size={17} />
+                  <div>
+                    <strong>Dane kontrahenta bez edycji</strong>
+                    <span>
+                      Tworzenie: {CONTRACTOR_DETAIL_CREATE_ENABLED ? "wlaczone" : "wylaczone"} - Edycja:{" "}
+                      {CONTRACTOR_DETAIL_EDIT_ENABLED ? "wlaczona" : "wylaczona"} - Import:{" "}
+                      {CONTRACTOR_DETAIL_IMPORT_ENABLED ? "wlaczony" : "wylaczony"} - Pipeline:{" "}
+                      {CONTRACTOR_DETAIL_PIPELINE_ENABLED ? "aktywny" : "nieaktywny"} - Usuwanie:{" "}
+                      {CONTRACTOR_DETAIL_DELETE_ENABLED ? "wlaczone" : "wylaczone"}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </Card>
           </aside>
         </section>

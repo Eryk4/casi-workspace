@@ -87,6 +87,10 @@ function makeItem(overrides = {}) {
     is_closed: false,
     is_due_overdue: false,
     is_sla_overdue: false,
+    metadata: {
+      contractor_id: 31,
+      knowledge_document_ids: [88],
+    },
     ...overrides,
   };
 }
@@ -96,6 +100,7 @@ assert.equal(items.length, 1);
 assert.equal(items[0].work_item_id, 41);
 assert.equal(items[0].priority_score, 72.5);
 assert.equal(items[0].assigned_user_id, 9);
+assert.deepEqual(items[0].metadata, { contractor_id: 31, knowledge_document_ids: [88] });
 
 const rows = buildWorkItemRows(items);
 assert.equal(rows[0].title, "Zweryfikowac sprawy SLA");

@@ -56,6 +56,8 @@ assert.equal(shouldClearSessionAttentionForPath("/login?next=/pulpit-dnia"), fal
 assert.equal(shouldClearSessionAttentionForPath("/pulpit-dnia"), false);
 assert.equal(shouldShowTopbarPrimaryAction({ id: "work-items" }, "/work-items"), true);
 assert.equal(shouldShowTopbarPrimaryAction({ id: "work-items" }, "/work-items/41"), false);
+assert.equal(shouldShowTopbarPrimaryAction({ id: "crm" }, "/crm"), true);
+assert.equal(shouldShowTopbarPrimaryAction({ id: "crm" }, "/crm/14"), false);
 assert.equal(shouldShowTopbarPrimaryAction({ id: "daily-brief" }, "/pulpit-dnia"), true);
 
 console.log("Auth/session regression tests passed.");

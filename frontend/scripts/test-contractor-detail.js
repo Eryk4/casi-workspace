@@ -47,14 +47,18 @@ const {
   CONTRACTOR_NOTE_ENDPOINT_SUFFIX,
   CONTRACTOR_NOTE_MAX_LENGTH,
   buildContractorDetailFacts,
+  buildContractorDocumentRows,
   buildContractorInvoiceRows,
   buildContractorNoteRequest,
   buildContractorNoteRows,
+  buildContractorRelationshipSummary,
   buildContractorTaskRows,
+  buildContractorWorkItemRows,
   canRenderContractorDetail,
   canUseContractorDetailOrganizationScope,
   contractorNoteEndpoint,
   createContractorNoteSubmitter,
+  enrichContractorDetailWithWorkItems,
   getContractorDetailErrorState,
   getContractorDetailTitle,
   getContractorNoteErrorState,
@@ -185,11 +189,59 @@ assert.equal(invoiceRows[0].numberLabel, "FV/501/2099");
 assert.equal(invoiceRows[0].statusLabel, "weryfikacja");
 assert.match(invoiceRows[0].amountLabel, /^1\s?234,50 PLN$|^1234,50 PLN$/);
 assert.equal(invoiceRows[0].dateLabel, "2099-04-09");
+assert.equal(invoiceRows[0].href, "/faktury/501");
 
 const taskRows = buildContractorTaskRows(detail);
 assert.equal(taskRows[0].titleLabel, "Sprawdz umowe kontrahenta");
 assert.equal(taskRows[0].statusLabel, "open");
 assert.equal(taskRows[0].dueLabel, "2099-04-15 10:00");
+assert.equal(taskRows[0].href, "/asystent-szefa");
+
+const enrichedDetail = enrichContractorDetailWithWorkItems(detail, [
+  {
+    work_item_id: 77,
+    title: "Wyjasnic warunki platnosci",
+    description: "Kontrahent czeka na doprecyzowanie rozliczenia.",
+    status: "w_toku",
+    priority_level: "wysoki",
+    due_at: "2099-04-14T09:00",
+    organization_name: "CASI",
+    metadata: {
+      contractor_id: 31,
+      knowledge_document_ids: [88],
+      document_title: "Umowa ramowa Kamdata",
+      document_folder: "Umowy",
+      document_context: "Dokument potrzebny do oceny warunkow platnosci.",
+    },
+  },
+  {
+    work_item_id: 78,
+    title: "Sprawa innego kontrahenta",
+    status: "w_toku",
+    priority_level: "wysoki",
+    metadata: {
+      contractor_id: 999,
+      knowledge_document_ids: [99],
+      document_title: "Nie powinno byc widoczne",
+    },
+  },
+]);
+const workItemRows = buildContractorWorkItemRows(enrichedDetail);
+assert.equal(workItemRows.length, 1);
+assert.equal(workItemRows[0].titleLabel, "Wyjasnic warunki platnosci");
+assert.equal(workItemRows[0].href, "/work-items/77");
+assert.equal(workItemRows[0].priorityLabel, "Wysoki");
+const documentRows = buildContractorDocumentRows(enrichedDetail);
+assert.equal(documentRows.length, 1);
+assert.equal(documentRows[0].titleLabel, "Umowa ramowa Kamdata");
+assert.equal(documentRows[0].href, "/dokumenty/88");
+assert.equal(documentRows[0].contextLabel, "Dokument potrzebny do oceny warunkow platnosci.");
+const summary = buildContractorRelationshipSummary(enrichedDetail);
+assert.equal(summary.activeWorkItemsLabel, "1 spraw");
+assert.equal(summary.invoicesLabel, "1 faktur");
+assert.equal(summary.notesLabel, "1 notatek");
+assert.equal(summary.documentsLabel, "1 dokumentow");
+assert.match(summary.riskLabel, /otwartych spraw/);
 
 const noteRows = buildContractorNoteRows(detail);
 assert.equal(noteRows[0].id, "701");
@@ -240,6 +292,9 @@ const unsafeStrings = collectStrings({
   facts: buildContractorDetailFacts(unsafeDetail),
   invoiceRows: buildContractorInvoiceRows(unsafeDetail),
   taskRows: buildContractorTaskRows(unsafeDetail),
+  workItemRows: buildContractorWorkItemRows(unsafeDetail),
+  documentRows: buildContractorDocumentRows(unsafeDetail),
+  summary: buildContractorRelationshipSummary(unsafeDetail),
 });
 assert.equal(unsafeStrings.some((value) => /postgres:\/\//i.test(value)), false);
 assert.equal(unsafeStrings.some((value) => /database_url/i.test(value)), false);
@@ -286,7 +341,7 @@ assert.equal(CONTRACTOR_DETAIL_DELETE_ENABLED, false);
 assert.equal(CONTRACTOR_DETAIL_IMPORT_ENABLED, false);
 assert.equal(CONTRACTOR_DETAIL_PIPELINE_ENABLED, false);
 assert.equal(CONTRACTOR_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizacje, aby zobaczyc kontrahenta");
-assert.match(CONTRACTOR_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id/);
+assert.match(CONTRACTOR_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION, /topbarze/);
 
 assert.throws(() => readContractorDetail([], 31), ApiContractError);
 assert.throws(() => readContractorDetail({ contractor: { name: "Brak ID" } }, 31), ApiContractError);

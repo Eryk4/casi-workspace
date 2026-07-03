@@ -24,6 +24,7 @@ export type WorkItemRecord = {
   is_due_overdue?: boolean;
   is_sla_overdue?: boolean;
   updated_at?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type WorkItemViewRow = {
@@ -99,6 +100,10 @@ function readBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
 function toLabel(value: string | undefined, fallback = "-"): string {
   if (!value) {
     return fallback;
@@ -140,6 +145,7 @@ export function readWorkItems(payload: unknown): WorkItemRecord[] {
       is_due_overdue: readBoolean(item.is_due_overdue),
       is_sla_overdue: readBoolean(item.is_sla_overdue),
       updated_at: readOptionalString(item.updated_at),
+      metadata: readRecord(item.metadata),
     };
   });
 }

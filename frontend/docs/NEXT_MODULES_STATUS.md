@@ -1,4 +1,4 @@
-﻿# Next Modules Status
+# Next Modules Status
 
 Last checked: 2026-07-03
 
@@ -17,6 +17,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 - CRM write readiness is documented in `frontend/docs/CRM_ACTIONS_READINESS.md`; CRM now has only one narrow write action in Next: adding a contractor note. Contractor master data remains read-only.
 - `Pulpit dnia` is documented in `frontend/docs/PULPIT_DNIA_PRODUCT_NOTE.md` and is the first product v1 daily triage screen assembled from existing organization-scoped sources. Current local data is only a safe sandbox for development and verification.
 - `Karta sprawy` is documented in `frontend/docs/WORK_ITEM_CONTEXT_PRODUCT_NOTE.md` and is the second product v1 read-only screen, available at `/work-items/[workItemId]`.
+- `Centrum kontrahenta` is documented in `frontend/docs/CONTRACTOR_CENTER_PRODUCT_NOTE.md` and turns `/crm/[contractorId]` into a product v1 relationship view for contractor facts, invoices, open matters, documents, and CRM notes.
 - Environment and data safety rules are documented in `docs/ENVIRONMENT_AND_DATA_SAFETY.md`.
 
 ## Module Matrix
@@ -32,7 +33,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 | Rozliczenia | `/rozliczenia` | Real read-only billing ledger view via shared component | Yes, `GET /api/billing/ledger/balances` | Yes | Yes | Yes | No | `test-billing.js` | Same as Kasa; next step should be contract audit before any payment action. |
 | Asystent Szefa | `/asystent-szefa` | Real read-only focus snapshot | Yes, `GET /api/tasks/focus` | Yes | Yes | Yes | No | `test-boss-assistant.js` | Keep read-only; live-verify org-scoped focus data with a global user. |
 | Asystent Firmowy | `/asystent-firmowy` | Real read-only company context foundation | Yes, dashboard/documents/work-items/invoice inbox | Yes | Yes | Yes | No | `test-company-assistant.js` | Live-verify org-scoped empty/data states; do not add chat before agent contract exists. |
-| CRM | `/crm`, `/crm/[contractorId]` | Real contractor catalog and detail with additive notes | Yes, contractor list/detail/note endpoints | Yes | Yes | Contractor master data is read-only | Yes: add contractor note only | `test-crm.js`, `test-contractor-detail.js` | Live-verify note form; do not expose edit/delete/import/pipeline before separate contract audits. |
+| CRM | `/crm`, `/crm/[contractorId]` | Real contractor catalog and product v1 contractor center | Yes, contractor list/detail/note endpoints plus existing Work Items list for related open matters | Yes | Yes | Contractor master data is read-only | Yes: add contractor note only | `test-crm.js`, `test-contractor-detail.js` | Live-verify the contractor center for two organizations; improve relationship data before adding new CRM actions. |
 | Raporty | `/raporty` | Real aggregated read-only operational report | Yes, dashboard/work-items/documents/billing/contractors | Yes | Yes for all report sources | Yes | No | `test-reports.js` | Keep as verification surface for org scope; later add export only after BI/export contract. |
 | Ustawienia | `/ustawienia` | Real read-only account/environment/org overview | Yes, session/meta/organizations/users | Not required for current read-only admin/account view | Not applicable | Yes | No | `test-settings.js` | Keep unblocked by active organization; add org scope only for future organization-specific edit screens. |
 

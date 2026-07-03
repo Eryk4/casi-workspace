@@ -8,5 +8,8 @@ export function shouldShowTopbarPrimaryAction(currentModule: NavigationItem, pat
   if (currentModule.id === "work-items" && pathname.startsWith("/work-items/")) {
     return false;
   }
+  if (currentModule.id === "crm" && pathname.startsWith("/crm/")) {
+    return false;
+  }
   return true;
 }

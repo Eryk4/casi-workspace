@@ -6,6 +6,7 @@ import {
   type ContractorRecord,
   type ContractorViewRow,
 } from "./crmModel";
+import { buildWorkItemRows, type WorkItemRecord } from "../work-items/workItemsModel";
 
 export type ContractorDetailStatus = DataViewStatus;
 
@@ -22,6 +23,7 @@ export type ContractorInvoiceRow = {
   statusLabel: string;
   amountLabel: string;
   dateLabel: string;
+  href: string;
 };
 
 export type ContractorTaskRow = {
@@ -29,6 +31,34 @@ export type ContractorTaskRow = {
   titleLabel: string;
   statusLabel: string;
   dueLabel: string;
+  href?: string;
+};
+
+export type ContractorWorkItemRow = {
+  id: string;
+  workItemId: number;
+  titleLabel: string;
+  statusLabel: string;
+  priorityLabel: string;
+  dueLabel: string;
+  href: string;
+};
+
+export type ContractorDocumentRow = {
+  id: string;
+  titleLabel: string;
+  statusLabel: string;
+  contextLabel: string;
+  href: string;
+};
+
+export type ContractorRelationshipSummary = {
+  activeWorkItemsLabel: string;
+  invoicesLabel: string;
+  notesLabel: string;
+  documentsLabel: string;
+  lastActivityLabel: string;
+  riskLabel: string;
 };
 
 export type ContractorNoteRecord = {
@@ -47,6 +77,8 @@ export type ContractorDetail = {
   invoices: ContractorInvoiceRow[];
   linkedTasks: ContractorTaskRow[];
   notes: ContractorNoteRecord[];
+  workItems: ContractorWorkItemRow[];
+  documents: ContractorDocumentRow[];
   safeNotes?: string | null;
 };
 
@@ -98,7 +130,7 @@ export const CONTRACTOR_DETAIL_IMPORT_ENABLED = false;
 export const CONTRACTOR_DETAIL_PIPELINE_ENABLED = false;
 export const CONTRACTOR_DETAIL_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizacje, aby zobaczyc kontrahenta";
 export const CONTRACTOR_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION =
-  "Szczegol kontrahenta wymaga aktywnej organizacji. Frontend wysyla organization_id do /api/contractors/{id}.";
+  "Wskaz organizacje w topbarze, zeby zobaczyc dane kontrahenta i powiazane sprawy.";
 
 const UNSAFE_TEXT_PATTERNS = [
   /^[a-z]:\\/i,
@@ -229,6 +261,7 @@ function readInvoiceRow(item: Record<string, unknown>, index: number): Contracto
     statusLabel: safeContractorText(item.status, "Status nieznany"),
     amountLabel: formatAmount(item.gross_amount ?? item.total_amount ?? item.amount, item.currency),
     dateLabel: formatDateLabel(readOptionalString(item.issue_date) ?? readOptionalString(item.incoming_date) ?? null),
+    href: `/faktury/${invoiceId}`,
   };
 }
 
@@ -239,6 +272,7 @@ function readLinkedTaskRow(item: Record<string, unknown>, index: number): Contra
     titleLabel: safeContractorText(item.title ?? item.task_title, `Zadanie #${taskId}`),
     statusLabel: safeContractorText(item.status_label ?? item.status, "Status nieznany"),
     dueLabel: formatDateLabel(readOptionalString(item.due_at) ?? readOptionalString(item.due_date) ?? null),
+    href: "/asystent-szefa",
   };
 }
 
@@ -287,6 +321,8 @@ export function readContractorDetail(payload: unknown, requestedContractorId?: n
     invoices: readRecordArray(payload.invoices).map(readInvoiceRow),
     linkedTasks: readRecordArray(payload.linked_tasks).map(readLinkedTaskRow),
     notes: readRecordArray(payload.notes).map(readContractorNote),
+    workItems: [],
+    documents: [],
     safeNotes: contractor.notes,
   };
 }
@@ -311,7 +347,7 @@ export function buildContractorDetailFacts(detail: ContractorDetail): Contractor
     {
       label: "Ostatnia faktura",
       value: contractor.last_invoice_number
-        ? `${contractor.last_invoice_number} · ${formatDateLabel(contractor.last_invoice_date, "brak daty")}`
+        ? `${contractor.last_invoice_number} - ${formatDateLabel(contractor.last_invoice_date, "brak daty")}`
         : formatDateLabel(contractor.last_invoice_date, "Brak faktur"),
     },
     { label: "Utworzono", value: formatDateLabel(contractor.created_at) },
@@ -327,8 +363,81 @@ export function buildContractorTaskRows(detail: ContractorDetail): ContractorTas
   return detail.linkedTasks;
 }
 
+export function buildContractorWorkItemRows(detail: ContractorDetail): ContractorWorkItemRow[] {
+  return detail.workItems;
+}
+
+export function buildContractorDocumentRows(detail: ContractorDetail): ContractorDocumentRow[] {
+  return detail.documents;
+}
+
 export function buildContractorNoteRows(detail: ContractorDetail): ContractorNoteRecord[] {
   return detail.notes;
+}
+
+export function enrichContractorDetailWithWorkItems(
+  detail: ContractorDetail,
+  workItems: WorkItemRecord[],
+): ContractorDetail {
+  const contractorId = detail.contractor.contractor_id;
+  const relatedWorkItems = buildWorkItemRows(
+    workItems.filter((item) => Number(item.metadata?.contractor_id ?? item.metadata?.linked_contractor_id ?? 0) === contractorId),
+  ).map((row) => ({
+    id: row.id,
+    workItemId: row.workItemId,
+    titleLabel: safeContractorText(row.title, `Sprawa #${row.workItemId}`),
+    statusLabel: row.statusLabel,
+    priorityLabel: row.priorityLabel,
+    dueLabel: row.dueLabel,
+    href: `/work-items/${row.workItemId}`,
+  }));
+  return {
+    ...detail,
+    workItems: relatedWorkItems,
+    documents: buildContractorDocumentsFromWorkItems(workItems, contractorId),
+  };
+}
+
+function buildContractorDocumentsFromWorkItems(workItems: WorkItemRecord[], contractorId: number): ContractorDocumentRow[] {
+  const documents = new Map<number, ContractorDocumentRow>();
+  workItems.forEach((item) => {
+    if (Number(item.metadata?.contractor_id ?? item.metadata?.linked_contractor_id ?? 0) !== contractorId) {
+      return;
+    }
+    const ids = Array.isArray(item.metadata?.knowledge_document_ids) ? item.metadata?.knowledge_document_ids : [];
+    ids.forEach((rawId) => {
+      const documentId = readNumber(rawId);
+      if (!documentId || documents.has(documentId)) {
+        return;
+      }
+      documents.set(documentId, {
+        id: String(documentId),
+        titleLabel: safeContractorText(item.metadata?.document_title, `Dokument #${documentId}`),
+        statusLabel: safeContractorText(item.metadata?.document_folder, "Baza wiedzy"),
+        contextLabel: safeContractorText(item.metadata?.document_context, "Dokument powiazany przez sprawe kontrahenta."),
+        href: `/dokumenty/${documentId}`,
+      });
+    });
+  });
+  return Array.from(documents.values());
+}
+
+export function buildContractorRelationshipSummary(detail: ContractorDetail): ContractorRelationshipSummary {
+  const invoiceCount = detail.invoices.length || detail.contractor.invoice_count || 0;
+  const riskReasons = [
+    detail.workItems.length > 0 ? `${detail.workItems.length} otwartych spraw` : "",
+    detail.contractor.is_new ? "nowy kontrahent" : "",
+    !detail.contractor.email && !detail.contractor.phone ? "brak danych kontaktowych" : "",
+  ].filter(Boolean);
+
+  return {
+    activeWorkItemsLabel: `${detail.workItems.length} spraw`,
+    invoicesLabel: `${invoiceCount} faktur`,
+    notesLabel: `${detail.notes.length} notatek`,
+    documentsLabel: `${detail.documents.length} dokumentow`,
+    lastActivityLabel: formatDateLabel(detail.contractor.updated_at || detail.contractor.last_invoice_date || null, "Brak aktywnosci"),
+    riskLabel: riskReasons.length ? riskReasons.join(" - ") : "Brak pilnych sygnalow",
+  };
 }
 
 export function getContractorTypeLabel(contractor: ContractorRecord): string {
