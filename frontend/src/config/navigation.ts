@@ -1,6 +1,5 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  Banknote,
   BarChart3,
   Bot,
   Building2,
@@ -25,7 +24,6 @@ export type NavigationItem = {
     | "assistant-company"
     | "documents"
     | "invoices"
-    | "cash"
     | "billing"
     | "crm"
     | "work-items"
@@ -123,19 +121,6 @@ export const navigationItems: NavigationItem[] = [
     readiness: "foundation",
     readinessLabel: "Fundament modulu",
     primaryEndpoint: "/api/invoices",
-  },
-  {
-    id: "cash",
-    label: "Kasa",
-    path: "/kasa",
-    icon: Banknote,
-    group: "operations",
-    component: "CashPage",
-    description: "Salda, transakcje i rozliczenia klientow.",
-    actionLabel: "Dodaj operacje",
-    readiness: "foundation",
-    readinessLabel: "Fundament modulu",
-    primaryEndpoint: "/api/billing/ledger/balances",
   },
   {
     id: "billing",

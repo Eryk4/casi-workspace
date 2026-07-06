@@ -34,7 +34,7 @@ import {
 } from "./billingModel";
 
 type BillingLedgerOverviewProps = {
-  title: "Kasa" | "Rozliczenia";
+  title: "Rozliczenia";
   eyebrow: string;
   description: string;
 };

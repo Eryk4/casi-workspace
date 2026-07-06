@@ -33,6 +33,7 @@ Module._resolveFilename = function resolveAlias(request, parent, isMain, options
 };
 
 const { ApiContractError, ApiError, api } = require("../src/lib/api.ts");
+const { findNavigationItem, navigationItems } = require("../src/config/navigation.ts");
 const { withActiveOrganizationQuery } = require("../src/context/organizationContextModel.ts");
 const {
   BILLING_BALANCES_ENDPOINT,
@@ -145,6 +146,10 @@ assert.equal(BILLING_BALANCES_ENDPOINT, "/billing/ledger/balances");
 assert.equal(BILLING_READ_ONLY, true);
 assert.equal(BILLING_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizacje, aby zobaczyc rozliczenia");
 assert.match(BILLING_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id/);
+assert.equal(navigationItems.some((item) => item.path === "/kasa" || item.label === "Kasa"), false);
+assert.equal(findNavigationItem("/rozliczenia").id, "billing");
+assert.equal(findNavigationItem("/kasa").id, "dashboard");
+assert.match(fs.readFileSync(path.join(srcRoot, "app", "kasa", "page.tsx"), "utf8"), /redirect\("\/rozliczenia"\)/);
 assert.equal(canUseBillingOrganizationScope(null), false);
 assert.equal(canUseBillingOrganizationScope(""), false);
 assert.equal(canUseBillingOrganizationScope("   "), false);

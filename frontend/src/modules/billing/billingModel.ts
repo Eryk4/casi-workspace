@@ -179,7 +179,7 @@ export function getBillingErrorState(error: unknown): BillingErrorState {
     return {
       status: "error",
       title: "Niepoprawny format rozliczen",
-      description: "Backend odpowiedzial, ale dane nie pasuja do minimalnego kontraktu widoku Kasa / Rozliczenia.",
+      description: "Backend odpowiedzial, ale dane nie pasuja do minimalnego kontraktu widoku Rozliczenia.",
     };
   }
 

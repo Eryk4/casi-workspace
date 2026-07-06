@@ -1,5 +1,5 @@
-import { CashPage } from "@/modules/cash/CashPage";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return <CashPage />;
+  redirect("/rozliczenia");
 }
