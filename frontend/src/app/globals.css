@@ -2281,6 +2281,29 @@ input {
   color: var(--color-accent-strong);
 }
 
+.billing-family-cell,
+.billing-subsection {
+  display: grid;
+  gap: 4px;
+}
+
+.billing-family-cell span,
+.billing-subsection p {
+  color: var(--color-subtle);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.billing-subsection {
+  margin-top: 16px;
+}
+
+.billing-subsection h3 {
+  color: var(--color-text);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
 .billing-context-list {
   display: grid;
   gap: 10px;

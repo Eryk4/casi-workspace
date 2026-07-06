@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Building2, CreditCard, FileText, ListChecks, RefreshCw, WalletCards } from "lucide-react";
+import { ArrowRight, Building2, CreditCard, FileText, ListChecks, RefreshCw, UsersRound, WalletCards } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -24,7 +24,9 @@ import {
   BILLING_READ_ONLY,
   buildBillingAttentionItems,
   buildBillingBalanceRows,
+  buildBillingCompanyClientRows,
   buildBillingContractorRows,
+  buildBillingFamilyFoundationRows,
   buildBillingInvoiceRows,
   buildBillingMoneySummary,
   buildBillingRecentPaymentRows,
@@ -36,10 +38,14 @@ import {
   isBillingCenterEmpty,
   readBillingBalances,
   readBillingInvoices,
+  readBillingPayers,
+  readBillingStudents,
   type BillingAttentionItem,
   type BillingBalanceViewRow,
   type BillingCenterSnapshot,
+  type BillingCompanyClientRow,
   type BillingContractorSettlementRow,
+  type BillingFamilyFoundationRow,
   type BillingErrorState,
   type BillingInvoicePaymentRow,
   type BillingRecentPaymentRow,
@@ -79,6 +85,84 @@ const balanceColumns: Array<TableColumn<BillingBalanceViewRow>> = [
     key: "lastPayment",
     header: "Ostatnia wpłata",
     render: (row) => row.lastPaymentLabel,
+  },
+];
+
+const familyFoundationColumns: Array<TableColumn<BillingFamilyFoundationRow>> = [
+  {
+    key: "family",
+    header: "Rodzina / płatnik",
+    render: (row) => (
+      <span className="module-row-title">
+        <UsersRound aria-hidden="true" size={16} />
+        {row.familyLabel}
+      </span>
+    ),
+  },
+  {
+    key: "students",
+    header: "Uczniowie",
+    render: (row) => (
+      <span className="billing-family-cell">
+        <strong>{row.studentSummaryLabel}</strong>
+        <span>{row.studentsLabel}</span>
+      </span>
+    ),
+  },
+  {
+    key: "siblings",
+    header: "Rodzeństwo",
+    render: (row) => row.siblingLabel,
+  },
+  {
+    key: "status",
+    header: "Status",
+    render: (row) => <StatusBadge status={row.statusTone}>{row.statusLabel}</StatusBadge>,
+  },
+  {
+    key: "balance",
+    header: "Saldo",
+    align: "right",
+    render: (row) => row.balanceLabel,
+  },
+  {
+    key: "context",
+    header: "Kontekst",
+    render: (row) => row.contextLabel,
+  },
+];
+
+const companyClientColumns: Array<TableColumn<BillingCompanyClientRow>> = [
+  {
+    key: "company",
+    header: "Klient firmowy",
+    render: (row) => (
+      <Link className="module-link" href={row.href}>
+        {row.companyLabel}
+      </Link>
+    ),
+  },
+  {
+    key: "contact",
+    header: "Kontakt",
+    render: (row) => row.contactLabel,
+  },
+  {
+    key: "invoices",
+    header: "Faktury",
+    align: "right",
+    render: (row) => row.invoiceCountLabel,
+  },
+  {
+    key: "balance",
+    header: "Saldo",
+    align: "right",
+    render: (row) => row.balanceLabel,
+  },
+  {
+    key: "context",
+    header: "Kontekst",
+    render: (row) => row.contextLabel,
   },
 ];
 
@@ -226,8 +310,10 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
     try {
       const query = withActiveOrganizationQuery(selectedOrganizationId);
       const openWorkItemsQuery = withActiveOrganizationQuery(selectedOrganizationId, { limit: 100, only_open: 1 });
-      const [balancesPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+      const [balancesPayload, payersPayload, studentsPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
         api.ledgerBalances(query),
+        api.billingPayers(query),
+        api.billingStudents(query),
         api.invoices(query),
         api.contractors(query),
         api.workItems(openWorkItemsQuery),
@@ -235,6 +321,8 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
 
       setSnapshot({
         balances: readBillingBalances(balancesPayload),
+        payers: readBillingPayers(payersPayload),
+        students: readBillingStudents(studentsPayload),
         invoices: readBillingInvoices(invoicesPayload),
         contractors: readContractors(contractorsPayload),
         workItems: readWorkItems(workItemsPayload),
@@ -258,6 +346,14 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
     [attentionItems.length, snapshot],
   );
   const balanceRows = useMemo(() => buildBillingBalanceRows(snapshot?.balances ?? []), [snapshot]);
+  const familyRows = useMemo(
+    () => buildBillingFamilyFoundationRows(snapshot?.payers ?? [], snapshot?.students ?? [], snapshot?.balances ?? []),
+    [snapshot],
+  );
+  const companyClientRows = useMemo(
+    () => buildBillingCompanyClientRows(snapshot?.contractors ?? [], snapshot?.balances ?? [], snapshot?.payers ?? []),
+    [snapshot],
+  );
   const invoiceRows = useMemo(() => buildBillingInvoiceRows(snapshot?.invoices ?? []), [snapshot]);
   const contractorRows = useMemo(() => buildBillingContractorRows(snapshot?.contractors ?? [], snapshot?.balances ?? []), [snapshot]);
   const workItemRows = useMemo(
@@ -352,6 +448,29 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
                 title="Co wymaga uwagi"
               >
                 <BillingAttentionList items={attentionItems} />
+              </Card>
+
+              <Card
+                description="Pierwsza warstwa pełnego modułu rozliczeń: kto płaci, za kogo płaci i czy klient jest rodziną ucznia czy firmą."
+                title="Rodziny, uczniowie i płatnicy"
+              >
+                <Table
+                  columns={familyFoundationColumns}
+                  data={familyRows}
+                  emptyMessage="Brak rodzin, uczniów i płatników dla tej organizacji."
+                  getRowKey={(row) => row.id}
+                />
+
+                <div className="billing-subsection">
+                  <h3>Klienci firmowi</h3>
+                  <p>Kontrahenci firmowi są pokazani osobno, żeby nie mieszać ich z rodzinnymi kontami uczniów.</p>
+                </div>
+                <Table
+                  columns={companyClientColumns}
+                  data={companyClientRows}
+                  emptyMessage="Brak klientów firmowych do pokazania w tej organizacji."
+                  getRowKey={(row) => row.id}
+                />
               </Card>
 
               <Card

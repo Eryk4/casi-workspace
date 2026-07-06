@@ -21,6 +21,8 @@ Ekran pokazuje:
 Wersja v1 korzysta wyłącznie z istniejących read-only endpointów organizacyjnych:
 
 - `GET /api/billing/ledger/balances?organization_id=...`,
+- `GET /api/billing/payers?organization_id=...`,
+- `GET /api/billing/students?organization_id=...`,
 - `GET /api/invoices?organization_id=...`,
 - `GET /api/contractors?organization_id=...`,
 - `GET /api/work-items?organization_id=...&only_open=1&limit=100`.
@@ -33,6 +35,8 @@ Ekran jest w pełni read-only. Dozwolone są tylko:
 
 - odświeżenie danych,
 - linki do istniejących modułów: Faktury, CRM, Work Items i Pulpit dnia.
+
+W obecnym zakresie ekran pokazuje też fundament `Rodziny, uczniowie i płatnicy`. Jest to warstwa read-only oparta o istniejące dane `billing_payers` i `billing_students`: kto jest płatnikiem, za których uczniów odpowiada, czy występuje rodzeństwo oraz czy klient jest rodziną ucznia czy klientem firmowym.
 
 Ekran nie wykonuje:
 
@@ -47,6 +51,7 @@ Ekran nie wykonuje:
 ## Ograniczenia
 
 - Salda płatników pochodzą z istniejącego ledgeru i nie zastępują pełnej księgowości.
+- Rodziny i uczniowie są pokazani przez kompatybilny model nad istniejącymi tabelami, bez nowych tras szczegółu i bez edycji relacji.
 - Powiązania faktur, kontrahentów i spraw są budowane deterministycznie z dostępnych danych. Nie używają AI ani ukrytej automatyzacji.
 - Historia pokazuje tylko bezpieczne, wysokopoziomowe informacje o ostatnich wpłatach. Nie pokazuje technicznych szczegółów bankowych, storage keys ani payloadów.
 - `/kasa` nie powinno być używane w nowych linkach, dokumentacji produktowej ani nawigacji.
@@ -80,7 +85,7 @@ Przyszły pełny moduł powinien uwzględnić:
 `Centrum rozliczeń v1` nie powinno sugerować, że pełny moduł jest już gotowy. W obecnym zakresie ekran:
 
 - nie nalicza opłat uczniom,
-- nie obsługuje rodzin ani rodzeństwa jako grup rozliczeniowych,
+- pokazuje rodziny, uczniów, płatników i rodzeństwo tylko w trybie read-only,
 - nie prowadzi pełnego salda klienta, ucznia ani rodziny,
 - nie generuje należności,
 - nie dopasowuje przelewów,
@@ -98,6 +103,6 @@ Przed traktowaniem widoku jako źródła decyzji finansowych potrzebne są:
 
 - live-weryfikacja na lokalnym sandboxie danych dla minimum dwóch organizacji,
 - przegląd, czy salda ledgeru są kompletne i aktualne,
-- decyzja, czy kolejny krok ma być kompatybilnym read-only modelem `rodzina / płatnik / uczeń` nad istniejącymi tabelami, czy osobną migracją docelowych encji,
+- decyzja, czy kolejny krok ma być read-only wyjaśnieniem naliczeń i sald, czy osobną migracją docelowych encji rodzin/płatników/uczniów,
 - decyzja, czy centrum rozliczeń potrzebuje dedykowanego read-only endpointu,
 - osobny audyt przed jakąkolwiek akcją zapisu w rozliczeniach.

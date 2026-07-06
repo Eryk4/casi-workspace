@@ -27,6 +27,60 @@ export type BillingBalanceRecord = {
   matched_payment_count?: number;
 };
 
+export type BillingPayerRecord = {
+  billing_payer_id: number;
+  display_name?: string;
+  contact_phone?: string | null;
+  payment_identifier?: string | null;
+  email?: string | null;
+  has_large_family_card?: boolean;
+  notes?: string | null;
+  is_active?: boolean;
+  billing_total_charges?: number;
+  billing_total_matches?: number;
+  billing_balance_due?: number;
+  billing_last_payment_at?: string | null;
+  billing_last_payment_amount?: number | null;
+  billing_last_payment_currency?: string | null;
+  billing_last_payment_title?: string | null;
+  billing_matched_payment_count?: number;
+  latest_payment_date?: string | null;
+  latest_payment_amount?: number | null;
+  latest_payment_currency?: string | null;
+  latest_payment_title?: string | null;
+};
+
+export type BillingStudentRecord = {
+  billing_student_id: number;
+  organization_id?: number;
+  billing_payer_id: number;
+  billing_school_id?: number | null;
+  billing_model_id?: number | null;
+  full_name?: string | null;
+  lesson_day?: string | null;
+  family_billing_order?: number;
+  group_name?: string | null;
+  notes?: string | null;
+  is_active?: boolean;
+  payer_label?: string | null;
+  payer_display_name?: string | null;
+  payer_contact_phone?: string | null;
+  payer_payment_identifier?: string | null;
+  payer_is_active?: boolean;
+  school_full_name?: string | null;
+  school_short_name?: string | null;
+  school_city?: string | null;
+  model_name?: string | null;
+  model_school_year?: string | null;
+  model_lesson_day?: string | null;
+  model_settlement_mode?: string | null;
+  family_last_payment_date?: string | null;
+  family_last_payment_amount?: number | null;
+  family_last_payment_currency?: string | null;
+  family_last_payment_title?: string | null;
+  family_balance_due?: number | null;
+};
+
 export type BillingBalanceViewRow = {
   id: string;
   payerLabel: string;
@@ -38,6 +92,32 @@ export type BillingBalanceViewRow = {
   balanceDueLabel: string;
   lastPaymentLabel: string;
   matchedPaymentCountLabel: string;
+};
+
+export type BillingFamilyFoundationRow = {
+  id: string;
+  familyLabel: string;
+  payerLabel: string;
+  contactLabel: string;
+  studentsLabel: string;
+  studentSummaryLabel: string;
+  siblingLabel: string;
+  statusLabel: string;
+  statusTone: "ok" | "warning" | "danger" | "info" | "neutral";
+  balanceLabel: string;
+  lastPaymentLabel: string;
+  contextLabel: string;
+};
+
+export type BillingCompanyClientRow = {
+  id: string;
+  href: string;
+  companyLabel: string;
+  contactLabel: string;
+  invoiceCountLabel: string;
+  balanceLabel: string;
+  contextLabel: string;
+  statusLabel: string;
 };
 
 export type BillingKpis = {
@@ -111,12 +191,16 @@ export type BillingRecentPaymentRow = {
 
 export type BillingCenterSnapshot = {
   balances: BillingBalanceRecord[];
+  payers: BillingPayerRecord[];
+  students: BillingStudentRecord[];
   invoices: InvoiceRecord[];
   contractors: ContractorRecord[];
   workItems: WorkItemRecord[];
 };
 
 export const BILLING_BALANCES_ENDPOINT = "/billing/ledger/balances";
+export const BILLING_PAYERS_ENDPOINT = "/billing/payers";
+export const BILLING_STUDENTS_ENDPOINT = "/billing/students";
 export const BILLING_READ_ONLY = true;
 export const BILLING_CANONICAL_ROUTE = "/rozliczenia";
 export const BILLING_LEGACY_ROUTE = "/kasa";
@@ -318,6 +402,95 @@ export function readBillingBalances(payload: unknown): BillingBalanceRecord[] {
       last_payment_title: readOptionalString(item.last_payment_title) ?? null,
       last_payment_reference: readOptionalString(item.last_payment_reference) ?? null,
       matched_payment_count: readNumber(item.matched_payment_count) ?? 0,
+    };
+  });
+}
+
+export function readBillingPayers(payload: unknown): BillingPayerRecord[] {
+  if (!Array.isArray(payload)) {
+    throw new ApiContractError(BILLING_PAYERS_ENDPOINT, payload);
+  }
+
+  return payload.map((item) => {
+    if (!isRecord(item)) {
+      throw new ApiContractError(BILLING_PAYERS_ENDPOINT, payload);
+    }
+
+    const payerId = readNumber(item.billing_payer_id);
+    if (!payerId) {
+      throw new ApiContractError(BILLING_PAYERS_ENDPOINT, payload);
+    }
+
+    return {
+      billing_payer_id: payerId,
+      display_name: readOptionalString(item.display_name),
+      contact_phone: readOptionalString(item.contact_phone) ?? null,
+      payment_identifier: readOptionalString(item.payment_identifier) ?? null,
+      email: readOptionalString(item.email) ?? null,
+      has_large_family_card: readBoolean(item.has_large_family_card),
+      notes: readOptionalString(item.notes) ?? null,
+      is_active: readBoolean(item.is_active),
+      billing_total_charges: readNumber(item.billing_total_charges) ?? 0,
+      billing_total_matches: readNumber(item.billing_total_matches) ?? 0,
+      billing_balance_due: readNumber(item.billing_balance_due) ?? 0,
+      billing_last_payment_at: readOptionalString(item.billing_last_payment_at) ?? null,
+      billing_last_payment_amount: readNumber(item.billing_last_payment_amount) ?? null,
+      billing_last_payment_currency: readOptionalString(item.billing_last_payment_currency) ?? null,
+      billing_last_payment_title: readOptionalString(item.billing_last_payment_title) ?? null,
+      billing_matched_payment_count: readNumber(item.billing_matched_payment_count) ?? 0,
+      latest_payment_date: readOptionalString(item.latest_payment_date) ?? null,
+      latest_payment_amount: readNumber(item.latest_payment_amount) ?? null,
+      latest_payment_currency: readOptionalString(item.latest_payment_currency) ?? null,
+      latest_payment_title: readOptionalString(item.latest_payment_title) ?? null,
+    };
+  });
+}
+
+export function readBillingStudents(payload: unknown): BillingStudentRecord[] {
+  if (!Array.isArray(payload)) {
+    throw new ApiContractError(BILLING_STUDENTS_ENDPOINT, payload);
+  }
+
+  return payload.map((item) => {
+    if (!isRecord(item)) {
+      throw new ApiContractError(BILLING_STUDENTS_ENDPOINT, payload);
+    }
+
+    const studentId = readNumber(item.billing_student_id);
+    const payerId = readNumber(item.billing_payer_id);
+    if (!studentId || !payerId) {
+      throw new ApiContractError(BILLING_STUDENTS_ENDPOINT, payload);
+    }
+
+    return {
+      billing_student_id: studentId,
+      organization_id: readNumber(item.organization_id),
+      billing_payer_id: payerId,
+      billing_school_id: readNumber(item.billing_school_id) ?? null,
+      billing_model_id: readNumber(item.billing_model_id) ?? null,
+      full_name: readOptionalString(item.full_name) ?? null,
+      lesson_day: readOptionalString(item.lesson_day) ?? null,
+      family_billing_order: readNumber(item.family_billing_order) ?? 1,
+      group_name: readOptionalString(item.group_name) ?? null,
+      notes: readOptionalString(item.notes) ?? null,
+      is_active: readBoolean(item.is_active),
+      payer_label: readOptionalString(item.payer_label) ?? null,
+      payer_display_name: readOptionalString(item.payer_display_name) ?? null,
+      payer_contact_phone: readOptionalString(item.payer_contact_phone) ?? null,
+      payer_payment_identifier: readOptionalString(item.payer_payment_identifier) ?? null,
+      payer_is_active: readBoolean(item.payer_is_active),
+      school_full_name: readOptionalString(item.school_full_name) ?? null,
+      school_short_name: readOptionalString(item.school_short_name) ?? null,
+      school_city: readOptionalString(item.school_city) ?? null,
+      model_name: readOptionalString(item.model_name) ?? null,
+      model_school_year: readOptionalString(item.model_school_year) ?? null,
+      model_lesson_day: readOptionalString(item.model_lesson_day) ?? null,
+      model_settlement_mode: readOptionalString(item.model_settlement_mode) ?? null,
+      family_last_payment_date: readOptionalString(item.family_last_payment_date) ?? null,
+      family_last_payment_amount: readNumber(item.family_last_payment_amount) ?? null,
+      family_last_payment_currency: readOptionalString(item.family_last_payment_currency) ?? null,
+      family_last_payment_title: readOptionalString(item.family_last_payment_title) ?? null,
+      family_balance_due: readNumber(item.family_balance_due) ?? null,
     };
   });
 }
@@ -559,6 +732,105 @@ export function buildBillingContractorRows(
     });
 }
 
+export function buildBillingFamilyFoundationRows(
+  payers: BillingPayerRecord[],
+  students: BillingStudentRecord[],
+  balances: BillingBalanceRecord[],
+  limit = 8,
+): BillingFamilyFoundationRow[] {
+  const studentsByPayer = new Map<number, BillingStudentRecord[]>();
+  students.forEach((student) => {
+    const current = studentsByPayer.get(student.billing_payer_id) ?? [];
+    current.push(student);
+    studentsByPayer.set(student.billing_payer_id, current);
+  });
+
+  return payers
+    .slice()
+    .sort((a, b) => {
+      const balanceDiff = Math.abs(b.billing_balance_due ?? 0) - Math.abs(a.billing_balance_due ?? 0);
+      if (balanceDiff) {
+        return balanceDiff;
+      }
+      return getBalancePayerLabel({ billing_payer_id: a.billing_payer_id, display_name: a.display_name }).localeCompare(
+        getBalancePayerLabel({ billing_payer_id: b.billing_payer_id, display_name: b.display_name }),
+        "pl",
+      );
+    })
+    .slice(0, limit)
+    .map((payer) => {
+      const payerStudents = (studentsByPayer.get(payer.billing_payer_id) ?? [])
+        .slice()
+        .sort((a, b) => (a.family_billing_order ?? 1) - (b.family_billing_order ?? 1));
+      const studentNames = payerStudents.map((student) => readString(student.full_name, "Uczeń bez nazwy"));
+      const balance = balances.find((item) => item.billing_payer_id === payer.billing_payer_id);
+      const balanceDue = payer.billing_balance_due ?? balance?.balance_due ?? 0;
+      const lastPaymentDate = payer.billing_last_payment_at ?? payer.latest_payment_date ?? balance?.last_payment_at;
+      const lastPaymentAmount = payer.billing_last_payment_amount ?? payer.latest_payment_amount ?? balance?.last_payment_amount;
+      const lastPaymentCurrency = payer.billing_last_payment_currency ?? payer.latest_payment_currency ?? balance?.last_payment_currency ?? DEFAULT_CURRENCY;
+      const payerLabel = readString(payer.display_name, `Płatnik #${payer.billing_payer_id}`);
+      const studentCount = payerStudents.length;
+      const isActive = payer.is_active !== false;
+
+      return {
+        id: String(payer.billing_payer_id),
+        familyLabel: payerLabel,
+        payerLabel,
+        contactLabel: readString(payer.contact_phone || payer.email || payer.payment_identifier, "Brak kontaktu"),
+        studentsLabel: studentNames.length ? studentNames.join(", ") : "Brak uczniów w tym koncie",
+        studentSummaryLabel:
+          studentCount === 0 ? "Brak przypisanych uczniów" : studentCount === 1 ? "1 uczeń" : `${studentCount} uczniów`,
+        siblingLabel: studentCount > 1 ? `Rodzeństwo: ${studentCount} uczniów` : "Bez rodzeństwa w danych rozliczeń",
+        statusLabel: isActive ? "Aktywne" : "Nieaktywne",
+        statusTone: isActive ? (balanceDue > 0 ? "warning" : "ok") : "neutral",
+        balanceLabel: formatMoney(balanceDue, DEFAULT_CURRENCY),
+        lastPaymentLabel: lastPaymentDate
+          ? `${formatDateLabel(lastPaymentDate)} · ${formatMoney(lastPaymentAmount, lastPaymentCurrency)}`
+          : "Brak ostatniej wpłaty",
+        contextLabel:
+          studentCount > 1
+            ? "Rodzinne konto rozliczeniowe z kilkorgiem uczniów."
+            : studentCount === 1
+              ? "Rodzinne konto rozliczeniowe z jednym uczniem."
+              : "Płatnik bez przypisanego ucznia w obecnych danych.",
+      };
+    });
+}
+
+export function buildBillingCompanyClientRows(
+  contractors: ContractorRecord[],
+  balances: BillingBalanceRecord[],
+  payers: BillingPayerRecord[],
+  limit = 5,
+): BillingCompanyClientRow[] {
+  const payerNames = new Set(payers.map((payer) => normalizeText(payer.display_name)));
+
+  return contractors
+    .filter((contractor) => {
+      const contractorName = normalizeText(contractor.name);
+      return contractorName && !payerNames.has(contractorName) && !contractorName.startsWith("rodzina");
+    })
+    .slice()
+    .sort((a, b) => (b.invoice_count ?? 0) - (a.invoice_count ?? 0))
+    .slice(0, limit)
+    .map((contractor) => {
+      const balance = findBalanceForContractor(contractor, balances);
+      return {
+        id: String(contractor.contractor_id),
+        href: `/crm/${contractor.contractor_id}`,
+        companyLabel: getContractorLabel(contractor),
+        contactLabel: readString(contractor.email || contractor.phone, "Brak kontaktu"),
+        invoiceCountLabel: `${contractor.invoice_count ?? 0}`,
+        balanceLabel: balance ? formatMoney(balance.balance_due, DEFAULT_CURRENCY) : "Brak salda rodzinnego",
+        contextLabel:
+          (contractor.invoice_count ?? 0) > 0
+            ? "Klient firmowy z historią faktur, oddzielony od rodzin i uczniów."
+            : "Klient firmowy w CRM, bez rodzinnego konta ucznia.",
+        statusLabel: contractor.is_new ? "Nowy kontrahent" : "Kontrahent",
+      };
+    });
+}
+
 export function buildBillingRelatedWorkItemRows(
   workItems: WorkItemRecord[],
   invoices: InvoiceRecord[],
@@ -602,7 +874,12 @@ export function hasBillingCenterData(status: BillingStatus, snapshot: BillingCen
     status === "ready" &&
     Boolean(
       snapshot &&
-        (snapshot.balances.length || snapshot.invoices.length || snapshot.contractors.length || snapshot.workItems.length),
+        (snapshot.balances.length ||
+          snapshot.payers.length ||
+          snapshot.students.length ||
+          snapshot.invoices.length ||
+          snapshot.contractors.length ||
+          snapshot.workItems.length),
     )
   );
 }
@@ -618,6 +895,8 @@ export function isBillingCenterEmpty(status: BillingStatus, snapshot: BillingCen
 
   return (
     snapshot.balances.length === 0 &&
+    snapshot.payers.length === 0 &&
+    snapshot.students.length === 0 &&
     snapshot.invoices.length === 0 &&
     snapshot.contractors.length === 0 &&
     snapshot.workItems.length === 0

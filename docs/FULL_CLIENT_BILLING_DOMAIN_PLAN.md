@@ -33,11 +33,13 @@ The module must not become a small `kasa` table. It should be a domain model for
 - Current screen mode: read-only.
 - Current frontend sources:
   - `GET /api/billing/ledger/balances?organization_id=...`,
+  - `GET /api/billing/payers?organization_id=...`,
+  - `GET /api/billing/students?organization_id=...`,
   - `GET /api/invoices?organization_id=...`,
   - `GET /api/contractors?organization_id=...`,
   - `GET /api/work-items?organization_id=...&only_open=1&limit=100`.
 
-The current screen answers a narrow question: what is the visible money/payment/receivable situation for the selected organization. It does not yet manage families, enrollments, full charge lifecycle, payment imports, allocations, reminders, or accounting exports in the active Next UI.
+The current screen answers a narrow question: what is the visible money/payment/receivable situation for the selected organization, and who currently appears as family/payer/student in the existing billing data. It does not yet manage enrollments, full charge lifecycle, payment imports, allocations, reminders, or accounting exports in the active Next UI.
 
 ### Current Frontend Model
 
@@ -57,6 +59,7 @@ The frontend already has:
 
 - organization-scoped read model for balances,
 - derived attention items,
+- read-only family/payer/student foundation over existing `billing_payers` and `billing_students`,
 - invoice rows,
 - contractor rows,
 - related Work Item rows,
@@ -67,9 +70,9 @@ The frontend already has:
 
 The frontend does not yet have:
 
-- family list/detail,
-- payer list/detail,
-- student list/detail,
+- family detail route,
+- payer detail route,
+- student detail route,
 - enrollment list/detail,
 - charge center,
 - payment center,
@@ -629,6 +632,12 @@ Do not implement this as one large rewrite. Recommended stages:
 
 ### Stage 1: Read-only family/payer/student foundation
 
+Status: implemented as a compatibility read model in `/rozliczenia`.
+
+The implemented stage reuses current `billing_payers` as family/payer/settlement account records and current `billing_students` as student beneficiaries linked to a payer. It adds the read-only section `Rodziny, uczniowie i płatnicy` in the active Next screen. It also separates company clients from family/student settlement accounts so a company contractor is not presented as a family.
+
+No tables, migrations, write actions, payment imports, charge generation, reminders, or detail routes were added for this stage.
+
 Goal: introduce or expose a minimal relationship model for families, payers, students, and current payer/student data.
 
 Scope:
@@ -774,16 +783,15 @@ Do not implement yet:
 
 Recommended next implementation step:
 
-`Rodzina / platnik / uczen - read-only foundation`
+`Read-only charges and balance explanation`
 
-A safe first step should:
+A safe next step should:
 
-- reuse or wrap current `billing_payers` and `billing_students`,
-- define clearer product language for family, payer, and student,
-- expose a read-only list or context section under `/rozliczenia`,
-- include sandbox data for CASI and Misja Robotyka,
-- include model tests and tenant-scope checks,
-- avoid payments, allocations, charge generation, imports, reminders, and exports,
-- keep `/rozliczenia` read-only.
+- keep `/rozliczenia` read-only,
+- expose existing charge context only if current endpoints are sufficient,
+- explain balance in business language: payer, student, service/model, period, charge, payment match,
+- avoid payment writes, allocation writes, imports, reminders, and exports,
+- add model tests for charge-to-family/student mapping,
+- keep the compatibility family/payer/student model stable until a dedicated schema migration is explicitly planned.
 
-Before any schema change, decide whether to introduce new tables immediately (`family`, `billing_party`, `payer_account`, `student`) or first build a read-only compatibility model over existing `billing_payers` and `billing_students`. The compatibility model is lower risk; new tables are cleaner long-term but require migration planning.
+Before any schema change, decide whether current `billing_payers` and `billing_students` can continue as a compatibility layer for another read-only stage, or whether introducing target tables (`family`, `billing_party`, `payer_account`, `student`) is worth the migration cost.

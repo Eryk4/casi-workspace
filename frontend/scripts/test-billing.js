@@ -1,4 +1,4 @@
-const assert = require("node:assert/strict");
+﻿const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const Module = require("node:module");
 const path = require("node:path");
@@ -42,12 +42,16 @@ const {
   BILLING_LEGACY_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
+  BILLING_PAYERS_ENDPOINT,
   BILLING_READ_ONLY,
+  BILLING_STUDENTS_ENDPOINT,
   billingBalanceTone,
   billingScreenHasForbiddenTechnicalText,
   buildBillingAttentionItems,
   buildBillingBalanceRows,
+  buildBillingCompanyClientRows,
   buildBillingContractorRows,
+  buildBillingFamilyFoundationRows,
   buildBillingInvoiceRows,
   buildBillingKpis,
   buildBillingMoneySummary,
@@ -62,6 +66,8 @@ const {
   isBillingEmpty,
   readBillingBalances,
   readBillingInvoices,
+  readBillingPayers,
+  readBillingStudents,
 } = require("../src/modules/billing/billingModel.ts");
 
 function makeBalance(overrides = {}) {
@@ -81,6 +87,48 @@ function makeBalance(overrides = {}) {
     last_payment_title: "Czesne maj",
     last_payment_reference: "REF-1",
     matched_payment_count: 2,
+    ...overrides,
+  };
+}
+
+function makePayer(overrides = {}) {
+  return {
+    billing_payer_id: 14,
+    display_name: "Rodzina Kowalskich",
+    contact_phone: "500600700",
+    payment_identifier: "500600700",
+    email: "rodzina@example.test",
+    has_large_family_card: 1,
+    notes: "Rodzinne konto rozliczeniowe.",
+    is_active: 1,
+    billing_total_charges: 520,
+    billing_total_matches: 300,
+    billing_balance_due: 220,
+    billing_last_payment_at: "2099-05-03",
+    billing_last_payment_amount: 300,
+    billing_last_payment_currency: "PLN",
+    billing_last_payment_title: "Czesne maj",
+    billing_matched_payment_count: 2,
+    ...overrides,
+  };
+}
+
+function makeStudent(overrides = {}) {
+  return {
+    billing_student_id: 21,
+    organization_id: 42,
+    billing_payer_id: 14,
+    full_name: "Lena Kowalska",
+    lesson_day: "wtorek",
+    family_billing_order: 1,
+    group_name: "Robotyka 8-10",
+    is_active: 1,
+    payer_label: "Rodzina Kowalskich",
+    payer_display_name: "Rodzina Kowalskich",
+    payer_contact_phone: "500600700",
+    school_short_name: "SP 1",
+    model_name: "Robotyka junior",
+    family_balance_due: 220,
     ...overrides,
   };
 }
@@ -164,6 +212,19 @@ assert.equal(balances[0].billing_payer_id, 14);
 assert.equal(balances[0].is_active, true);
 assert.equal(balances[0].total_charges, 520);
 assert.equal(balances[0].balance_due, 220);
+const payers = readBillingPayers([makePayer()]);
+assert.equal(payers.length, 1);
+assert.equal(payers[0].billing_payer_id, 14);
+assert.equal(payers[0].is_active, true);
+assert.equal(payers[0].billing_balance_due, 220);
+
+const students = readBillingStudents([
+  makeStudent({ billing_student_id: 21, full_name: "Lena Kowalska", family_billing_order: 1 }),
+  makeStudent({ billing_student_id: 22, full_name: "Maja Kowalska", family_billing_order: 2 }),
+]);
+assert.equal(students.length, 2);
+assert.equal(students[0].billing_payer_id, 14);
+assert.equal(students[1].family_billing_order, 2);
 
 const rows = buildBillingBalanceRows(balances);
 assert.equal(rows[0].payerLabel, "Rodzina Kowalskich");
@@ -175,6 +236,17 @@ assert.equal(rows[0].totalMatchesLabel, "300,00 PLN");
 assert.equal(rows[0].balanceDueLabel, "220,00 PLN");
 assert.equal(rows[0].lastPaymentLabel, "2099-05-03 · 300,00 PLN");
 assert.equal(rows[0].matchedPaymentCountLabel, "2");
+const familyFoundationRows = buildBillingFamilyFoundationRows(payers, students, balances);
+assert.equal(familyFoundationRows.length, 1);
+assert.equal(familyFoundationRows[0].familyLabel, "Rodzina Kowalskich");
+assert.equal(familyFoundationRows[0].payerLabel, "Rodzina Kowalskich");
+assert.equal(familyFoundationRows[0].studentSummaryLabel, "2 uczniów");
+assert.match(familyFoundationRows[0].studentsLabel, /Lena Kowalska/);
+assert.match(familyFoundationRows[0].studentsLabel, /Maja Kowalska/);
+assert.equal(familyFoundationRows[0].siblingLabel, "Rodzeństwo: 2 uczniów");
+assert.equal(familyFoundationRows[0].balanceLabel, "220,00 PLN");
+assert.doesNotMatch(familyFoundationRows[0].contextLabel, /endpoint|payload|debug|demo/i);
+assert.deepEqual(buildBillingFamilyFoundationRows([], [], []), []);
 
 assert.equal(billingBalanceTone(makeBalance({ balance_due: 0 })), "ok");
 assert.equal(billingBalanceTone(makeBalance({ balance_due: -50 })), "info");
@@ -200,6 +272,13 @@ const snapshot = {
   balances: readBillingBalances([
     makeBalance({ billing_payer_id: 1, display_name: "Rodzina Kowalskich", balance_due: 220 }),
     makeBalance({ billing_payer_id: 2, display_name: "Misja Robotyka", balance_due: -40, total_charges: 100, total_matches: 140 }),
+  ]),
+  payers: readBillingPayers([
+    makePayer({ billing_payer_id: 1, display_name: "Rodzina Kowalskich", billing_balance_due: 220 }),
+  ]),
+  students: readBillingStudents([
+    makeStudent({ billing_student_id: 21, billing_payer_id: 1, full_name: "Lena Kowalska", family_billing_order: 1 }),
+    makeStudent({ billing_student_id: 22, billing_payer_id: 1, full_name: "Maja Kowalska", family_billing_order: 2 }),
   ]),
   invoices: readBillingInvoices([
     makeInvoice({ invoice_id: 18, contractor_id: 14, invoice_number: "FV/CASI/18", duplicate_type: "podejrzenie" }),
@@ -236,6 +315,12 @@ assert.equal(contractorRows[0].href, "/crm/14");
 assert.equal(contractorRows[0].balanceLabel, "220,00 PLN");
 assert.equal(contractorRows[1].contactLabel, "Brak kontaktu");
 
+const companyClientRows = buildBillingCompanyClientRows(snapshot.contractors, snapshot.balances, snapshot.payers);
+assert.equal(companyClientRows.length, 1);
+assert.equal(companyClientRows[0].href, "/crm/8");
+assert.equal(companyClientRows[0].companyLabel, "Misja Robotyka");
+assert.match(companyClientRows[0].contextLabel, /Klient firmowy/);
+
 const relatedWorkItems = buildBillingRelatedWorkItemRows(snapshot.workItems, snapshot.invoices, snapshot.contractors);
 assert.equal(relatedWorkItems[0].href, "/work-items/44");
 assert.match(relatedWorkItems[0].reasonLabel, /rozliczenie faktury/);
@@ -248,10 +333,12 @@ assert.equal(formatMoney(1234.5).endsWith("PLN"), true);
 assert.equal(hasBillingData("ready", balances), true);
 assert.equal(isBillingEmpty("ready", []), true);
 assert.equal(hasBillingCenterData("ready", snapshot), true);
-assert.equal(isBillingCenterEmpty("ready", { balances: [], invoices: [], contractors: [], workItems: [] }), true);
+assert.equal(isBillingCenterEmpty("ready", { balances: [], payers: [], students: [], invoices: [], contractors: [], workItems: [] }), true);
 assert.equal(hasBillingData("loading", balances), false);
 
 assert.equal(BILLING_BALANCES_ENDPOINT, "/billing/ledger/balances");
+assert.equal(BILLING_PAYERS_ENDPOINT, "/billing/payers");
+assert.equal(BILLING_STUDENTS_ENDPOINT, "/billing/students");
 assert.equal(BILLING_CANONICAL_ROUTE, "/rozliczenia");
 assert.equal(BILLING_LEGACY_ROUTE, "/kasa");
 assert.equal(BILLING_READ_ONLY, true);
@@ -299,13 +386,16 @@ assert.match(billingProductNote, /raporty właściciela/);
 assert.match(billingProductNote, /eksport księgowy/);
 assert.match(billingProductNote, /Czego v1 jeszcze nie robi/);
 assert.match(billingProductNote, /nie nalicza opłat uczniom/);
-assert.match(billingProductNote, /nie obsługuje rodzin/);
+assert.match(billingProductNote, /pokazuje rodziny/);
+assert.match(billingProductNote, /trybie read-only/);
 assert.match(billingProductNote, /nie dopasowuje przelewów/);
 assert.match(billingProductNote, /nie zastępuje księgowości/);
 assert.match(billingProductNote, /nie wykonuje operacji finansowych/);
 
 const screenStrings = [
   ...attentionItems.flatMap((item) => [item.title, item.reason, item.href]),
+  ...familyFoundationRows.flatMap((row) => [row.familyLabel, row.payerLabel, row.studentsLabel, row.siblingLabel, row.contextLabel]),
+  ...companyClientRows.flatMap((row) => [row.companyLabel, row.contactLabel, row.contextLabel, row.href]),
   ...invoiceRows.flatMap((row) => [row.invoiceLabel, row.contractorLabel, row.reasonLabel, row.href]),
   ...contractorRows.flatMap((row) => [row.contractorLabel, row.contactLabel, row.balanceLabel, row.href]),
   ...relatedWorkItems.flatMap((row) => [row.titleLabel, row.reasonLabel, row.href]),
@@ -315,6 +405,10 @@ assert.equal(billingScreenHasForbiddenTechnicalText(["storage_key", "data/magazy
 
 assert.throws(() => readBillingBalances({ balances: [] }), ApiContractError);
 assert.throws(() => readBillingBalances([{ display_name: "Brak ID" }]), ApiContractError);
+assert.throws(() => readBillingPayers({ payers: [] }), ApiContractError);
+assert.throws(() => readBillingPayers([{ display_name: "Brak ID" }]), ApiContractError);
+assert.throws(() => readBillingStudents({ students: [] }), ApiContractError);
+assert.throws(() => readBillingStudents([{ full_name: "Brak płatnika" }]), ApiContractError);
 assert.throws(() => readBillingInvoices({ invoices: [] }), ApiContractError);
 
 assert.equal(getBillingErrorState(new ApiError("Brak sesji", 401, {})).status, "unauthenticated");
@@ -345,6 +439,12 @@ async function main() {
       if (url.startsWith(`/api${BILLING_BALANCES_ENDPOINT}`)) {
         return jsonResponse(200, [makeBalance()]);
       }
+      if (url.startsWith(`/api${BILLING_PAYERS_ENDPOINT}`)) {
+        return jsonResponse(200, [makePayer()]);
+      }
+      if (url.startsWith(`/api${BILLING_STUDENTS_ENDPOINT}`)) {
+        return jsonResponse(200, [makeStudent()]);
+      }
       if (url.startsWith("/api/invoices")) {
         return jsonResponse(200, [makeInvoice()]);
       }
@@ -359,13 +459,17 @@ async function main() {
     async () => {
       const query = withActiveOrganizationQuery("42");
       const workItemsQuery = withActiveOrganizationQuery("42", { limit: 100, only_open: 1 });
-      const [balancesPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+      const [balancesPayload, payersPayload, studentsPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
         api.ledgerBalances(query),
+        api.billingPayers(query),
+        api.billingStudents(query),
         api.invoices(query),
         api.contractors(query),
         api.workItems(workItemsQuery),
       ]);
       assert.equal(readBillingBalances(balancesPayload).length, 1);
+      assert.equal(readBillingPayers(payersPayload).length, 1);
+      assert.equal(readBillingStudents(studentsPayload).length, 1);
       assert.equal(readBillingInvoices(invoicesPayload).length, 1);
       assert.equal(Array.isArray(contractorsPayload), true);
       assert.equal(Array.isArray(workItemsPayload), true);

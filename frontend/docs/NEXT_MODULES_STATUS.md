@@ -1,4 +1,4 @@
-# Next Modules Status
+﻿# Next Modules Status
 
 Last checked: 2026-07-03
 
@@ -20,7 +20,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 - `Centrum kontrahenta` is documented in `frontend/docs/CONTRACTOR_CENTER_PRODUCT_NOTE.md` and turns `/crm/[contractorId]` into a product v1 relationship view for contractor facts, invoices, open matters, documents, and CRM notes.
 - `Centrum faktury` is documented in `frontend/docs/INVOICE_CENTER_PRODUCT_NOTE.md` and turns `/faktury/[invoiceId]` into a product v1 invoice context screen with contractor, matters, documents, comments, and sanitized system history.
 - `Centrum dokumentu` is documented in `frontend/docs/DOCUMENT_CENTER_PRODUCT_NOTE.md` and turns `/dokumenty/[documentId]` into a product v1 read-only context screen for document profile, source trace, versions, comments, activity, and related matters.
-- `Rozliczenia` is the canonical billing module. `/rozliczenia` is the product route and now hosts `Centrum rozliczeń` product v1; `/kasa` is only a legacy redirect and must not be developed as a separate screen. V1 is a read-only foundation for a future full settlement module covering clients, students, families, payers, services, pricing, discounts, charges, payments, arrears, reminders, owner reports, and accounting export. The full target domain plan is documented in `docs/FULL_CLIENT_BILLING_DOMAIN_PLAN.md`.
+- `Rozliczenia` is the canonical billing module. `/rozliczenia` is the product route and now hosts `Centrum rozliczeĹ„` product v1; `/kasa` is only a legacy redirect and must not be developed as a separate screen. V1 is a read-only foundation for a future full settlement module covering clients, students, families, payers, services, pricing, discounts, charges, payments, arrears, reminders, owner reports, and accounting export. The full target domain plan is documented in `docs/FULL_CLIENT_BILLING_DOMAIN_PLAN.md`.
 - Environment and data safety rules are documented in `docs/ENVIRONMENT_AND_DATA_SAFETY.md`.
 
 ## Module Matrix
@@ -32,7 +32,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 | Faktury | `/faktury`, `/faktury/[invoiceId]` | Real invoice inbox and product v1 invoice center | Yes, invoice inbox/detail/comment endpoints plus existing Work Items list for related open matters | Yes | Yes | Mostly read-only; one additive comment form | Yes: add operator comment only | `test-invoices.js` | Keep comments stable; do not expose workflow decisions until state-specific UX and permissions are reviewed. |
 | Work Items | `/work-items`, `/work-items/[workItemId]` | Real operational work queue and read-only case card | Yes, list/detail/action endpoints | Yes | Yes | List has write actions; case card is read-only | Yes on list only: assign to self, snooze, close | `test-work-items.js`, `test-work-item-detail.js` | Keep the case card stable; local sandbox seed now includes realistic Work Items for positive validation. Consider a read-only context endpoint only if existing detail payload is too thin. |
 | Dokumenty / Knowledge | `/dokumenty`, `/dokumenty/[documentId]` | Real document list and product v1 document center | Yes, document list/detail endpoints plus existing Work Items list for context | Yes | Yes | Yes | No | `test-documents.js`, `test-document-detail.js` | Keep read-only; add a dedicated read-only context endpoint only if frontend-side relationship assembly becomes too thin or too request-heavy. |
-| Rozliczenia | `/rozliczenia` | Product v1 billing center for money, payments, receivables, contractors, invoices, and related matters; foundation for future client/student/family settlements | Yes, billing ledger balances plus invoices, contractors, and Work Items | Yes | Yes for all current sources | Yes | No | `test-billing.js` | Use `docs/FULL_CLIENT_BILLING_DOMAIN_PLAN.md` for the target module direction. Recommended next implementation: read-only `rodzina / płatnik / uczeń` foundation, with no payment writes. |
+| Rozliczenia | `/rozliczenia` | Product v1 billing center for money, payments, receivables, contractors, invoices, and related matters; foundation for future client/student/family settlements | Yes, billing ledger balances plus invoices, contractors, and Work Items | Yes | Yes for all current sources | Yes | No | `test-billing.js` | Use `docs/FULL_CLIENT_BILLING_DOMAIN_PLAN.md` for the target module direction. Recommended next implementation: read-only `rodzina / pĹ‚atnik / uczeĹ„` foundation, with no payment writes. |
 | Asystent Szefa | `/asystent-szefa` | Real read-only focus snapshot | Yes, `GET /api/tasks/focus` | Yes | Yes | Yes | No | `test-boss-assistant.js` | Keep read-only; live-verify org-scoped focus data with a global user. |
 | Asystent Firmowy | `/asystent-firmowy` | Real read-only company context foundation | Yes, dashboard/documents/work-items/invoice inbox | Yes | Yes | Yes | No | `test-company-assistant.js` | Live-verify org-scoped empty/data states; do not add chat before agent contract exists. |
 | CRM | `/crm`, `/crm/[contractorId]` | Real contractor catalog and product v1 contractor center | Yes, contractor list/detail/note endpoints plus existing Work Items list for related open matters | Yes | Yes | Contractor master data is read-only | Yes: add contractor note only | `test-crm.js`, `test-contractor-detail.js` | Live-verify the contractor center for two organizations; improve relationship data before adding new CRM actions. |
@@ -48,7 +48,7 @@ Modules with active organization connected:
 - Faktury
 - Work Items
 - Dokumenty / Knowledge, including read-only `Centrum dokumentu` at `/dokumenty/[documentId]`
-- Rozliczenia, including product v1 `Centrum rozliczeń` at `/rozliczenia`
+- Rozliczenia, including product v1 `Centrum rozliczeĹ„` at `/rozliczenia`
 - CRM contractor master data
 - Raporty
 - Asystent Szefa
@@ -69,7 +69,7 @@ Read-only screens:
 - Dashboard / Pulpit
 - Pulpit dnia
 - Dokumenty / Knowledge, including read-only `Centrum dokumentu` at `/dokumenty/[documentId]`
-- Rozliczenia, including product v1 `Centrum rozliczeń` at `/rozliczenia`
+- Rozliczenia, including product v1 `Centrum rozliczeĹ„` at `/rozliczenia`
 - Asystent Szefa
 - Asystent Firmowy
 - CRM
@@ -145,5 +145,5 @@ python run_quality_checks.py --profile frontend-smoke
 ## Recommended Next Small Steps
 
 1. Keep `/pulpit-dnia` stable as product v1 and use it as the first morning overview during local sandbox verification.
-2. For `Rozliczenia`, start with a read-only `rodzina / płatnik / uczeń` foundation before payment imports, allocations, reminders, or exports.
+2. For `Rozliczenia`, start with a read-only `rodzina / pĹ‚atnik / uczeĹ„` foundation before payment imports, allocations, reminders, or exports.
 3. Keep invoice comments as the only invoice write until workflow decision UX, permissions, and state-specific confirmations are reviewed.
