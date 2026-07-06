@@ -14,5 +14,8 @@ export function shouldShowTopbarPrimaryAction(currentModule: NavigationItem, pat
   if (currentModule.id === "invoices" && pathname.startsWith("/faktury/")) {
     return false;
   }
+  if (currentModule.id === "documents" && pathname.startsWith("/dokumenty/")) {
+    return false;
+  }
   return true;
 }

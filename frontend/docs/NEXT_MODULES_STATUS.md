@@ -19,6 +19,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 - `Karta sprawy` is documented in `frontend/docs/WORK_ITEM_CONTEXT_PRODUCT_NOTE.md` and is the second product v1 read-only screen, available at `/work-items/[workItemId]`.
 - `Centrum kontrahenta` is documented in `frontend/docs/CONTRACTOR_CENTER_PRODUCT_NOTE.md` and turns `/crm/[contractorId]` into a product v1 relationship view for contractor facts, invoices, open matters, documents, and CRM notes.
 - `Centrum faktury` is documented in `frontend/docs/INVOICE_CENTER_PRODUCT_NOTE.md` and turns `/faktury/[invoiceId]` into a product v1 invoice context screen with contractor, matters, documents, comments, and sanitized system history.
+- `Centrum dokumentu` is documented in `frontend/docs/DOCUMENT_CENTER_PRODUCT_NOTE.md` and turns `/dokumenty/[documentId]` into a product v1 read-only context screen for document profile, source trace, versions, comments, activity, and related matters.
 - Environment and data safety rules are documented in `docs/ENVIRONMENT_AND_DATA_SAFETY.md`.
 
 ## Module Matrix
@@ -29,7 +30,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 | Pulpit dnia | `/pulpit-dnia` | Product v1 daily triage screen with balanced top priorities | Yes, dashboard/tasks/work-items/invoices/billing/contractors/documents | Yes | Yes for all current sources | Yes | No | `test-daily-brief.js` | Keep stable as the first morning overview; add a read-only backend aggregator only if frontend-side aggregation becomes too request-heavy. |
 | Faktury | `/faktury`, `/faktury/[invoiceId]` | Real invoice inbox and product v1 invoice center | Yes, invoice inbox/detail/comment endpoints plus existing Work Items list for related open matters | Yes | Yes | Mostly read-only; one additive comment form | Yes: add operator comment only | `test-invoices.js` | Keep comments stable; do not expose workflow decisions until state-specific UX and permissions are reviewed. |
 | Work Items | `/work-items`, `/work-items/[workItemId]` | Real operational work queue and read-only case card | Yes, list/detail/action endpoints | Yes | Yes | List has write actions; case card is read-only | Yes on list only: assign to self, snooze, close | `test-work-items.js`, `test-work-item-detail.js` | Keep the case card stable; local sandbox seed now includes realistic Work Items for positive validation. Consider a read-only context endpoint only if existing detail payload is too thin. |
-| Dokumenty / Knowledge | `/dokumenty`, `/dokumenty/[documentId]` | Real read-only document list and detail | Yes, document list/detail endpoints | Yes | Yes | Yes | No | `test-documents.js`, `test-document-detail.js` | Keep read-only until upload/edit/storage contracts are reviewed. |
+| Dokumenty / Knowledge | `/dokumenty`, `/dokumenty/[documentId]` | Real document list and product v1 document center | Yes, document list/detail endpoints plus existing Work Items list for context | Yes | Yes | Yes | No | `test-documents.js`, `test-document-detail.js` | Keep read-only; add a dedicated read-only context endpoint only if frontend-side relationship assembly becomes too thin or too request-heavy. |
 | Kasa | `/kasa` | Real read-only billing ledger view via shared component | Yes, `GET /api/billing/ledger/balances` | Yes | Yes | Yes | No | `test-billing.js` | Keep paired with Rozliczenia; no write actions before import/matching contracts are reviewed. |
 | Rozliczenia | `/rozliczenia` | Real read-only billing ledger view via shared component | Yes, `GET /api/billing/ledger/balances` | Yes | Yes | Yes | No | `test-billing.js` | Same as Kasa; next step should be contract audit before any payment action. |
 | Asystent Szefa | `/asystent-szefa` | Real read-only focus snapshot | Yes, `GET /api/tasks/focus` | Yes | Yes | Yes | No | `test-boss-assistant.js` | Keep read-only; live-verify org-scoped focus data with a global user. |
@@ -46,7 +47,7 @@ Modules with active organization connected:
 - Pulpit dnia
 - Faktury
 - Work Items
-- Dokumenty / Knowledge
+- Dokumenty / Knowledge, including read-only `Centrum dokumentu` at `/dokumenty/[documentId]`
 - Kasa
 - Rozliczenia
 - CRM contractor master data
@@ -68,7 +69,7 @@ Read-only screens:
 
 - Dashboard / Pulpit
 - Pulpit dnia
-- Dokumenty / Knowledge
+- Dokumenty / Knowledge, including read-only `Centrum dokumentu` at `/dokumenty/[documentId]`
 - Kasa
 - Rozliczenia
 - Asystent Szefa
@@ -147,4 +148,4 @@ python run_quality_checks.py --profile frontend-smoke
 
 1. Keep `/pulpit-dnia` stable as product v1 and use it as the first morning overview during local sandbox verification.
 2. Keep invoice comments as the only invoice write until workflow decision UX, permissions, and state-specific confirmations are reviewed.
-3. Continue live-verifying organization-scoped screens after each small write addition, especially global-user and stale `casi.activeOrganizationId` cases.
+3. Continue live-verifying organization-scoped screens after each product v1 context screen, especially wrong-organization detail routes and stale `casi.activeOrganizationId` cases.

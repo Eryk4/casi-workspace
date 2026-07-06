@@ -22,15 +22,37 @@ const tests = [
 
 const scriptsDir = __dirname;
 
+function waitBeforeRetry(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function runTestScript(testPath, attempts = 3) {
+  let lastResult;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const result = spawnSync(process.execPath, [testPath], {
+      cwd: path.join(scriptsDir, ".."),
+      stdio: "inherit",
+      windowsHide: true,
+    });
+
+    if (!result.error || result.error.code !== "EPERM" || attempt === attempts) {
+      return result;
+    }
+
+    lastResult = result;
+    console.warn(`[frontend-models] Node spawn returned EPERM, retrying (${attempt + 1}/${attempts})...`);
+    waitBeforeRetry(350);
+  }
+
+  return lastResult;
+}
+
 for (const testFile of tests) {
   const testPath = path.join(scriptsDir, testFile);
   console.log(`\n[frontend-models] Running ${testFile}`);
 
-  const result = spawnSync(process.execPath, [testPath], {
-    cwd: path.join(scriptsDir, ".."),
-    stdio: "inherit",
-    windowsHide: true,
-  });
+  const result = runTestScript(testPath);
 
   if (result.error) {
     console.error(`[frontend-models] Failed to start ${testFile}: ${result.error.message}`);

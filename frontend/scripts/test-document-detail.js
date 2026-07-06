@@ -45,7 +45,13 @@ const {
   DOCUMENT_DETAIL_S3_ACTIONS_ENABLED,
   DOCUMENT_DETAIL_UPLOAD_ENABLED,
   buildDocumentAuditRows,
+  buildDocumentCenterSummary,
+  buildDocumentCommentRows,
   buildDocumentDetailFacts,
+  buildDocumentRelatedContractorRows,
+  buildDocumentRelatedInvoiceRows,
+  buildDocumentRelatedWorkItemRows,
+  buildDocumentSourceTraceItems,
   buildDocumentVersionRows,
   canRenderDocumentDetail,
   canUseDocumentDetailOrganizationScope,
@@ -109,12 +115,22 @@ function makeDetail(overrides = {}) {
       annotation_count: 1,
       last_comment_at: "2099-04-11T10:00:00",
     },
+    comments: [
+      {
+        knowledge_document_comment_id: 91,
+        author_label: "Ania Operator",
+        target_label: "Dokument",
+        note_text: "Sprawdzic, czy procedura nadal pasuje do obiegu faktur.",
+        created_at: "2099-04-11T10:00:00",
+      },
+    ],
     audit_events: [
       {
         audit_event_id: 701,
         event_type: "knowledge_document_viewed",
         action_label: "Podglad szczegolu",
         actor_label: "Administrator",
+        message: "Zdarzenie bez technicznych szczegolow.",
         event_time: "2099-04-11T10:10:00",
       },
     ],
@@ -148,33 +164,98 @@ assert.equal(detail.library_path, "-");
 assert.equal(detail.library_path_label, "Procedury / Faktury");
 assert.equal(detail.safe_content_preview, "Bezpieczny skrot procedury bez lokalnych sciezek.");
 assert.equal(detail.versions.length, 1);
+assert.equal(detail.comments.length, 1);
 assert.equal(detail.comment_summary.comment_count, 2);
 assert.equal(detail.audit_summary.download_count, 3);
 
 const facts = buildDocumentDetailFacts(detail);
-assert.equal(facts.find((fact) => fact.label === "Status").value, "do sprawdzenia");
-assert.equal(facts.find((fact) => fact.label === "Workflow").value, "brak wersji obowiazujacej");
+assert.equal(facts.find((fact) => fact.label === "Status").value, "Do sprawdzenia");
+assert.equal(facts.find((fact) => fact.label === "Obieg").value, "Brak wersji obowiązującej");
 assert.equal(facts.find((fact) => fact.label === "Odpowiedzialny").value, "Ania Operator");
 
 const versionRows = buildDocumentVersionRows(detail);
 assert.equal(versionRows[0].versionLabel, "v2");
 assert.equal(versionRows[0].fileLabel, "procedura-v2.pdf");
-assert.equal(versionRows[0].storageLabel, "Storage key ukryty");
+assert.equal(versionRows[0].storageLabel, "Ślad pliku ukryty");
 assert.equal(versionRows[0].officialLabel, "Oficjalna");
 
 const auditRows = buildDocumentAuditRows(detail);
 assert.equal(auditRows[0].actionLabel, "Podglad szczegolu");
 assert.equal(auditRows[0].actorLabel, "Administrator");
+assert.equal(auditRows[0].descriptionLabel, "Zdarzenie bez technicznych szczegolow.");
 
-const viewStrings = collectStrings({ detail, facts, versionRows, auditRows });
+const commentRows = buildDocumentCommentRows(detail);
+assert.equal(commentRows[0].authorLabel, "Ania Operator");
+assert.equal(commentRows[0].noteLabel, "Sprawdzic, czy procedura nadal pasuje do obiegu faktur.");
+
+const relatedWorkItemsPayload = [
+  {
+    work_item_id: 4,
+    title: "Wyjasnic procedurę akceptacji faktur",
+    status: "w_toku",
+    priority_level: "wysoki",
+    due_at: "2099-04-12T12:00:00",
+    metadata: {
+      knowledge_document_ids: [7],
+      invoice_id: 18,
+      invoice_number: "FV/18/2099",
+      invoice_contractor_name: "Travel Desk Polska",
+      invoice_amount_label: "2330,00 zl",
+      invoice_status: "weryfikacja",
+      contractor_id: 14,
+      contractor_name: "Travel Desk Polska",
+      contractor_relation: "Powiazany przez fakture",
+    },
+  },
+  {
+    work_item_id: 5,
+    title: "Inna sprawa",
+    metadata: {
+      knowledge_document_ids: [8],
+    },
+  },
+];
+
+const summary = buildDocumentCenterSummary(detail, relatedWorkItemsPayload);
+assert.equal(summary.relationshipLabel, "1 spraw, 1 faktur");
+assert.equal(summary.reasonLabel, "Dokument ma podstawowe dane i nie pokazuje krytycznych sygnałów.");
+
+const traceItems = buildDocumentSourceTraceItems(detail);
+assert.equal(traceItems.some((item) => item.label === "Źródło"), true);
+assert.equal(traceItems.some((item) => item.description.includes("storage")), false);
+
+const relatedWorkItems = buildDocumentRelatedWorkItemRows(detail, relatedWorkItemsPayload);
+assert.equal(relatedWorkItems.length, 1);
+assert.equal(relatedWorkItems[0].href, "/work-items/4");
+
+const relatedInvoices = buildDocumentRelatedInvoiceRows(detail, relatedWorkItemsPayload);
+assert.equal(relatedInvoices.length, 1);
+assert.equal(relatedInvoices[0].href, "/faktury/18");
+
+const relatedContractors = buildDocumentRelatedContractorRows(detail, relatedWorkItemsPayload);
+assert.equal(relatedContractors.length, 1);
+assert.equal(relatedContractors[0].href, "/crm/14");
+
+const viewStrings = collectStrings({
+  facts,
+  versionRows,
+  auditRows,
+  commentRows,
+  traceItems,
+  relatedWorkItems,
+  relatedInvoices,
+  relatedContractors,
+});
 assert.equal(viewStrings.some((value) => value.includes("C:\\Users\\")), false);
 assert.equal(viewStrings.some((value) => value.includes("data/magazyn")), false);
 assert.equal(viewStrings.some((value) => value.includes("OneDrive")), false);
+assert.equal(viewStrings.some((value) => value.includes("storage_key")), false);
+assert.equal(viewStrings.some((value) => value.includes("payload")), false);
 
 assert.equal(safeDocumentText("C:\\Users\\erykl\\tajne\\plik.pdf", "ukryte"), "ukryte");
 assert.equal(safeDocumentFileLabel("C:\\Users\\erykl\\tajne\\plik.pdf"), "plik.pdf");
-assert.equal(safeStorageLabel("knowledge/documents/7/v2.pdf"), "Storage key zapisany");
-assert.equal(safeStorageLabel("data/magazyn/knowledge/plik.pdf"), "Storage key ukryty");
+assert.equal(safeStorageLabel("knowledge/documents/7/v2.pdf"), "Ślad pliku zapisany");
+assert.equal(safeStorageLabel("data/magazyn/knowledge/plik.pdf"), "Ślad pliku ukryty");
 
 assert.equal(canUseDocumentDetailOrganizationScope("3"), true);
 assert.equal(canUseDocumentDetailOrganizationScope(3), true);
@@ -193,8 +274,8 @@ assert.equal(DOCUMENT_DETAIL_EDIT_ENABLED, false);
 assert.equal(DOCUMENT_DETAIL_DELETE_ENABLED, false);
 assert.equal(DOCUMENT_DETAIL_OCR_ENABLED, false);
 assert.equal(DOCUMENT_DETAIL_S3_ACTIONS_ENABLED, false);
-assert.equal(DOCUMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizacje, aby zobaczyc dokument");
-assert.ok(DOCUMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION.includes("organization_id"));
+assert.equal(DOCUMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć dokument");
+assert.ok(DOCUMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION.includes("wybranej organizacji"));
 
 assert.throws(() => readKnowledgeDocumentDetail([], 7), ApiContractError);
 assert.throws(() => readKnowledgeDocumentDetail({ title: "Brak ID" }, 7), ApiContractError);
