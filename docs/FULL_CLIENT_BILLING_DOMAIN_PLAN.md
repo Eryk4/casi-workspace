@@ -35,6 +35,7 @@ The module must not become a small `kasa` table. It should be a domain model for
   - `GET /api/billing/ledger/balances?organization_id=...`,
   - `GET /api/billing/payers?organization_id=...`,
   - `GET /api/billing/students?organization_id=...`,
+  - `GET /api/billing/charges?organization_id=...`,
   - `GET /api/invoices?organization_id=...`,
   - `GET /api/contractors?organization_id=...`,
   - `GET /api/work-items?organization_id=...&only_open=1&limit=100`.
@@ -653,6 +654,10 @@ Why first: current `billing_payers` and `billing_students` already exist, but th
 
 ### Stage 2: Read-only charges and balances
 
+Status: implemented as a read-only balance explanation in `/rozliczenia`.
+
+The implemented stage adds the section `Skąd wynika saldo`. It explains current balance from existing ledger summaries and current `billing_charges`: charged amount, paid amount, difference, overpayment or amount still due, last visible payment, and the most important charge rows. It does not generate charges, edit charges, import bank statements, match payments, send reminders, or perform accounting operations.
+
 Goal: expose charges, periods, current balance explanation, and charge-to-student/payer context.
 
 Scope:
@@ -783,13 +788,13 @@ Do not implement yet:
 
 Recommended next implementation step:
 
-`Read-only charges and balance explanation`
+`Read-only charge list / payer context detail`
 
 A safe next step should:
 
 - keep `/rozliczenia` read-only,
-- expose existing charge context only if current endpoints are sufficient,
-- explain balance in business language: payer, student, service/model, period, charge, payment match,
+- expose a clearer charge list or payer-context view only if current endpoints are sufficient,
+- keep explaining balance in business language: payer, student, service/model, period, charge, payment match,
 - avoid payment writes, allocation writes, imports, reminders, and exports,
 - add model tests for charge-to-family/student mapping,
 - keep the compatibility family/payer/student model stable until a dedicated schema migration is explicitly planned.

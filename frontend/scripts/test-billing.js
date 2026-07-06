@@ -42,6 +42,7 @@ const {
   BILLING_LEGACY_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
+  BILLING_CHARGES_ENDPOINT,
   BILLING_PAYERS_ENDPOINT,
   BILLING_READ_ONLY,
   BILLING_STUDENTS_ENDPOINT,
@@ -49,6 +50,7 @@ const {
   billingScreenHasForbiddenTechnicalText,
   buildBillingAttentionItems,
   buildBillingBalanceRows,
+  buildBillingBalanceExplanationRows,
   buildBillingCompanyClientRows,
   buildBillingContractorRows,
   buildBillingFamilyFoundationRows,
@@ -65,6 +67,7 @@ const {
   isBillingCenterEmpty,
   isBillingEmpty,
   readBillingBalances,
+  readBillingCharges,
   readBillingInvoices,
   readBillingPayers,
   readBillingStudents,
@@ -129,6 +132,26 @@ function makeStudent(overrides = {}) {
     school_short_name: "SP 1",
     model_name: "Robotyka junior",
     family_balance_due: 220,
+    ...overrides,
+  };
+}
+
+function makeCharge(overrides = {}) {
+  return {
+    billing_charge_id: 31,
+    billing_payer_id: 14,
+    billing_student_id: 21,
+    period_label: "Marzec 2026",
+    due_date: "2026-03-10",
+    base_amount: 228,
+    intro_free_discount_amount: 0,
+    sibling_discount_amount: 0,
+    large_family_discount_amount: 0,
+    total_amount: 228,
+    status: "open",
+    model_name: "Robotyka junior",
+    student_full_name: "Lena Kowalska",
+    payer_display_name: "Rodzina Kowalskich",
     ...overrides,
   };
 }
@@ -226,6 +249,14 @@ assert.equal(students.length, 2);
 assert.equal(students[0].billing_payer_id, 14);
 assert.equal(students[1].family_billing_order, 2);
 
+const charges = readBillingCharges([
+  makeCharge({ billing_charge_id: 31, billing_student_id: 21, total_amount: 228, student_full_name: "Lena Kowalska" }),
+  makeCharge({ billing_charge_id: 32, billing_student_id: 22, total_amount: 228, student_full_name: "Maja Kowalska" }),
+]);
+assert.equal(charges.length, 2);
+assert.equal(charges[0].billing_payer_id, 14);
+assert.equal(charges[1].total_amount, 228);
+
 const rows = buildBillingBalanceRows(balances);
 assert.equal(rows[0].payerLabel, "Rodzina Kowalskich");
 assert.equal(rows[0].contactLabel, "500600700");
@@ -247,6 +278,27 @@ assert.equal(familyFoundationRows[0].siblingLabel, "Rodzeństwo: 2 uczniów");
 assert.equal(familyFoundationRows[0].balanceLabel, "220,00 PLN");
 assert.doesNotMatch(familyFoundationRows[0].contextLabel, /endpoint|payload|debug|demo/i);
 assert.deepEqual(buildBillingFamilyFoundationRows([], [], []), []);
+
+const balanceExplanationRows = buildBillingBalanceExplanationRows(balances, payers, students, charges);
+assert.equal(balanceExplanationRows.length, 1);
+assert.equal(balanceExplanationRows[0].payerLabel, "Rodzina Kowalskich");
+assert.equal(balanceExplanationRows[0].familyTypeLabel, "Rodzina z rodzeństwem: 2 uczniów");
+assert.equal(balanceExplanationRows[0].chargedLabel, "520,00 PLN");
+assert.equal(balanceExplanationRows[0].paidLabel, "300,00 PLN");
+assert.equal(balanceExplanationRows[0].balanceMeaningLabel, "Do dopłaty pozostaje 220,00 PLN");
+assert.match(balanceExplanationRows[0].topItemsLabel, /Lena Kowalska/);
+assert.match(balanceExplanationRows[0].topItemsLabel, /Marzec 2026/);
+assert.doesNotMatch(balanceExplanationRows[0].explanationLabel, /endpoint|payload|debug|demo/i);
+
+const overpaymentExplanationRows = buildBillingBalanceExplanationRows(
+  readBillingBalances([makeBalance({ billing_payer_id: 15, display_name: "Rodzina Nadpłata", total_charges: 100, total_matches: 157, balance_due: -57 })]),
+  readBillingPayers([makePayer({ billing_payer_id: 15, display_name: "Rodzina Nadpłata" })]),
+  readBillingStudents([makeStudent({ billing_student_id: 23, billing_payer_id: 15, full_name: "Tomek Nadpłata" })]),
+  [],
+);
+assert.equal(overpaymentExplanationRows[0].balanceMeaningLabel, "Nadpłata wynosi 57,00 PLN");
+assert.match(overpaymentExplanationRows[0].topItemsLabel, /Brakuje szczegółowych naliczeń/);
+assert.deepEqual(buildBillingBalanceExplanationRows([], [], [], []), []);
 
 assert.equal(billingBalanceTone(makeBalance({ balance_due: 0 })), "ok");
 assert.equal(billingBalanceTone(makeBalance({ balance_due: -50 })), "info");
@@ -279,6 +331,10 @@ const snapshot = {
   students: readBillingStudents([
     makeStudent({ billing_student_id: 21, billing_payer_id: 1, full_name: "Lena Kowalska", family_billing_order: 1 }),
     makeStudent({ billing_student_id: 22, billing_payer_id: 1, full_name: "Maja Kowalska", family_billing_order: 2 }),
+  ]),
+  charges: readBillingCharges([
+    makeCharge({ billing_charge_id: 31, billing_payer_id: 1, billing_student_id: 21, student_full_name: "Lena Kowalska" }),
+    makeCharge({ billing_charge_id: 32, billing_payer_id: 1, billing_student_id: 22, student_full_name: "Maja Kowalska" }),
   ]),
   invoices: readBillingInvoices([
     makeInvoice({ invoice_id: 18, contractor_id: 14, invoice_number: "FV/CASI/18", duplicate_type: "podejrzenie" }),
@@ -333,12 +389,13 @@ assert.equal(formatMoney(1234.5).endsWith("PLN"), true);
 assert.equal(hasBillingData("ready", balances), true);
 assert.equal(isBillingEmpty("ready", []), true);
 assert.equal(hasBillingCenterData("ready", snapshot), true);
-assert.equal(isBillingCenterEmpty("ready", { balances: [], payers: [], students: [], invoices: [], contractors: [], workItems: [] }), true);
+assert.equal(isBillingCenterEmpty("ready", { balances: [], payers: [], students: [], charges: [], invoices: [], contractors: [], workItems: [] }), true);
 assert.equal(hasBillingData("loading", balances), false);
 
 assert.equal(BILLING_BALANCES_ENDPOINT, "/billing/ledger/balances");
 assert.equal(BILLING_PAYERS_ENDPOINT, "/billing/payers");
 assert.equal(BILLING_STUDENTS_ENDPOINT, "/billing/students");
+assert.equal(BILLING_CHARGES_ENDPOINT, "/billing/charges");
 assert.equal(BILLING_CANONICAL_ROUTE, "/rozliczenia");
 assert.equal(BILLING_LEGACY_ROUTE, "/kasa");
 assert.equal(BILLING_READ_ONLY, true);
@@ -395,6 +452,7 @@ assert.match(billingProductNote, /nie wykonuje operacji finansowych/);
 const screenStrings = [
   ...attentionItems.flatMap((item) => [item.title, item.reason, item.href]),
   ...familyFoundationRows.flatMap((row) => [row.familyLabel, row.payerLabel, row.studentsLabel, row.siblingLabel, row.contextLabel]),
+  ...balanceExplanationRows.flatMap((row) => [row.payerLabel, row.familyTypeLabel, row.balanceMeaningLabel, row.topItemsLabel, row.explanationLabel]),
   ...companyClientRows.flatMap((row) => [row.companyLabel, row.contactLabel, row.contextLabel, row.href]),
   ...invoiceRows.flatMap((row) => [row.invoiceLabel, row.contractorLabel, row.reasonLabel, row.href]),
   ...contractorRows.flatMap((row) => [row.contractorLabel, row.contactLabel, row.balanceLabel, row.href]),
@@ -409,6 +467,8 @@ assert.throws(() => readBillingPayers({ payers: [] }), ApiContractError);
 assert.throws(() => readBillingPayers([{ display_name: "Brak ID" }]), ApiContractError);
 assert.throws(() => readBillingStudents({ students: [] }), ApiContractError);
 assert.throws(() => readBillingStudents([{ full_name: "Brak płatnika" }]), ApiContractError);
+assert.throws(() => readBillingCharges({ charges: [] }), ApiContractError);
+assert.throws(() => readBillingCharges([{ period_label: "Brak płatnika" }]), ApiContractError);
 assert.throws(() => readBillingInvoices({ invoices: [] }), ApiContractError);
 
 assert.equal(getBillingErrorState(new ApiError("Brak sesji", 401, {})).status, "unauthenticated");
@@ -445,6 +505,9 @@ async function main() {
       if (url.startsWith(`/api${BILLING_STUDENTS_ENDPOINT}`)) {
         return jsonResponse(200, [makeStudent()]);
       }
+      if (url.startsWith(`/api${BILLING_CHARGES_ENDPOINT}`)) {
+        return jsonResponse(200, [makeCharge()]);
+      }
       if (url.startsWith("/api/invoices")) {
         return jsonResponse(200, [makeInvoice()]);
       }
@@ -459,10 +522,11 @@ async function main() {
     async () => {
       const query = withActiveOrganizationQuery("42");
       const workItemsQuery = withActiveOrganizationQuery("42", { limit: 100, only_open: 1 });
-      const [balancesPayload, payersPayload, studentsPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
         api.ledgerBalances(query),
         api.billingPayers(query),
         api.billingStudents(query),
+        api.billingCharges(withActiveOrganizationQuery("42", { limit: 100 })),
         api.invoices(query),
         api.contractors(query),
         api.workItems(workItemsQuery),
@@ -470,6 +534,7 @@ async function main() {
       assert.equal(readBillingBalances(balancesPayload).length, 1);
       assert.equal(readBillingPayers(payersPayload).length, 1);
       assert.equal(readBillingStudents(studentsPayload).length, 1);
+      assert.equal(readBillingCharges(chargesPayload).length, 1);
       assert.equal(readBillingInvoices(invoicesPayload).length, 1);
       assert.equal(Array.isArray(contractorsPayload), true);
       assert.equal(Array.isArray(workItemsPayload), true);
@@ -477,6 +542,7 @@ async function main() {
   );
 
   assert.ok(requestedUrls.every((url) => url.includes("organization_id=42")));
+  assert.ok(requestedUrls.some((url) => url.includes("/api/billing/charges") && url.includes("limit=100")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/work-items") && url.includes("only_open=1") && url.includes("limit=100")));
 
   console.log("Billing regression tests passed.");

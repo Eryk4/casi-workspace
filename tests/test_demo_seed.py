@@ -69,15 +69,16 @@ class DemoSeedTests(unittest.TestCase):
         self.assertTrue(any(item["short_name"] == "NSP ROBOTIK" for item in schools))
 
         payers = self.billing_service.list_payers(organization_id=robotyka_id)
-        self.assertGreaterEqual(len(payers), 6)
+        self.assertGreaterEqual(len(payers), 7)
 
         student_names = {item["full_name"] for item in self.billing_service.list_students(organization_id=robotyka_id)}
-        self.assertGreaterEqual(len(student_names), 10)
+        self.assertGreaterEqual(len(student_names), 11)
         self.assertIn("Lena Kruk", student_names)
         self.assertIn("Maja Kruk", student_names)
         self.assertIn("Igor Nowak", student_names)
         self.assertIn("Milosz Wisniewski", student_names)
         self.assertIn("Hanna Dabrowska", student_names)
+        self.assertIn("Tymon Lewandowski", student_names)
 
         charges = self.billing_service.list_charges(organization_id=robotyka_id, limit=100)
         self.assertGreaterEqual(len(charges), 20)
@@ -88,6 +89,16 @@ class DemoSeedTests(unittest.TestCase):
         transactions = self.billing_service.list_transactions(organization_id=robotyka_id, limit=100)
         self.assertGreaterEqual(len(transactions), 10)
         self.assertTrue(any(item["reference"] == "MR-DEMO-010" for item in transactions))
+        balances = self.services["billing_ledger_service"].list_balances(organization_id=robotyka_id)
+        self.assertTrue(any(float(item.get("balance_due") or 0) < 0 for item in balances))
+        self.assertTrue(any(float(item.get("balance_due") or 0) > 0 for item in balances))
+        self.assertTrue(
+            any(
+                item.get("display_name") == "Rodzina Lewandowskich"
+                and float(item.get("balance_due") or 0) > 0
+                for item in balances
+            )
+        )
 
         users_by_login = {item["login"]: item for item in self.auth_service.list_users()}
         admin_calendars = self.calendar_service.list_user_calendars(users_by_login["admin"])

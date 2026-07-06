@@ -234,6 +234,7 @@ export const api = {
   ledgerBalances: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/ledger/balances", { query }),
   billingPayers: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/payers", { query }),
   billingStudents: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/students", { query }),
+  billingCharges: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/charges", { query }),
   organizations: () => apiRequest<Record<string, unknown>>("/organizations"),
   users: () => apiRequest<Record<string, unknown>>("/users"),
 };

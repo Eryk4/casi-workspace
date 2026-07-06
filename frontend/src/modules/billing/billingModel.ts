@@ -81,6 +81,23 @@ export type BillingStudentRecord = {
   family_balance_due?: number | null;
 };
 
+export type BillingChargeRecord = {
+  billing_charge_id: number;
+  billing_payer_id: number;
+  billing_student_id?: number | null;
+  period_label?: string | null;
+  due_date?: string | null;
+  base_amount?: number;
+  intro_free_discount_amount?: number;
+  sibling_discount_amount?: number;
+  large_family_discount_amount?: number;
+  total_amount?: number;
+  status?: string | null;
+  model_name?: string | null;
+  student_full_name?: string | null;
+  payer_display_name?: string | null;
+};
+
 export type BillingBalanceViewRow = {
   id: string;
   payerLabel: string;
@@ -92,6 +109,20 @@ export type BillingBalanceViewRow = {
   balanceDueLabel: string;
   lastPaymentLabel: string;
   matchedPaymentCountLabel: string;
+};
+
+export type BillingBalanceExplanationRow = {
+  id: string;
+  payerLabel: string;
+  familyTypeLabel: string;
+  chargedLabel: string;
+  paidLabel: string;
+  balanceLabel: string;
+  balanceMeaningLabel: string;
+  lastPaymentLabel: string;
+  topItemsLabel: string;
+  explanationLabel: string;
+  statusTone: "ok" | "warning" | "danger" | "info" | "neutral";
 };
 
 export type BillingFamilyFoundationRow = {
@@ -193,6 +224,7 @@ export type BillingCenterSnapshot = {
   balances: BillingBalanceRecord[];
   payers: BillingPayerRecord[];
   students: BillingStudentRecord[];
+  charges: BillingChargeRecord[];
   invoices: InvoiceRecord[];
   contractors: ContractorRecord[];
   workItems: WorkItemRecord[];
@@ -201,6 +233,7 @@ export type BillingCenterSnapshot = {
 export const BILLING_BALANCES_ENDPOINT = "/billing/ledger/balances";
 export const BILLING_PAYERS_ENDPOINT = "/billing/payers";
 export const BILLING_STUDENTS_ENDPOINT = "/billing/students";
+export const BILLING_CHARGES_ENDPOINT = "/billing/charges";
 export const BILLING_READ_ONLY = true;
 export const BILLING_CANONICAL_ROUTE = "/rozliczenia";
 export const BILLING_LEGACY_ROUTE = "/kasa";
@@ -491,6 +524,41 @@ export function readBillingStudents(payload: unknown): BillingStudentRecord[] {
       family_last_payment_currency: readOptionalString(item.family_last_payment_currency) ?? null,
       family_last_payment_title: readOptionalString(item.family_last_payment_title) ?? null,
       family_balance_due: readNumber(item.family_balance_due) ?? null,
+    };
+  });
+}
+
+export function readBillingCharges(payload: unknown): BillingChargeRecord[] {
+  if (!Array.isArray(payload)) {
+    throw new ApiContractError(BILLING_CHARGES_ENDPOINT, payload);
+  }
+
+  return payload.map((item) => {
+    if (!isRecord(item)) {
+      throw new ApiContractError(BILLING_CHARGES_ENDPOINT, payload);
+    }
+
+    const chargeId = readNumber(item.billing_charge_id);
+    const payerId = readNumber(item.billing_payer_id);
+    if (!chargeId || !payerId) {
+      throw new ApiContractError(BILLING_CHARGES_ENDPOINT, payload);
+    }
+
+    return {
+      billing_charge_id: chargeId,
+      billing_payer_id: payerId,
+      billing_student_id: readNumber(item.billing_student_id) ?? null,
+      period_label: readOptionalString(item.period_label) ?? null,
+      due_date: readOptionalString(item.due_date) ?? null,
+      base_amount: readNumber(item.base_amount) ?? 0,
+      intro_free_discount_amount: readNumber(item.intro_free_discount_amount) ?? 0,
+      sibling_discount_amount: readNumber(item.sibling_discount_amount) ?? 0,
+      large_family_discount_amount: readNumber(item.large_family_discount_amount) ?? 0,
+      total_amount: readNumber(item.total_amount) ?? 0,
+      status: readOptionalString(item.status) ?? null,
+      model_name: readOptionalString(item.model_name) ?? null,
+      student_full_name: readOptionalString(item.student_full_name) ?? null,
+      payer_display_name: readOptionalString(item.payer_display_name) ?? null,
     };
   });
 }
@@ -831,6 +899,109 @@ export function buildBillingCompanyClientRows(
     });
 }
 
+export function buildBillingBalanceExplanationRows(
+  balances: BillingBalanceRecord[],
+  payers: BillingPayerRecord[],
+  students: BillingStudentRecord[],
+  charges: BillingChargeRecord[],
+  limit = 6,
+): BillingBalanceExplanationRow[] {
+  const studentsByPayer = new Map<number, BillingStudentRecord[]>();
+  students.forEach((student) => {
+    const current = studentsByPayer.get(student.billing_payer_id) ?? [];
+    current.push(student);
+    studentsByPayer.set(student.billing_payer_id, current);
+  });
+  const chargesByPayer = new Map<number, BillingChargeRecord[]>();
+  charges.forEach((charge) => {
+    const current = chargesByPayer.get(charge.billing_payer_id) ?? [];
+    current.push(charge);
+    chargesByPayer.set(charge.billing_payer_id, current);
+  });
+  const payersById = new Map(payers.map((payer) => [payer.billing_payer_id, payer]));
+
+  const balanceRows: BillingBalanceExplanationRow[] = balances.map((balance) => {
+    const payer = payersById.get(balance.billing_payer_id);
+    const payerStudents = studentsByPayer.get(balance.billing_payer_id) ?? [];
+    const payerCharges = (chargesByPayer.get(balance.billing_payer_id) ?? [])
+      .slice()
+      .sort((a, b) => String(b.due_date ?? "").localeCompare(String(a.due_date ?? "")))
+      .slice(0, 3);
+    const totalCharges = balance.total_charges ?? payer?.billing_total_charges ?? 0;
+    const totalMatches = balance.total_matches ?? payer?.billing_total_matches ?? 0;
+    const balanceDue = balance.balance_due ?? payer?.billing_balance_due ?? 0;
+    const lastPaymentDate = balance.last_payment_at ?? payer?.billing_last_payment_at ?? payer?.latest_payment_date;
+    const lastPaymentAmount = balance.last_payment_amount ?? payer?.billing_last_payment_amount ?? payer?.latest_payment_amount;
+    const lastPaymentCurrency = balance.last_payment_currency ?? payer?.billing_last_payment_currency ?? payer?.latest_payment_currency ?? DEFAULT_CURRENCY;
+    const studentCount = payerStudents.length;
+    const payerLabel = getBalancePayerLabel(balance);
+    const topItemsLabel = payerCharges.length
+      ? payerCharges
+          .map((charge) => {
+            const studentLabel = readString(charge.student_full_name, "uczeń");
+            const periodLabel = readString(charge.period_label, "okres bez nazwy");
+            return `${formatMoney(charge.total_amount, DEFAULT_CURRENCY)} za ${studentLabel}, ${periodLabel}`;
+          })
+          .join("; ")
+      : "Brakuje szczegółowych naliczeń dla tego salda.";
+
+    return {
+      id: `balance-explanation-${balance.billing_payer_id}`,
+      payerLabel,
+      familyTypeLabel:
+        studentCount > 1
+          ? `Rodzina z rodzeństwem: ${studentCount} uczniów`
+          : studentCount === 1
+            ? "Rodzina z jednym uczniem"
+            : "Płatnik bez przypisanych uczniów",
+      chargedLabel: formatMoney(totalCharges, DEFAULT_CURRENCY),
+      paidLabel: formatMoney(totalMatches, DEFAULT_CURRENCY),
+      balanceLabel: formatMoney(balanceDue, DEFAULT_CURRENCY),
+      balanceMeaningLabel:
+        balanceDue > 0 ? `Do dopłaty pozostaje ${formatMoney(balanceDue, DEFAULT_CURRENCY)}`
+        : balanceDue < 0 ? `Nadpłata wynosi ${formatMoney(Math.abs(balanceDue), DEFAULT_CURRENCY)}`
+        : "Saldo jest rozliczone",
+      lastPaymentLabel: lastPaymentDate
+        ? `${formatDateLabel(lastPaymentDate)} · ${formatMoney(lastPaymentAmount, lastPaymentCurrency)}`
+        : "Brak ostatniej wpłaty",
+      topItemsLabel,
+      explanationLabel:
+        payerCharges.length > 0
+          ? `Saldo wynika z naliczonych kwot pomniejszonych o wpłaty widoczne w ledgerze. To wyjaśnienie read-only, bez księgowania i bez dopasowywania przelewów.`
+          : `Brakuje danych, żeby szczegółowo wyjaśnić saldo. Widoczna jest tylko suma naliczeń, wpłat i różnica.`,
+      statusTone: balanceDue > 0 ? "warning" : balanceDue < 0 ? "info" : "ok",
+    };
+  });
+
+  const payerOnlyRows = payers
+    .filter((payer) => !balances.some((balance) => balance.billing_payer_id === payer.billing_payer_id))
+    .map((payer) => {
+      const payerStudents = studentsByPayer.get(payer.billing_payer_id) ?? [];
+      return {
+        id: `balance-explanation-payer-${payer.billing_payer_id}`,
+        payerLabel: readString(payer.display_name, `Płatnik #${payer.billing_payer_id}`),
+        familyTypeLabel:
+          payerStudents.length > 1
+            ? `Rodzina z rodzeństwem: ${payerStudents.length} uczniów`
+            : payerStudents.length === 1
+              ? "Rodzina z jednym uczniem"
+              : "Płatnik bez przypisanych uczniów",
+        chargedLabel: formatMoney(payer.billing_total_charges, DEFAULT_CURRENCY),
+        paidLabel: formatMoney(payer.billing_total_matches, DEFAULT_CURRENCY),
+        balanceLabel: formatMoney(payer.billing_balance_due, DEFAULT_CURRENCY),
+        balanceMeaningLabel: "Brakuje pełnego ledgeru dla szczegółowego wyjaśnienia.",
+        lastPaymentLabel: payer.latest_payment_date
+          ? `${formatDateLabel(payer.latest_payment_date)} · ${formatMoney(payer.latest_payment_amount, payer.latest_payment_currency ?? DEFAULT_CURRENCY)}`
+          : "Brak ostatniej wpłaty",
+        topItemsLabel: "Brakuje szczegółowych naliczeń dla tego płatnika.",
+        explanationLabel: "Widoczny jest tylko skrót danych płatnika. Pełniejsze wyjaśnienie wymaga danych naliczeń albo ledgeru.",
+        statusTone: "neutral" as const,
+      };
+    });
+
+  return [...balanceRows, ...payerOnlyRows].slice(0, limit);
+}
+
 export function buildBillingRelatedWorkItemRows(
   workItems: WorkItemRecord[],
   invoices: InvoiceRecord[],
@@ -877,6 +1048,7 @@ export function hasBillingCenterData(status: BillingStatus, snapshot: BillingCen
         (snapshot.balances.length ||
           snapshot.payers.length ||
           snapshot.students.length ||
+          snapshot.charges.length ||
           snapshot.invoices.length ||
           snapshot.contractors.length ||
           snapshot.workItems.length),
@@ -897,6 +1069,7 @@ export function isBillingCenterEmpty(status: BillingStatus, snapshot: BillingCen
     snapshot.balances.length === 0 &&
     snapshot.payers.length === 0 &&
     snapshot.students.length === 0 &&
+    snapshot.charges.length === 0 &&
     snapshot.invoices.length === 0 &&
     snapshot.contractors.length === 0 &&
     snapshot.workItems.length === 0

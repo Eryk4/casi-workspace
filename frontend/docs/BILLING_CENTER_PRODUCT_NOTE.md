@@ -23,6 +23,7 @@ Wersja v1 korzysta wyłącznie z istniejących read-only endpointów organizacyj
 - `GET /api/billing/ledger/balances?organization_id=...`,
 - `GET /api/billing/payers?organization_id=...`,
 - `GET /api/billing/students?organization_id=...`,
+- `GET /api/billing/charges?organization_id=...`,
 - `GET /api/invoices?organization_id=...`,
 - `GET /api/contractors?organization_id=...`,
 - `GET /api/work-items?organization_id=...&only_open=1&limit=100`.
@@ -38,6 +39,8 @@ Ekran jest w pełni read-only. Dozwolone są tylko:
 
 W obecnym zakresie ekran pokazuje też fundament `Rodziny, uczniowie i płatnicy`. Jest to warstwa read-only oparta o istniejące dane `billing_payers` i `billing_students`: kto jest płatnikiem, za których uczniów odpowiada, czy występuje rodzeństwo oraz czy klient jest rodziną ucznia czy klientem firmowym.
 
+Etap `Read-only wyjaśnienie naliczeń i sald` dodaje sekcję `Skąd wynika saldo`. Sekcja pokazuje naliczone kwoty, widoczne wpłaty, różnicę, nadpłatę albo dopłatę oraz kilka najważniejszych pozycji wpływających na saldo. To nadal jest wyjaśnienie informacyjne, a nie pełny silnik naliczeń, księgowanie ani workflow płatności.
+
 Ekran nie wykonuje:
 
 - importu wyciągów,
@@ -52,6 +55,7 @@ Ekran nie wykonuje:
 
 - Salda płatników pochodzą z istniejącego ledgeru i nie zastępują pełnej księgowości.
 - Rodziny i uczniowie są pokazani przez kompatybilny model nad istniejącymi tabelami, bez nowych tras szczegółu i bez edycji relacji.
+- Wyjaśnienie salda korzysta z istniejących naliczeń i sald. Jeśli brakuje szczegółowych naliczeń, ekran pokazuje bezpieczny empty state zamiast udawać pełną dokładność księgową.
 - Powiązania faktur, kontrahentów i spraw są budowane deterministycznie z dostępnych danych. Nie używają AI ani ukrytej automatyzacji.
 - Historia pokazuje tylko bezpieczne, wysokopoziomowe informacje o ostatnich wpłatach. Nie pokazuje technicznych szczegółów bankowych, storage keys ani payloadów.
 - `/kasa` nie powinno być używane w nowych linkach, dokumentacji produktowej ani nawigacji.
@@ -86,7 +90,8 @@ Przyszły pełny moduł powinien uwzględnić:
 
 - nie nalicza opłat uczniom,
 - pokazuje rodziny, uczniów, płatników i rodzeństwo tylko w trybie read-only,
-- nie prowadzi pełnego salda klienta, ucznia ani rodziny,
+- wyjaśnia saldo tylko na podstawie obecnych danych read-only,
+- nie prowadzi pełnego docelowego salda klienta, ucznia ani rodziny,
 - nie generuje należności,
 - nie dopasowuje przelewów,
 - nie importuje wyciągów bankowych,
@@ -103,6 +108,6 @@ Przed traktowaniem widoku jako źródła decyzji finansowych potrzebne są:
 
 - live-weryfikacja na lokalnym sandboxie danych dla minimum dwóch organizacji,
 - przegląd, czy salda ledgeru są kompletne i aktualne,
-- decyzja, czy kolejny krok ma być read-only wyjaśnieniem naliczeń i sald, czy osobną migracją docelowych encji rodzin/płatników/uczniów,
+- decyzja, czy kolejny krok ma być osobnym read-only widokiem naliczeń, czy dedykowanym agregatem backendowym dla rozliczeń,
 - decyzja, czy centrum rozliczeń potrzebuje dedykowanego read-only endpointu,
 - osobny audyt przed jakąkolwiek akcją zapisu w rozliczeniach.

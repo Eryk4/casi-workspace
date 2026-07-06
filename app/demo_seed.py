@@ -1157,6 +1157,14 @@ SEED_BILLING_PAYERS = [
         "email": "dabrowscy@example.com",
         "notes": "Rodzina z pojedynczym dzieckiem w grupie piatkowej.",
     },
+    {
+        "organization_slug": "misja-robotyka",
+        "display_name": "Rodzina Lewandowskich",
+        "contact_phone": "506700800",
+        "has_large_family_card": 0,
+        "email": "lewandowscy@example.com",
+        "notes": "Rodzina z nowym uczniem, ktora ma naliczenie oczekujace na pierwsza wplate.",
+    },
 ]
 
 SEED_BILLING_STUDENTS = [
@@ -1245,6 +1253,15 @@ SEED_BILLING_STUDENTS = [
         "organization_slug": "misja-robotyka",
         "full_name": "Hanna Dabrowska",
         "payer_phone": "505700800",
+        "school_short_name": "NSP Robotik",
+        "model_name": "26/27 Piatek",
+        "family_billing_order": 1,
+        "group_name": "Robotyka Piatek B",
+    },
+    {
+        "organization_slug": "misja-robotyka",
+        "full_name": "Tymon Lewandowski",
+        "payer_phone": "506700800",
         "school_short_name": "NSP Robotik",
         "model_name": "26/27 Piatek",
         "family_billing_order": 1,

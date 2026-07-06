@@ -24,6 +24,7 @@ import {
   BILLING_READ_ONLY,
   buildBillingAttentionItems,
   buildBillingBalanceRows,
+  buildBillingBalanceExplanationRows,
   buildBillingCompanyClientRows,
   buildBillingContractorRows,
   buildBillingFamilyFoundationRows,
@@ -37,10 +38,12 @@ import {
   hasBillingCenterData,
   isBillingCenterEmpty,
   readBillingBalances,
+  readBillingCharges,
   readBillingInvoices,
   readBillingPayers,
   readBillingStudents,
   type BillingAttentionItem,
+  type BillingBalanceExplanationRow,
   type BillingBalanceViewRow,
   type BillingCenterSnapshot,
   type BillingCompanyClientRow,
@@ -129,6 +132,51 @@ const familyFoundationColumns: Array<TableColumn<BillingFamilyFoundationRow>> = 
     key: "context",
     header: "Kontekst",
     render: (row) => row.contextLabel,
+  },
+];
+
+const balanceExplanationColumns: Array<TableColumn<BillingBalanceExplanationRow>> = [
+  {
+    key: "payer",
+    header: "Płatnik",
+    render: (row) => (
+      <span className="billing-family-cell">
+        <strong>{row.payerLabel}</strong>
+        <span>{row.familyTypeLabel}</span>
+      </span>
+    ),
+  },
+  {
+    key: "charged",
+    header: "Naliczono",
+    align: "right",
+    render: (row) => row.chargedLabel,
+  },
+  {
+    key: "paid",
+    header: "Wpłacono",
+    align: "right",
+    render: (row) => row.paidLabel,
+  },
+  {
+    key: "balance",
+    header: "Wynik",
+    render: (row) => <StatusBadge status={row.statusTone}>{row.balanceMeaningLabel}</StatusBadge>,
+  },
+  {
+    key: "lastPayment",
+    header: "Ostatnia wpłata",
+    render: (row) => row.lastPaymentLabel,
+  },
+  {
+    key: "items",
+    header: "Najważniejsze pozycje",
+    render: (row) => (
+      <span className="billing-family-cell">
+        <span>{row.topItemsLabel}</span>
+        <span>{row.explanationLabel}</span>
+      </span>
+    ),
   },
 ];
 
@@ -310,10 +358,11 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
     try {
       const query = withActiveOrganizationQuery(selectedOrganizationId);
       const openWorkItemsQuery = withActiveOrganizationQuery(selectedOrganizationId, { limit: 100, only_open: 1 });
-      const [balancesPayload, payersPayload, studentsPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
         api.ledgerBalances(query),
         api.billingPayers(query),
         api.billingStudents(query),
+        api.billingCharges(withActiveOrganizationQuery(selectedOrganizationId, { limit: 100 })),
         api.invoices(query),
         api.contractors(query),
         api.workItems(openWorkItemsQuery),
@@ -323,6 +372,7 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
         balances: readBillingBalances(balancesPayload),
         payers: readBillingPayers(payersPayload),
         students: readBillingStudents(studentsPayload),
+        charges: readBillingCharges(chargesPayload),
         invoices: readBillingInvoices(invoicesPayload),
         contractors: readContractors(contractorsPayload),
         workItems: readWorkItems(workItemsPayload),
@@ -348,6 +398,16 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
   const balanceRows = useMemo(() => buildBillingBalanceRows(snapshot?.balances ?? []), [snapshot]);
   const familyRows = useMemo(
     () => buildBillingFamilyFoundationRows(snapshot?.payers ?? [], snapshot?.students ?? [], snapshot?.balances ?? []),
+    [snapshot],
+  );
+  const balanceExplanationRows = useMemo(
+    () =>
+      buildBillingBalanceExplanationRows(
+        snapshot?.balances ?? [],
+        snapshot?.payers ?? [],
+        snapshot?.students ?? [],
+        snapshot?.charges ?? [],
+      ),
     [snapshot],
   );
   const companyClientRows = useMemo(
@@ -469,6 +529,18 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
                   columns={companyClientColumns}
                   data={companyClientRows}
                   emptyMessage="Brak klientów firmowych do pokazania w tej organizacji."
+                  getRowKey={(row) => row.id}
+                />
+              </Card>
+
+              <Card
+                description="Wyjaśnienie salda tylko do odczytu: naliczone kwoty, widoczne wpłaty i różnica. To nie jest jeszcze pełny silnik naliczeń ani księgowanie."
+                title="Skąd wynika saldo"
+              >
+                <Table
+                  columns={balanceExplanationColumns}
+                  data={balanceExplanationRows}
+                  emptyMessage="Brakuje danych, żeby szczegółowo wyjaśnić saldo dla tej organizacji."
                   getRowKey={(row) => row.id}
                 />
               </Card>
