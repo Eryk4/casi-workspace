@@ -55,6 +55,8 @@ Ekran nie wykonuje:
 
 Docelowo `Rozliczenia` powinny obsługiwać pełny obszar klientów, uczniów, rodzin i płatników. V1 jest fundamentem informacyjnym, ale nie zamyka tego zakresu.
 
+Pełny projekt domeny jest opisany w `docs/FULL_CLIENT_BILLING_DOMAIN_PLAN.md`. Ten dokument należy traktować jako kierunek dla przyszłych etapów, a nie jako zakres wdrożony w `Centrum rozliczeń v1`.
+
 Przyszły pełny moduł powinien uwzględnić:
 
 - uczniów, klientów firmowych i beneficjentów usług,
@@ -96,5 +98,6 @@ Przed traktowaniem widoku jako źródła decyzji finansowych potrzebne są:
 
 - live-weryfikacja na lokalnym sandboxie danych dla minimum dwóch organizacji,
 - przegląd, czy salda ledgeru są kompletne i aktualne,
+- decyzja, czy kolejny krok ma być kompatybilnym read-only modelem `rodzina / płatnik / uczeń` nad istniejącymi tabelami, czy osobną migracją docelowych encji,
 - decyzja, czy centrum rozliczeń potrzebuje dedykowanego read-only endpointu,
 - osobny audyt przed jakąkolwiek akcją zapisu w rozliczeniach.
