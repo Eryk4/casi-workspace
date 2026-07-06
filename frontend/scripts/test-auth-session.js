@@ -62,6 +62,8 @@ assert.equal(shouldShowTopbarPrimaryAction({ id: "invoices" }, "/faktury"), true
 assert.equal(shouldShowTopbarPrimaryAction({ id: "invoices" }, "/faktury/13"), false);
 assert.equal(shouldShowTopbarPrimaryAction({ id: "documents" }, "/dokumenty"), true);
 assert.equal(shouldShowTopbarPrimaryAction({ id: "documents" }, "/dokumenty/4"), false);
+assert.equal(shouldShowTopbarPrimaryAction({ id: "billing" }, "/rozliczenia"), false);
+assert.equal(shouldShowTopbarPrimaryAction({ id: "billing" }, "/rozliczenia/cokolwiek"), false);
 assert.equal(shouldShowTopbarPrimaryAction({ id: "daily-brief" }, "/pulpit-dnia"), true);
 
 console.log("Auth/session regression tests passed.");

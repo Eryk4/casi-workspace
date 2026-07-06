@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Banknote, CreditCard, RefreshCw } from "lucide-react";
+import { ArrowRight, Building2, CreditCard, FileText, ListChecks, RefreshCw, WalletCards } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -14,22 +15,35 @@ import { Table, type TableColumn } from "@/components/ui/Table";
 import { useActiveOrganization } from "@/context/ActiveOrganizationContext";
 import { withActiveOrganizationQuery } from "@/context/organizationContextModel";
 import { api } from "@/lib/api";
+import { readContractors } from "../crm/crmModel";
+import { readWorkItems } from "../work-items/workItemsModel";
 import {
-  BILLING_BALANCES_ENDPOINT,
+  BILLING_CANONICAL_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_READ_ONLY,
+  buildBillingAttentionItems,
   buildBillingBalanceRows,
-  buildBillingKpis,
+  buildBillingContractorRows,
+  buildBillingInvoiceRows,
+  buildBillingMoneySummary,
+  buildBillingRecentPaymentRows,
+  buildBillingRelatedWorkItemRows,
   canUseBillingOrganizationScope,
   formatMoney,
   getBillingErrorState,
-  hasBillingData,
-  isBillingEmpty,
+  hasBillingCenterData,
+  isBillingCenterEmpty,
   readBillingBalances,
-  type BillingBalanceRecord,
+  readBillingInvoices,
+  type BillingAttentionItem,
   type BillingBalanceViewRow,
+  type BillingCenterSnapshot,
+  type BillingContractorSettlementRow,
   type BillingErrorState,
+  type BillingInvoicePaymentRow,
+  type BillingRecentPaymentRow,
+  type BillingRelatedWorkItemRow,
   type BillingStatus,
 } from "./billingModel";
 
@@ -39,10 +53,10 @@ type BillingLedgerOverviewProps = {
   description: string;
 };
 
-const columns: Array<TableColumn<BillingBalanceViewRow>> = [
+const balanceColumns: Array<TableColumn<BillingBalanceViewRow>> = [
   {
     key: "payer",
-    header: "Platnik",
+    header: "Płatnik",
     render: (row) => (
       <span className="module-row-title">
         <CreditCard aria-hidden="true" size={16} />
@@ -56,23 +70,6 @@ const columns: Array<TableColumn<BillingBalanceViewRow>> = [
     render: (row) => <StatusBadge status={row.statusTone}>{row.statusLabel}</StatusBadge>,
   },
   {
-    key: "contact",
-    header: "Kontakt",
-    render: (row) => row.contactLabel,
-  },
-  {
-    key: "charges",
-    header: "Naliczenia",
-    align: "right",
-    render: (row) => row.totalChargesLabel,
-  },
-  {
-    key: "matches",
-    header: "Wplaty",
-    align: "right",
-    render: (row) => row.totalMatchesLabel,
-  },
-  {
     key: "balance",
     header: "Saldo",
     align: "right",
@@ -80,24 +77,136 @@ const columns: Array<TableColumn<BillingBalanceViewRow>> = [
   },
   {
     key: "lastPayment",
-    header: "Ostatnia wplata",
+    header: "Ostatnia wpłata",
     render: (row) => row.lastPaymentLabel,
   },
+];
+
+const invoiceColumns: Array<TableColumn<BillingInvoicePaymentRow>> = [
   {
-    key: "matchedCount",
-    header: "Dopas.",
+    key: "invoice",
+    header: "Faktura",
+    render: (row) => (
+      <Link className="module-link" href={row.href}>
+        {row.invoiceLabel}
+      </Link>
+    ),
+  },
+  {
+    key: "contractor",
+    header: "Kontrahent",
+    render: (row) => row.contractorLabel,
+  },
+  {
+    key: "status",
+    header: "Status",
+    render: (row) => row.statusLabel,
+  },
+  {
+    key: "amount",
+    header: "Kwota",
     align: "right",
-    render: (row) => row.matchedPaymentCountLabel,
+    render: (row) => row.amountLabel,
+  },
+  {
+    key: "reason",
+    header: "Dlaczego ważne",
+    render: (row) => row.reasonLabel,
+  },
+];
+
+const contractorColumns: Array<TableColumn<BillingContractorSettlementRow>> = [
+  {
+    key: "contractor",
+    header: "Kontrahent",
+    render: (row) => (
+      <Link className="module-link" href={row.href}>
+        {row.contractorLabel}
+      </Link>
+    ),
+  },
+  {
+    key: "contact",
+    header: "Kontakt",
+    render: (row) => row.contactLabel,
+  },
+  {
+    key: "balance",
+    header: "Saldo",
+    align: "right",
+    render: (row) => row.balanceLabel,
+  },
+  {
+    key: "invoices",
+    header: "Faktury",
+    align: "right",
+    render: (row) => row.invoiceCountLabel,
+  },
+  {
+    key: "reason",
+    header: "Kontekst",
+    render: (row) => row.reasonLabel,
+  },
+];
+
+const workItemColumns: Array<TableColumn<BillingRelatedWorkItemRow>> = [
+  {
+    key: "title",
+    header: "Sprawa",
+    render: (row) => (
+      <Link className="module-link" href={row.href}>
+        {row.titleLabel}
+      </Link>
+    ),
+  },
+  {
+    key: "status",
+    header: "Status",
+    render: (row) => row.statusLabel,
+  },
+  {
+    key: "priority",
+    header: "Priorytet",
+    render: (row) => row.priorityLabel,
+  },
+  {
+    key: "reason",
+    header: "Kontekst",
+    render: (row) => row.reasonLabel,
+  },
+];
+
+const recentPaymentColumns: Array<TableColumn<BillingRecentPaymentRow>> = [
+  {
+    key: "payer",
+    header: "Płatnik",
+    render: (row) => row.payerLabel,
+  },
+  {
+    key: "amount",
+    header: "Kwota",
+    align: "right",
+    render: (row) => row.amountLabel,
+  },
+  {
+    key: "date",
+    header: "Data",
+    render: (row) => row.dateLabel,
+  },
+  {
+    key: "title",
+    header: "Opis",
+    render: (row) => row.titleLabel,
   },
 ];
 
 export function BillingLedgerOverview({ title, eyebrow, description }: BillingLedgerOverviewProps) {
   const { selectedOrganizationId, selectedOrganization, status: organizationStatus } = useActiveOrganization();
-  const [balances, setBalances] = useState<BillingBalanceRecord[] | null>(null);
+  const [snapshot, setSnapshot] = useState<BillingCenterSnapshot | null>(null);
   const [status, setStatus] = useState<BillingStatus>("idle");
   const [errorState, setErrorState] = useState<BillingErrorState | null>(null);
 
-  const loadBalances = useCallback(async () => {
+  const loadBillingCenter = useCallback(async () => {
     if (organizationStatus === "loading") {
       setStatus("loading");
       setErrorState(null);
@@ -105,7 +214,7 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
     }
 
     if (!canUseBillingOrganizationScope(selectedOrganizationId)) {
-      setBalances([]);
+      setSnapshot(null);
       setErrorState(null);
       setStatus("ready");
       return;
@@ -115,38 +224,61 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
     setErrorState(null);
 
     try {
-      const payload = await api.ledgerBalances(withActiveOrganizationQuery(selectedOrganizationId));
-      const nextBalances = readBillingBalances(payload);
-      setBalances(nextBalances);
+      const query = withActiveOrganizationQuery(selectedOrganizationId);
+      const openWorkItemsQuery = withActiveOrganizationQuery(selectedOrganizationId, { limit: 100, only_open: 1 });
+      const [balancesPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+        api.ledgerBalances(query),
+        api.invoices(query),
+        api.contractors(query),
+        api.workItems(openWorkItemsQuery),
+      ]);
+
+      setSnapshot({
+        balances: readBillingBalances(balancesPayload),
+        invoices: readBillingInvoices(invoicesPayload),
+        contractors: readContractors(contractorsPayload),
+        workItems: readWorkItems(workItemsPayload),
+      });
       setStatus("ready");
     } catch (error) {
       const nextErrorState = getBillingErrorState(error);
       setErrorState(nextErrorState);
-      setBalances(null);
+      setSnapshot(null);
       setStatus(nextErrorState.status);
     }
   }, [organizationStatus, selectedOrganizationId]);
 
   useEffect(() => {
-    void loadBalances();
-  }, [loadBalances]);
+    void loadBillingCenter();
+  }, [loadBillingCenter]);
 
-  const rows = useMemo(() => buildBillingBalanceRows(balances ?? []), [balances]);
-  const kpis = useMemo(() => buildBillingKpis(balances ?? []), [balances]);
-  const hasData = hasBillingData(status, balances);
+  const attentionItems = useMemo(() => (snapshot ? buildBillingAttentionItems(snapshot) : []), [snapshot]);
+  const moneySummary = useMemo(
+    () => (snapshot ? buildBillingMoneySummary(snapshot.balances, attentionItems.length) : null),
+    [attentionItems.length, snapshot],
+  );
+  const balanceRows = useMemo(() => buildBillingBalanceRows(snapshot?.balances ?? []), [snapshot]);
+  const invoiceRows = useMemo(() => buildBillingInvoiceRows(snapshot?.invoices ?? []), [snapshot]);
+  const contractorRows = useMemo(() => buildBillingContractorRows(snapshot?.contractors ?? [], snapshot?.balances ?? []), [snapshot]);
+  const workItemRows = useMemo(
+    () => buildBillingRelatedWorkItemRows(snapshot?.workItems ?? [], snapshot?.invoices ?? [], snapshot?.contractors ?? []),
+    [snapshot],
+  );
+  const recentPaymentRows = useMemo(() => buildBillingRecentPaymentRows(snapshot?.balances ?? []), [snapshot]);
+  const hasData = hasBillingCenterData(status, snapshot);
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
-  const readyWithoutData = !organizationMissing && isBillingEmpty(status, balances);
+  const readyWithoutData = !organizationMissing && isBillingCenterEmpty(status, snapshot);
 
   return (
-    <div className="module-page billing-page">
+    <div className="module-page billing-page billing-center-page">
       <PageHeader
         badgeTone={status === "ready" ? "success" : status === "error" ? "warning" : "info"}
         description={description}
-        eyebrow={status === "ready" ? "Dane live" : eyebrow}
+        eyebrow={status === "ready" ? "Centrum rozliczeń" : eyebrow}
         title={title}
         actions={
-          <Button disabled={status === "loading"} icon={<RefreshCw size={15} />} onClick={loadBalances} size="sm" variant="secondary">
-            Odswiez
+          <Button disabled={status === "loading"} icon={<RefreshCw size={15} />} onClick={loadBillingCenter} size="sm" variant="secondary">
+            Odśwież
           </Button>
         }
       />
@@ -154,83 +286,194 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
       {status === "loading" ? <LoadingState /> : null}
       {errorState ? <ErrorState description={errorState.description} title={errorState.title} /> : null}
       {organizationMissing ? (
-        <EmptyState
-          description={BILLING_ORGANIZATION_REQUIRED_DESCRIPTION}
-          title={BILLING_ORGANIZATION_REQUIRED_TITLE}
-        />
+        <EmptyState description={BILLING_ORGANIZATION_REQUIRED_DESCRIPTION} title={BILLING_ORGANIZATION_REQUIRED_TITLE} />
       ) : null}
       {readyWithoutData ? (
         <EmptyState
-          description={`Backend odpowiedzial poprawnie, ale nie zwrocil jeszcze platnikow ani sald dla organizacji ${selectedOrganization?.name ?? selectedOrganizationId}.`}
-          title="Brak danych rozliczeniowych"
+          description={`Nie ma jeszcze danych rozliczeniowych, faktur ani powiązanych spraw dla organizacji ${selectedOrganization?.name ?? selectedOrganizationId}.`}
+          title="Brak rozliczeń do pokazania"
         />
       ) : null}
 
-      {hasData ? (
+      {hasData && snapshot && moneySummary ? (
         <>
-          <section className="module-kpi-row" aria-label="Podsumowanie rozliczen">
+          <Card
+            action={<StatusBadge status={moneySummary.headlineTone}>{moneySummary.headline}</StatusBadge>}
+            description={`Widok dla organizacji ${selectedOrganization?.name ?? selectedOrganizationId}. Pokazuje sytuację pieniędzy, płatności i zaległości bez wykonywania operacji finansowych.`}
+            title="Nagłówek finansowy"
+          >
+            <div className="billing-center-hero" aria-label="Sytuacja rozliczeń">
+              <div>
+                <span>Saldo netto</span>
+                <strong>{formatMoney(moneySummary.netBalance)}</strong>
+              </div>
+              <div>
+                <span>Do kontroli</span>
+                <strong>{moneySummary.attentionCount}</strong>
+              </div>
+              <div>
+                <span>Ostatnia wpłata</span>
+                <strong>{moneySummary.lastPaymentLabel}</strong>
+              </div>
+            </div>
+          </Card>
+
+          <section className="module-kpi-row" aria-label="Podsumowanie pieniędzy">
             <Card className="module-metric">
-              <span className="module-metric__label">Tryb ekranu</span>
-              <strong>{BILLING_READ_ONLY ? "Read-only" : "Akcje wlaczone"}</strong>
-              <span>Bez importu wyciagow, edycji naliczen i recznego dopasowania.</span>
+              <span className="module-metric__icon"><WalletCards aria-hidden="true" size={18} /></span>
+              <span className="module-metric__label">Należności</span>
+              <strong>{formatMoney(moneySummary.receivables)}</strong>
+              <span>Kwoty, które nadal wymagają rozliczenia.</span>
             </Card>
             <Card className="module-metric">
-              <span className="module-metric__label">Platnicy aktywni</span>
-              <strong>
-                {kpis.activePayerCount}/{kpis.payerCount}
-              </strong>
-              <span>Pobrane z {BILLING_BALANCES_ENDPOINT}.</span>
+              <span className="module-metric__icon"><CreditCard aria-hidden="true" size={18} /></span>
+              <span className="module-metric__label">Nadpłaty</span>
+              <strong>{formatMoney(moneySummary.overpayments)}</strong>
+              <span>Środki lub korekty do wyjaśnienia.</span>
             </Card>
             <Card className="module-metric">
-              <span className="module-metric__label">Naliczenia / wplaty</span>
-              <strong>{formatMoney(kpis.totalCharges)}</strong>
-              <span>Wplaty dopasowane: {formatMoney(kpis.totalMatches)}.</span>
+              <span className="module-metric__icon"><Building2 aria-hidden="true" size={18} /></span>
+              <span className="module-metric__label">Płatnicy</span>
+              <strong>{moneySummary.activePayerCount}/{moneySummary.payerCount}</strong>
+              <span>Aktywni płatnicy w rozliczeniach.</span>
             </Card>
             <Card className="module-metric">
-              <span className="module-metric__label">Saldo do rozliczenia</span>
-              <strong>{formatMoney(kpis.totalBalanceDue)}</strong>
-              <span>{kpis.overdueCount} platnikow z dodatnim saldem.</span>
+              <span className="module-metric__icon"><ListChecks aria-hidden="true" size={18} /></span>
+              <span className="module-metric__label">Tryb</span>
+              <strong>{BILLING_READ_ONLY ? "Tylko odczyt" : "Akcje włączone"}</strong>
+              <span>Bez zapisu, importu i dopasowywania płatności.</span>
             </Card>
           </section>
 
-          <Card
-            description="Minimalny podglad ledgeru platnikow. Import wyciagow, generowanie naliczen, reczne dopasowania i raporty zostaja poza zakresem tego kroku."
-            title="Salda platnikow"
-          >
-            <Table
-              columns={columns}
-              data={rows}
-              emptyMessage="Backend nie zwrocil sald rozliczen."
-              getRowKey={(row) => row.id}
-            />
-          </Card>
+          <section className="invoice-detail-grid billing-center-grid" aria-label="Centrum rozliczeń">
+            <div className="invoice-detail-grid__main">
+              <Card
+                description="Najkrótsza lista spraw finansowych, które warto zobaczyć przed fakturami i tabelami."
+                title="Co wymaga uwagi"
+              >
+                <BillingAttentionList items={attentionItems} />
+              </Card>
 
-          <Card
-            description="Ten panel celowo nie uruchamia operacji finansowych. Pokazuje tylko, ktore funkcje sa nastepnymi kandydatami po stabilizacji read-only."
-            title="Nastepne akcje, jeszcze wylaczone"
-          >
-            <div className="module-kpi-row">
-              <Card className="module-metric">
-                <span className="module-metric__label">
-                  <Banknote aria-hidden="true" size={14} /> Import wyciagu
-                </span>
-                <strong>Nieaktywny</strong>
-                <span>Wymaga osobnego kroku i walidacji CSV.</span>
+              <Card
+                description="Faktury pokazane w kontekście kwot, statusów i powodów, dla których warto je sprawdzić."
+                title="Faktury i płatności"
+              >
+                <Table
+                  columns={invoiceColumns}
+                  data={invoiceRows}
+                  emptyMessage="Brak faktur do pokazania w rozliczeniach tej organizacji."
+                  getRowKey={(row) => row.id}
+                />
               </Card>
-              <Card className="module-metric">
-                <span className="module-metric__label">Dopasowanie wplat</span>
-                <strong>Nieaktywne</strong>
-                <span>Backend istnieje, ale UI akcji nie jest czescia MVP read-only.</span>
+
+              <Card
+                description="Kontrahenci, którzy mają historię faktur albo saldo widoczne w rozliczeniach."
+                title="Kontrahenci z rozliczeniami"
+              >
+                <Table
+                  columns={contractorColumns}
+                  data={contractorRows}
+                  emptyMessage="Brak kontrahentów z widocznym kontekstem rozliczeń."
+                  getRowKey={(row) => row.id}
+                />
               </Card>
-              <Card className="module-metric">
-                <span className="module-metric__label">Naliczenia</span>
-                <strong>Nieaktywne</strong>
-                <span>Widok nie generuje ani nie edytuje oplat.</span>
+
+              <Card
+                description="Sprawy operacyjne, które mogą wpływać na faktury, płatności albo wyjaśnienia z kontrahentami."
+                title="Powiązane sprawy"
+              >
+                <Table
+                  columns={workItemColumns}
+                  data={workItemRows}
+                  emptyMessage="Brak otwartych spraw powiązanych z rozliczeniami."
+                  getRowKey={(row) => row.id}
+                />
+              </Card>
+
+              <Card
+                description="Bieżące salda płatników w uproszczonym widoku. Szczegółowe operacje finansowe nie są wykonywane z tego ekranu."
+                title="Podsumowanie pieniędzy"
+              >
+                <Table
+                  columns={balanceColumns}
+                  data={balanceRows}
+                  emptyMessage="Brak sald płatników dla tej organizacji."
+                  getRowKey={(row) => row.id}
+                />
               </Card>
             </div>
-          </Card>
+
+            <aside className="module-activity-panel" aria-label="Kontekst biznesowy rozliczeń">
+              <Card title="Historia / ostatnie zdarzenia" description="Ostatnie wpłaty widoczne w rozliczeniach, bez technicznych danych bankowych.">
+                <Table
+                  columns={recentPaymentColumns}
+                  data={recentPaymentRows}
+                  emptyMessage="Brak ostatnich wpłat w danych rozliczeń."
+                  getRowKey={(row) => row.id}
+                />
+              </Card>
+
+              <Card title="Kontekst biznesowy">
+                <div className="billing-context-list">
+                  <article>
+                    <span>Cel widoku</span>
+                    <strong>Jedno miejsce do szybkiej oceny pieniędzy, płatności i zaległości.</strong>
+                  </article>
+                  <article>
+                    <span>Zakres</span>
+                    <strong>Widok łączy rozliczenia, faktury, kontrahentów i sprawy operacyjne.</strong>
+                  </article>
+                  <article>
+                    <span>Bezpieczeństwo</span>
+                    <strong>Centrum rozliczeń jest tylko do odczytu i nie wykonuje operacji finansowych.</strong>
+                  </article>
+                </div>
+              </Card>
+
+              <Card className="module-quick-actions" title="Przejdź do modułów">
+                <Link className="module-quick-action" href="/faktury">
+                  <span>Faktury</span>
+                  <FileText aria-hidden="true" size={15} />
+                </Link>
+                <Link className="module-quick-action" href="/crm">
+                  <span>Kontrahenci</span>
+                  <Building2 aria-hidden="true" size={15} />
+                </Link>
+                <Link className="module-quick-action" href="/work-items">
+                  <span>Sprawy</span>
+                  <ListChecks aria-hidden="true" size={15} />
+                </Link>
+                <Link className="module-quick-action" href="/pulpit-dnia">
+                  <span>Pulpit dnia</span>
+                  <ArrowRight aria-hidden="true" size={15} />
+                </Link>
+              </Card>
+            </aside>
+          </section>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function BillingAttentionList({ items }: { items: BillingAttentionItem[] }) {
+  if (!items.length) {
+    return <p className="daily-brief-empty">Nie ma pilnych sygnałów finansowych. Rozliczenia wyglądają spokojnie.</p>;
+  }
+
+  return (
+    <div className="daily-brief-list billing-attention-list">
+      {items.map((item) => (
+        <Link className="daily-brief-item" href={item.href} key={item.id}>
+          <span className={`daily-brief-item__tone daily-brief-item__tone--${item.tone}`} aria-hidden="true" />
+          <span className="daily-brief-item__copy">
+            <span className="daily-brief-item__category">{item.category}</span>
+            <strong>{item.title}</strong>
+            <span>{item.reason}</span>
+          </span>
+          <span className="daily-brief-item__meta">Otwórz</span>
+        </Link>
+      ))}
     </div>
   );
 }

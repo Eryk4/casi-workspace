@@ -2242,3 +2242,57 @@ input {
     text-align: left;
   }
 }
+
+.billing-center-hero {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.billing-center-hero > div,
+.billing-context-list article {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+  padding: 12px;
+}
+
+.billing-center-hero span,
+.billing-context-list span {
+  color: var(--color-subtle);
+  font-size: 0.66rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.billing-center-hero strong {
+  color: var(--color-text);
+  font-size: 1.02rem;
+  line-height: 1.25;
+}
+
+.billing-center-grid {
+  align-items: start;
+}
+
+.billing-attention-list .daily-brief-item__meta {
+  color: var(--color-accent-strong);
+}
+
+.billing-context-list {
+  display: grid;
+  gap: 10px;
+}
+
+.billing-context-list strong {
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 980px) {
+  .billing-center-hero {
+    grid-template-columns: 1fr;
+  }
+}

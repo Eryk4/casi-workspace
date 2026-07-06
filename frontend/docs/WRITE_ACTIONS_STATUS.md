@@ -175,3 +175,8 @@ Current frontend and backend hardening rules:
 1. Keep this document updated whenever a write path is added or promoted from preview to active UI.
 2. Add a live tenant-isolation pass for Work Items and invoice comments before adding more writes.
 3. Review backend-only write endpoints separately before exposing any of them in Next.
+
+
+## Rozliczenia
+
+`/rozliczenia` hosts `Centrum rozliczeń` product v1 and remains read-only. `/kasa` is only a legacy redirect. No billing write actions, payment matching, bank statement import, posting, export, or charge generation are exposed in Next.

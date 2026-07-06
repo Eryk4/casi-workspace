@@ -1,10 +1,10 @@
-import { BillingLedgerOverview } from "./BillingLedgerOverview";
+﻿import { BillingLedgerOverview } from "./BillingLedgerOverview";
 
 export function BillingPage() {
   return (
     <BillingLedgerOverview
-      description="Minimalny ekran rozliczen klientow: platnicy, naliczenia, dopasowane wplaty i saldo do rozliczenia."
-      eyebrow="Rozliczenia klientow"
+      description="Centrum rozliczeń pokazuje sytuację pieniędzy, płatności i zaległości dla wybranej organizacji. Widok jest tylko do odczytu."
+      eyebrow="Rozliczenia"
       title="Rozliczenia"
     />
   );

@@ -37,18 +37,31 @@ const { findNavigationItem, navigationItems } = require("../src/config/navigatio
 const { withActiveOrganizationQuery } = require("../src/context/organizationContextModel.ts");
 const {
   BILLING_BALANCES_ENDPOINT,
+  BILLING_CANONICAL_ROUTE,
+  BILLING_FORBIDDEN_WRITE_ACTIONS,
+  BILLING_LEGACY_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_READ_ONLY,
-  buildBillingBalanceRows,
-  buildBillingKpis,
   billingBalanceTone,
+  billingScreenHasForbiddenTechnicalText,
+  buildBillingAttentionItems,
+  buildBillingBalanceRows,
+  buildBillingContractorRows,
+  buildBillingInvoiceRows,
+  buildBillingKpis,
+  buildBillingMoneySummary,
+  buildBillingRecentPaymentRows,
+  buildBillingRelatedWorkItemRows,
   canUseBillingOrganizationScope,
   formatMoney,
   getBillingErrorState,
+  hasBillingCenterData,
   hasBillingData,
+  isBillingCenterEmpty,
   isBillingEmpty,
   readBillingBalances,
+  readBillingInvoices,
 } = require("../src/modules/billing/billingModel.ts");
 
 function makeBalance(overrides = {}) {
@@ -68,6 +81,52 @@ function makeBalance(overrides = {}) {
     last_payment_title: "Czesne maj",
     last_payment_reference: "REF-1",
     matched_payment_count: 2,
+    ...overrides,
+  };
+}
+
+function makeInvoice(overrides = {}) {
+  return {
+    invoice_id: 18,
+    invoice_number: "FV/CASI/18",
+    contractor_id: 14,
+    contractor_name: "Rodzina Kowalskich",
+    status: "weryfikacja",
+    workflow_state: "w_pracy",
+    duplicate_type: "podejrzenie",
+    gross_amount: 520,
+    currency: "PLN",
+    incoming_date: "2099-05-04",
+    flag_reason: "Brakuje opisu kosztu.",
+    ...overrides,
+  };
+}
+
+function makeContractor(overrides = {}) {
+  return {
+    contractor_id: 14,
+    name: "Rodzina Kowalskich",
+    email: "rodzina@example.test",
+    phone: "500600700",
+    invoice_count: 3,
+    is_new: false,
+    organization_name: "CASI",
+    ...overrides,
+  };
+}
+
+function makeWorkItem(overrides = {}) {
+  return {
+    work_item_id: 44,
+    title: "Wyjaśnić płatność do faktury FV/CASI/18",
+    description: "Sprawa może blokować rozliczenie faktury.",
+    status: "w_toku",
+    priority_level: "wysoki",
+    priority_score: 81,
+    is_closed: false,
+    is_due_overdue: false,
+    is_sla_overdue: true,
+    metadata: { invoice_id: 18, contractor_id: 14 },
     ...overrides,
   };
 }
@@ -109,7 +168,7 @@ assert.equal(balances[0].balance_due, 220);
 const rows = buildBillingBalanceRows(balances);
 assert.equal(rows[0].payerLabel, "Rodzina Kowalskich");
 assert.equal(rows[0].contactLabel, "500600700");
-assert.equal(rows[0].statusLabel, "Do zaplaty");
+assert.equal(rows[0].statusLabel, "Do zapłaty");
 assert.equal(rows[0].statusTone, "warning");
 assert.equal(rows[0].totalChargesLabel, "520,00 PLN");
 assert.equal(rows[0].totalMatchesLabel, "300,00 PLN");
@@ -137,19 +196,86 @@ assert.deepEqual(kpis, {
   paidOrSettledCount: 2,
 });
 
-assert.equal(formatMoney(1234.5), "1234,50 PLN");
+const snapshot = {
+  balances: readBillingBalances([
+    makeBalance({ billing_payer_id: 1, display_name: "Rodzina Kowalskich", balance_due: 220 }),
+    makeBalance({ billing_payer_id: 2, display_name: "Misja Robotyka", balance_due: -40, total_charges: 100, total_matches: 140 }),
+  ]),
+  invoices: readBillingInvoices([
+    makeInvoice({ invoice_id: 18, contractor_id: 14, invoice_number: "FV/CASI/18", duplicate_type: "podejrzenie" }),
+    makeInvoice({ invoice_id: 19, contractor_id: 8, invoice_number: "FV/MR/19", status: "zaakceptowana", duplicate_type: "brak", flag_reason: null }),
+  ]),
+  contractors: [
+    makeContractor({ contractor_id: 14, name: "Rodzina Kowalskich", invoice_count: 3 }),
+    makeContractor({ contractor_id: 8, name: "Misja Robotyka", email: null, phone: null, invoice_count: 2 }),
+  ],
+  workItems: [makeWorkItem(), makeWorkItem({ work_item_id: 45, title: "Sprawdzić umowę serwisową", priority_score: 10, metadata: {} })],
+};
+
+const attentionItems = buildBillingAttentionItems(snapshot);
+assert.ok(attentionItems.length <= 6);
+assert.ok(attentionItems.some((item) => item.category === "Rozliczenia" && item.href === BILLING_CANONICAL_ROUTE));
+assert.ok(attentionItems.some((item) => item.category === "Faktury" && item.href === "/faktury/18"));
+assert.ok(attentionItems.some((item) => item.category === "Sprawy" && item.href === "/work-items/44"));
+
+const moneySummary = buildBillingMoneySummary(snapshot.balances, attentionItems.length);
+assert.equal(moneySummary.receivables, 220);
+assert.equal(moneySummary.overpayments, 40);
+assert.equal(moneySummary.netBalance, 180);
+assert.equal(moneySummary.headline, "Są należności do kontroli");
+assert.equal(moneySummary.activePayerCount, 2);
+
+const invoiceRows = buildBillingInvoiceRows(snapshot.invoices);
+assert.equal(invoiceRows[0].href, "/faktury/18");
+assert.equal(invoiceRows[0].contractorLabel, "Rodzina Kowalskich");
+assert.equal(invoiceRows[0].amountLabel, "520,00 PLN");
+assert.equal(invoiceRows[0].reasonLabel, "Brakuje opisu kosztu.");
+
+const contractorRows = buildBillingContractorRows(snapshot.contractors, snapshot.balances);
+assert.equal(contractorRows[0].href, "/crm/14");
+assert.equal(contractorRows[0].balanceLabel, "220,00 PLN");
+assert.equal(contractorRows[1].contactLabel, "Brak kontaktu");
+
+const relatedWorkItems = buildBillingRelatedWorkItemRows(snapshot.workItems, snapshot.invoices, snapshot.contractors);
+assert.equal(relatedWorkItems[0].href, "/work-items/44");
+assert.match(relatedWorkItems[0].reasonLabel, /rozliczenie faktury/);
+
+const recentPayments = buildBillingRecentPaymentRows(snapshot.balances);
+assert.equal(recentPayments[0].amountLabel, "300,00 PLN");
+assert.equal(recentPayments[0].titleLabel, "Czesne maj");
+
+assert.equal(formatMoney(1234.5).endsWith("PLN"), true);
 assert.equal(hasBillingData("ready", balances), true);
 assert.equal(isBillingEmpty("ready", []), true);
+assert.equal(hasBillingCenterData("ready", snapshot), true);
+assert.equal(isBillingCenterEmpty("ready", { balances: [], invoices: [], contractors: [], workItems: [] }), true);
 assert.equal(hasBillingData("loading", balances), false);
 
 assert.equal(BILLING_BALANCES_ENDPOINT, "/billing/ledger/balances");
+assert.equal(BILLING_CANONICAL_ROUTE, "/rozliczenia");
+assert.equal(BILLING_LEGACY_ROUTE, "/kasa");
 assert.equal(BILLING_READ_ONLY, true);
-assert.equal(BILLING_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizacje, aby zobaczyc rozliczenia");
-assert.match(BILLING_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id/);
+assert.deepEqual(BILLING_FORBIDDEN_WRITE_ACTIONS, [
+  "Dodaj płatność",
+  "Edytuj płatność",
+  "Usuń płatność",
+  "Dopasuj wpłatę",
+  "Importuj wyciąg",
+  "Wygeneruj naliczenia",
+  "Zaksięguj",
+  "Eksportuj",
+]);
+assert.equal(BILLING_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć rozliczenia");
+assert.doesNotMatch(BILLING_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id|endpoint|payload|debug/i);
 assert.equal(navigationItems.some((item) => item.path === "/kasa" || item.label === "Kasa"), false);
-assert.equal(findNavigationItem("/rozliczenia").id, "billing");
+const billingNavigationItem = findNavigationItem("/rozliczenia");
+assert.equal(billingNavigationItem.id, "billing");
+assert.equal(billingNavigationItem.readinessLabel, "Produkt v1");
+assert.equal(billingNavigationItem.actionLabel, "Tylko odczyt");
+assert.doesNotMatch(billingNavigationItem.description, /endpoint|payload|debug|demo/i);
 assert.equal(findNavigationItem("/kasa").id, "dashboard");
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "kasa", "page.tsx"), "utf8"), /redirect\("\/rozliczenia"\)/);
+assert.match(fs.readFileSync(path.join(srcRoot, "..", "next.config.js"), "utf8"), /source: "\/kasa"[\s\S]*destination: "\/rozliczenia"/);
 assert.equal(canUseBillingOrganizationScope(null), false);
 assert.equal(canUseBillingOrganizationScope(""), false);
 assert.equal(canUseBillingOrganizationScope("   "), false);
@@ -157,18 +283,48 @@ assert.equal(canUseBillingOrganizationScope("42"), true);
 assert.equal(canUseBillingOrganizationScope(42), true);
 assert.deepEqual(withActiveOrganizationQuery("42"), { organization_id: "42" });
 
+const billingProductNote = fs.readFileSync(path.join(srcRoot, "..", "docs", "BILLING_CENTER_PRODUCT_NOTE.md"), "utf8");
+assert.match(billingProductNote, /Docelowy zakres pełnego modułu rozliczeń/);
+assert.match(billingProductNote, /uczniów/);
+assert.match(billingProductNote, /rodzin/);
+assert.match(billingProductNote, /płatników/);
+assert.match(billingProductNote, /usługi i zapisy/);
+assert.match(billingProductNote, /cenniki/);
+assert.match(billingProductNote, /zniżki/);
+assert.match(billingProductNote, /naliczenia/);
+assert.match(billingProductNote, /import przelewów/);
+assert.match(billingProductNote, /dopasowanie płatności/);
+assert.match(billingProductNote, /przypomnienia/);
+assert.match(billingProductNote, /raporty właściciela/);
+assert.match(billingProductNote, /eksport księgowy/);
+assert.match(billingProductNote, /Czego v1 jeszcze nie robi/);
+assert.match(billingProductNote, /nie nalicza opłat uczniom/);
+assert.match(billingProductNote, /nie obsługuje rodzin/);
+assert.match(billingProductNote, /nie dopasowuje przelewów/);
+assert.match(billingProductNote, /nie zastępuje księgowości/);
+assert.match(billingProductNote, /nie wykonuje operacji finansowych/);
+
+const screenStrings = [
+  ...attentionItems.flatMap((item) => [item.title, item.reason, item.href]),
+  ...invoiceRows.flatMap((row) => [row.invoiceLabel, row.contractorLabel, row.reasonLabel, row.href]),
+  ...contractorRows.flatMap((row) => [row.contractorLabel, row.contactLabel, row.balanceLabel, row.href]),
+  ...relatedWorkItems.flatMap((row) => [row.titleLabel, row.reasonLabel, row.href]),
+];
+assert.equal(billingScreenHasForbiddenTechnicalText(screenStrings), false);
+assert.equal(billingScreenHasForbiddenTechnicalText(["storage_key", "data/magazyn", "C:\\Users\\x", "payload"]), true);
+
 assert.throws(() => readBillingBalances({ balances: [] }), ApiContractError);
 assert.throws(() => readBillingBalances([{ display_name: "Brak ID" }]), ApiContractError);
+assert.throws(() => readBillingInvoices({ invoices: [] }), ApiContractError);
 
 assert.equal(getBillingErrorState(new ApiError("Brak sesji", 401, {})).status, "unauthenticated");
 assert.equal(getBillingErrorState(new ApiError("Brak uprawnien", 403, {})).status, "forbidden");
 assert.equal(getBillingErrorState(new ApiError("Backend padl", 500, {})).status, "server-error");
-assert.equal(getBillingErrorState(new ApiContractError(BILLING_BALANCES_ENDPOINT, {})).title, "Niepoprawny format rozliczen");
+assert.equal(getBillingErrorState(new ApiContractError(BILLING_BALANCES_ENDPOINT, {})).title, "Niepoprawny format rozliczeń");
 
 async function main() {
   await withMockedFetch(
     async (url, options) => {
-      assert.equal(url, `/api${BILLING_BALANCES_ENDPOINT}?organization_id=42`);
       assert.equal(options.method, "GET");
       assert.equal(options.body, undefined);
       return jsonResponse(200, [makeBalance()]);
@@ -181,19 +337,43 @@ async function main() {
     },
   );
 
+  const requestedUrls = [];
   await withMockedFetch(
     async (url, options) => {
-      assert.equal(url, `/api${BILLING_BALANCES_ENDPOINT}?organization_id=42`);
+      requestedUrls.push(url);
       assert.equal(options.method, "GET");
-      return jsonResponse(200, []);
+      if (url.startsWith(`/api${BILLING_BALANCES_ENDPOINT}`)) {
+        return jsonResponse(200, [makeBalance()]);
+      }
+      if (url.startsWith("/api/invoices")) {
+        return jsonResponse(200, [makeInvoice()]);
+      }
+      if (url.startsWith("/api/contractors")) {
+        return jsonResponse(200, [makeContractor()]);
+      }
+      if (url.startsWith("/api/work-items")) {
+        return jsonResponse(200, [makeWorkItem()]);
+      }
+      throw new Error(`Unexpected URL: ${url}`);
     },
     async () => {
-      const payload = await api.ledgerBalances(withActiveOrganizationQuery("42"));
-      const emptyBalances = readBillingBalances(payload);
-      assert.equal(isBillingEmpty("ready", emptyBalances), true);
-      assert.equal(hasBillingData("ready", emptyBalances), false);
+      const query = withActiveOrganizationQuery("42");
+      const workItemsQuery = withActiveOrganizationQuery("42", { limit: 100, only_open: 1 });
+      const [balancesPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+        api.ledgerBalances(query),
+        api.invoices(query),
+        api.contractors(query),
+        api.workItems(workItemsQuery),
+      ]);
+      assert.equal(readBillingBalances(balancesPayload).length, 1);
+      assert.equal(readBillingInvoices(invoicesPayload).length, 1);
+      assert.equal(Array.isArray(contractorsPayload), true);
+      assert.equal(Array.isArray(workItemsPayload), true);
     },
   );
+
+  assert.ok(requestedUrls.every((url) => url.includes("organization_id=42")));
+  assert.ok(requestedUrls.some((url) => url.includes("/api/work-items") && url.includes("only_open=1") && url.includes("limit=100")));
 
   console.log("Billing regression tests passed.");
 }

@@ -5,6 +5,9 @@ export function shouldClearSessionAttentionForPath(pathname: string): boolean {
 }
 
 export function shouldShowTopbarPrimaryAction(currentModule: NavigationItem, pathname: string): boolean {
+  if (currentModule.id === "billing") {
+    return false;
+  }
   if (currentModule.id === "work-items" && pathname.startsWith("/work-items/")) {
     return false;
   }

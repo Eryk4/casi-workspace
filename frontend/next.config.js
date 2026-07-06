@@ -2,6 +2,15 @@
 const nextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  async redirects() {
+    return [
+      {
+        source: "/kasa",
+        destination: "/rozliczenia",
+        permanent: false,
+      },
+    ];
+  },
   async rewrites() {
     const backendBaseUrl = process.env.CASI_API_BASE_URL || "http://127.0.0.1:8000";
 
