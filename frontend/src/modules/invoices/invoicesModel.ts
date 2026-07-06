@@ -11,6 +11,7 @@ import { formatCurrency, formatDate } from "../../lib/utils";
 
 import type { InvoiceCommentPayload, InvoiceDetail, InvoiceRecord } from "./types";
 import type { InvoiceActionKind, InvoiceActionPayload, InvoiceActionRequest } from "./types";
+import { buildWorkItemRows, type WorkItemRecord } from "../work-items/workItemsModel";
 
 export type InvoicesStatus = DataViewStatus;
 
@@ -23,12 +24,12 @@ export const INVOICE_INBOX_MUTATION_METHODS: ReadonlyArray<Exclude<ApiRequestMet
 export const INVOICE_DETAIL_MUTATION_METHODS: ReadonlyArray<Exclude<ApiRequestMethod, "GET">> = [];
 export const INVOICE_COMMENT_MUTATION_METHODS: ReadonlyArray<Exclude<ApiRequestMethod, "GET">> = ["POST"];
 export const INVOICE_COMMENT_MAX_LENGTH = 2000;
-export const INVOICES_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizacje, aby zobaczyc faktury";
+export const INVOICES_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć faktury";
 export const INVOICES_ORGANIZATION_REQUIRED_DESCRIPTION =
-  "Globalny uzytkownik musi najpierw wskazac organizacje w topbarze. Dopiero wtedy frontend przekaze organization_id do endpointow faktur.";
-export const INVOICE_DETAIL_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizacje, aby zobaczyc fakture";
+  "Najpierw wskaż organizację w topbarze. Dopiero wtedy CASI pobierze faktury z właściwego kontekstu.";
+export const INVOICE_DETAIL_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć fakturę";
 export const INVOICE_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION =
-  "Szczegoly faktury sa pobierane w kontekscie organizacji, zeby nie pokazywac danych z niejednoznacznego zakresu.";
+  "Szczegóły faktury są pobierane wyłącznie w kontekście wybranej organizacji.";
 
 export type InvoiceDetailStatus = DataViewStatus;
 
@@ -51,6 +52,61 @@ export type InvoiceDetailTraceItem = {
   label: string;
   value: string;
   description: string;
+};
+
+export type InvoiceCenterSummary = {
+  statusLabel: string;
+  workflowLabel: string;
+  amountLabel: string;
+  contractorLabel: string;
+  decisionLabel: string;
+  reasonLabel: string;
+  riskLabels: string[];
+};
+
+export type InvoiceContractorContext = {
+  id: string;
+  contractorId: number | null;
+  nameLabel: string;
+  nipLabel: string;
+  contactLabel: string;
+  typeLabel: string;
+  knownBeforeLabel: string;
+  notesLabel: string;
+  href: string | null;
+};
+
+export type InvoiceRelatedWorkItemRow = {
+  id: string;
+  workItemId: number;
+  titleLabel: string;
+  statusLabel: string;
+  priorityLabel: string;
+  dueLabel: string;
+  href: string;
+};
+
+export type InvoiceRelatedTaskRow = {
+  id: string;
+  titleLabel: string;
+  statusLabel: string;
+  dueLabel: string;
+  href: string;
+};
+
+export type InvoiceRelatedDocumentRow = {
+  id: string;
+  titleLabel: string;
+  contextLabel: string;
+  statusLabel: string;
+  href: string | null;
+};
+
+export type InvoiceBusinessSignal = {
+  id: string;
+  label: string;
+  value: string;
+  tone: "neutral" | "info" | "warning" | "danger";
 };
 
 export type InvoiceActionDefinition = {
@@ -526,6 +582,51 @@ export function readSafeDisplayString(value: unknown, fallback = "-"): string {
   return readDisplayString(value, fallback);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+
+  return null;
+}
+
+function readRecordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function normalizeText(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function toHumanLabel(value: unknown, fallback = "-"): string {
+  const raw = readSafeDisplayString(value, fallback);
+  if (raw === fallback) {
+    return raw;
+  }
+
+  return raw.replace(/_/g, " ").replace(/^\w/, (character) => character.toUpperCase());
+}
+
+function formatSafeDate(value: unknown, fallback = "-"): string {
+  const safeValue = readSafeDisplayString(value, "");
+  return safeValue ? formatDate(safeValue) : fallback;
+}
+
+function hasOpenItems(items: Array<Record<string, unknown>>): boolean {
+  return items.some((item) => {
+    const status = normalizeText(item.status ?? item.workflow_status ?? item.state);
+    return !status || ["open", "pending", "oczekuje", "weryfikacja", "nowe", "active"].includes(status);
+  });
+}
+
 export function getInvoiceRecordId(invoice: InvoiceRecord): number | null {
   return invoice.id ?? invoice.invoice_id ?? null;
 }
@@ -552,11 +653,183 @@ export function buildInvoiceDetailFacts(invoice: InvoiceRecord): InvoiceDetailFa
     { label: "Kontrahent", value: invoice.issuer_name || invoice.contractor_name || "-" },
     { label: "NIP", value: invoice.issuer_nip || "-" },
     { label: "Kwota brutto", value: formatCurrency(invoice.gross_amount, invoice.currency || "PLN") },
-    { label: "Data wplywu", value: formatDate(invoice.incoming_date) },
+    { label: "Data wpływu", value: formatDate(invoice.incoming_date) },
     { label: "Data wystawienia", value: formatDate(invoice.issue_date) },
-    { label: "Zrodlo", value: invoice.source || "-" },
+    { label: "Źródło", value: invoice.source || "-" },
     { label: "Organizacja", value: invoice.organization_name || "-" },
     { label: "Operator", value: invoice.assigned_user_name || "Nieprzypisane" },
+  ];
+}
+
+export function buildInvoiceCenterSummary(detail: InvoiceDetail): InvoiceCenterSummary {
+  const invoice = detail.invoice;
+  const status = normalizeText(invoice.status);
+  const workflowState = normalizeText(invoice.workflow_state ?? detail.workflow?.state);
+  const duplicateType = normalizeText(invoice.duplicate_type);
+  const riskLabels = [
+    duplicateType && duplicateType !== "brak" ? "możliwy duplikat" : "",
+    readRecordArray(detail.exceptions).length ? "wyjątki przy dokumencie" : "",
+    hasOpenItems(readRecordArray(detail.approval_requests)) ? "otwarta prośba o decyzję" : "",
+    !invoice.contractor_id ? "brak powiązanego kontrahenta" : "",
+    !invoice.issuer_nip && !invoice.contractor_nip ? "brak NIP" : "",
+  ].filter(Boolean);
+
+  const decisionLabel =
+    duplicateType && duplicateType !== "brak"
+      ? "Wymaga decyzji o duplikacie"
+      : status === "weryfikacja" || workflowState === "w_pracy"
+        ? "Wymaga spokojnej weryfikacji"
+        : "Do obserwacji";
+
+  const reasonLabel = riskLabels.length
+    ? riskLabels.slice(0, 2).join(" · ")
+    : "Brak krytycznych sygnałów w dostępnych danych.";
+
+  return {
+    statusLabel: toHumanLabel(invoice.status, "Status nieznany"),
+    workflowLabel: toHumanLabel(detail.workflow?.state_label ?? invoice.workflow_state, "W pracy"),
+    amountLabel: formatCurrency(invoice.gross_amount, invoice.currency || "PLN"),
+    contractorLabel: readSafeDisplayString(invoice.issuer_name || invoice.contractor_name, "Kontrahent nieznany"),
+    decisionLabel,
+    reasonLabel,
+    riskLabels,
+  };
+}
+
+export function buildInvoiceContractorContext(detail: InvoiceDetail): InvoiceContractorContext {
+  const invoice = detail.invoice;
+  const contractor = isRecord(detail.contractor) ? detail.contractor : {};
+  const contractorId = readNumber(invoice.contractor_id) ?? readNumber(contractor.contractor_id);
+  const email = readSafeDisplayString(invoice.contractor_email ?? contractor.email, "");
+  const phone = readSafeDisplayString(invoice.contractor_phone ?? contractor.phone, "");
+  const contactParts = [email, phone].filter(Boolean);
+  const contractorKnownBefore = Boolean((detail as InvoiceDetail & { contractor_known_before?: unknown }).contractor_known_before);
+  const isNew =
+    invoice.contractor_is_new === true ||
+    invoice.contractor_is_new === 1 ||
+    contractor.is_new === true ||
+    contractor.is_new === 1;
+
+  return {
+    id: contractorId ? String(contractorId) : "contractor-missing",
+    contractorId,
+    nameLabel: readSafeDisplayString(contractor.name ?? invoice.contractor_name ?? invoice.issuer_name, "Kontrahent nieznany"),
+    nipLabel: readSafeDisplayString(contractor.nip ?? invoice.contractor_nip ?? invoice.issuer_nip, "Brak NIP"),
+    contactLabel: contactParts.length ? contactParts.join(" · ") : "Brak danych kontaktowych",
+    typeLabel: isNew ? "Nowy kontrahent" : contractorKnownBefore ? "Znany kontrahent" : "Powiązany z fakturą",
+    knownBeforeLabel: contractorKnownBefore ? "Występował wcześniej w fakturach" : "Brak wcześniejszej historii w danych faktur",
+    notesLabel: readSafeDisplayString(invoice.contractor_notes ?? contractor.notes, "Brak notatek kontrahenta"),
+    href: contractorId ? `/crm/${contractorId}` : null,
+  };
+}
+
+export function buildInvoiceRelatedWorkItemRows(
+  detail: InvoiceDetail,
+  workItems: WorkItemRecord[] = [],
+): InvoiceRelatedWorkItemRow[] {
+  const invoiceId = getInvoiceRecordId(detail.invoice);
+
+  if (!invoiceId) {
+    return [];
+  }
+
+  return buildWorkItemRows(
+    workItems.filter((item) => {
+      const metadata = item.metadata ?? {};
+      return Number(metadata.invoice_id ?? metadata.linked_invoice_id ?? 0) === invoiceId;
+    }),
+  ).map((row) => ({
+    id: row.id,
+    workItemId: row.workItemId,
+    titleLabel: readSafeDisplayString(row.title, `Sprawa #${row.workItemId}`),
+    statusLabel: row.statusLabel,
+    priorityLabel: row.priorityLabel,
+    dueLabel: row.dueLabel,
+    href: `/work-items/${row.workItemId}`,
+  }));
+}
+
+export function buildInvoiceRelatedTaskRows(detail: InvoiceDetail): InvoiceRelatedTaskRow[] {
+  return readRecordArray(detail.linked_tasks).map((task, index) => {
+    const taskId = readNumber(task.task_id ?? task.id) ?? index + 1;
+    return {
+      id: String(taskId),
+      titleLabel: readSafeDisplayString(task.title ?? task.task_title, `Zadanie #${taskId}`),
+      statusLabel: toHumanLabel(task.status_label ?? task.status, "Status nieznany"),
+      dueLabel: formatSafeDate(task.due_at ?? task.due_date, "Brak terminu"),
+      href: "/asystent-szefa",
+    };
+  });
+}
+
+export function buildInvoiceRelatedDocumentRows(detail: InvoiceDetail): InvoiceRelatedDocumentRow[] {
+  const rows = readRecordArray(detail.document_intake_items).map((item, index) => {
+    const documentId = readNumber(item.knowledge_document_id ?? item.document_id);
+    const intakeId = readNumber(item.intake_item_id ?? item.id) ?? index + 1;
+    return {
+      id: String(documentId ?? intakeId),
+      titleLabel: readSafeDisplayString(
+        item.document_title ?? item.title ?? item.file_name,
+        documentId ? `Dokument #${documentId}` : `Dokument wejściowy #${intakeId}`,
+      ),
+      contextLabel: readSafeDisplayString(item.folder_name ?? item.folder ?? item.category, "Dokument powiązany z fakturą"),
+      statusLabel: toHumanLabel(item.status, "Status nieznany"),
+      href: documentId ? `/dokumenty/${documentId}` : null,
+    };
+  });
+
+  if (rows.length) {
+    return rows;
+  }
+
+  const documentTrace = detail.document_trace ?? {};
+  const safeFileName = readSafeDisplayString(documentTrace.file_name ?? detail.invoice.file_name, "");
+  if (!safeFileName) {
+    return [];
+  }
+
+  return [
+    {
+      id: "document-trace",
+      titleLabel: safeFileName,
+      contextLabel: "Plik powiązany z fakturą",
+      statusLabel: "Zarejestrowany",
+      href: null,
+    },
+  ];
+}
+
+export function buildInvoiceBusinessSignals(detail: InvoiceDetail): InvoiceBusinessSignal[] {
+  const summary = buildInvoiceCenterSummary(detail);
+  const contractor = buildInvoiceContractorContext(detail);
+  const commentCount = detail.comments?.length ?? detail.invoice.invoice_comment_count ?? 0;
+  const documentCount = buildInvoiceRelatedDocumentRows(detail).length;
+
+  return [
+    {
+      id: "decision",
+      label: "Co teraz oznacza ta faktura",
+      value: summary.decisionLabel,
+      tone: summary.riskLabels.length ? "warning" : "info",
+    },
+    {
+      id: "contractor",
+      label: "Relacja z kontrahentem",
+      value: contractor.knownBeforeLabel,
+      tone: contractor.contractorId ? "neutral" : "warning",
+    },
+    {
+      id: "comments",
+      label: "Komentarze operatora",
+      value: `${commentCount} komentarzy`,
+      tone: commentCount ? "info" : "neutral",
+    },
+    {
+      id: "documents",
+      label: "Dokumenty",
+      value: documentCount ? `${documentCount} powiązań` : "Brak dodatkowych dokumentów",
+      tone: documentCount ? "info" : "neutral",
+    },
   ];
 }
 
@@ -565,11 +838,43 @@ export function buildInvoiceHistoryEvents(detail: InvoiceDetail | null): Invoice
 
   return history.slice(0, 8).map((event, index) => ({
     id: `history-${readDisplayString(event.id, String(index))}`,
-    type: readDisplayString(event.event_type, "Historia"),
+    type: toHumanLabel(event.event_type, "Historia"),
     actor: readDisplayString(event.actor, "System"),
     date: formatDate(readDisplayString(event.event_time, "")),
-    description: readDisplayString(event.decision_reason || event.description || event.details, "Zdarzenie operacyjne"),
+    description: buildSafeInvoiceHistoryDescription(event),
   }));
+}
+
+function buildSafeInvoiceHistoryDescription(event: Record<string, unknown>): string {
+  const eventType = normalizeText(event.event_type);
+
+  if (eventType === "invoice_comment_added") {
+    return "Dodano komentarz operatora. Pełna treść jest w sekcji komentarzy.";
+  }
+
+  const directDescription = readSafeDisplayString(event.decision_reason || event.description, "");
+  if (directDescription) {
+    return directDescription;
+  }
+
+  const details = event.details;
+  if (!isRecord(details)) {
+    return "Zdarzenie operacyjne";
+  }
+
+  if (details.note_text || details.comment || details.payload || details.storage_key || details.file_path) {
+    return "Zdarzenie zapisane przez system. Szczegóły techniczne ukryto.";
+  }
+
+  if (details.invoice_comment_id) {
+    return "Dodano komentarz operatora.";
+  }
+
+  if (details.note_length) {
+    return "Zapisano notatkę bez ujawniania jej treści w historii.";
+  }
+
+  return "Zdarzenie operacyjne";
 }
 
 export function buildInvoiceCommentEvents(detail: InvoiceDetail | null): InvoiceDetailEvent[] {
@@ -599,17 +904,17 @@ export function buildInvoiceDocumentTraceItems(detail: InvoiceDetail | null): In
     {
       label: "Plik",
       value: readSafeDisplayString(documentTrace.file_name || invoice?.file_name, "Plik zarejestrowany"),
-      description: `Storage: ${readSafeDisplayString(documentTrace.storage_backend, "ukryty")}`,
+      description: "Lokalizacja techniczna pliku nie jest pokazywana w interfejsie.",
     },
     {
       label: "OCR",
-      value: hasOcrTrace ? "Slad OCR dostepny" : "Brak sladu OCR",
-      description: `Pewnosc: ${ocrConfidence}`,
+      value: hasOcrTrace ? "Ślad OCR dostępny" : "Brak śladu OCR",
+      description: `Pewność odczytu: ${ocrConfidence}`,
     },
     {
-      label: "Zrodlo",
-      value: readSafeDisplayString(sourceTrace.source || invoice?.source, "Zrodlo nieokreslone"),
-      description: readSafeDisplayString(sourceTrace.source_external_id || sourceTrace.message_id, "Brak zewnetrznego ID"),
+      label: "Źródło",
+      value: readSafeDisplayString(sourceTrace.source || invoice?.source, "Źródło nieokreślone"),
+      description: sourceTrace.source_external_id || sourceTrace.message_id ? "Identyfikator źródła ukryty w UI." : "Brak dodatkowego śladu źródła",
     },
   ];
 }

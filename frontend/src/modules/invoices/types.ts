@@ -12,6 +12,12 @@ export type InvoiceRecord = {
   issuer_name?: string | null;
   issuer_nip?: string | null;
   contractor_name?: string | null;
+  contractor_id?: number | null;
+  contractor_nip?: string | null;
+  contractor_email?: string | null;
+  contractor_phone?: string | null;
+  contractor_is_new?: boolean | number | null;
+  contractor_notes?: string | null;
   issue_date?: string | null;
   incoming_date?: string | null;
   sale_date?: string | null;

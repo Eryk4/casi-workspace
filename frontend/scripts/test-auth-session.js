@@ -58,6 +58,8 @@ assert.equal(shouldShowTopbarPrimaryAction({ id: "work-items" }, "/work-items"),
 assert.equal(shouldShowTopbarPrimaryAction({ id: "work-items" }, "/work-items/41"), false);
 assert.equal(shouldShowTopbarPrimaryAction({ id: "crm" }, "/crm"), true);
 assert.equal(shouldShowTopbarPrimaryAction({ id: "crm" }, "/crm/14"), false);
+assert.equal(shouldShowTopbarPrimaryAction({ id: "invoices" }, "/faktury"), true);
+assert.equal(shouldShowTopbarPrimaryAction({ id: "invoices" }, "/faktury/13"), false);
 assert.equal(shouldShowTopbarPrimaryAction({ id: "daily-brief" }, "/pulpit-dnia"), true);
 
 console.log("Auth/session regression tests passed.");

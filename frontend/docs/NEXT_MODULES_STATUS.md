@@ -18,6 +18,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 - `Pulpit dnia` is documented in `frontend/docs/PULPIT_DNIA_PRODUCT_NOTE.md` and is the first product v1 daily triage screen assembled from existing organization-scoped sources. Current local data is only a safe sandbox for development and verification.
 - `Karta sprawy` is documented in `frontend/docs/WORK_ITEM_CONTEXT_PRODUCT_NOTE.md` and is the second product v1 read-only screen, available at `/work-items/[workItemId]`.
 - `Centrum kontrahenta` is documented in `frontend/docs/CONTRACTOR_CENTER_PRODUCT_NOTE.md` and turns `/crm/[contractorId]` into a product v1 relationship view for contractor facts, invoices, open matters, documents, and CRM notes.
+- `Centrum faktury` is documented in `frontend/docs/INVOICE_CENTER_PRODUCT_NOTE.md` and turns `/faktury/[invoiceId]` into a product v1 invoice context screen with contractor, matters, documents, comments, and sanitized system history.
 - Environment and data safety rules are documented in `docs/ENVIRONMENT_AND_DATA_SAFETY.md`.
 
 ## Module Matrix
@@ -26,7 +27,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Dashboard / Pulpit | `/pulpit` | Real operational dashboard | Yes, `GET /api/dashboard` | Yes | Yes | Yes | No | `test-dashboard.js` | Keep stable; use as org-scoped landing page. |
 | Pulpit dnia | `/pulpit-dnia` | Product v1 daily triage screen with balanced top priorities | Yes, dashboard/tasks/work-items/invoices/billing/contractors/documents | Yes | Yes for all current sources | Yes | No | `test-daily-brief.js` | Keep stable as the first morning overview; add a read-only backend aggregator only if frontend-side aggregation becomes too request-heavy. |
-| Faktury | `/faktury`, `/faktury/[invoiceId]` | Real invoice inbox, detail preview, and operator comments | Yes, invoice inbox/detail/comment endpoints | Yes | Yes | Mostly read-only; one additive comment form | Yes: add operator comment only | `test-invoices.js` | Keep comments stable; do not expose workflow decisions until state-specific UX and permissions are reviewed. |
+| Faktury | `/faktury`, `/faktury/[invoiceId]` | Real invoice inbox and product v1 invoice center | Yes, invoice inbox/detail/comment endpoints plus existing Work Items list for related open matters | Yes | Yes | Mostly read-only; one additive comment form | Yes: add operator comment only | `test-invoices.js` | Keep comments stable; do not expose workflow decisions until state-specific UX and permissions are reviewed. |
 | Work Items | `/work-items`, `/work-items/[workItemId]` | Real operational work queue and read-only case card | Yes, list/detail/action endpoints | Yes | Yes | List has write actions; case card is read-only | Yes on list only: assign to self, snooze, close | `test-work-items.js`, `test-work-item-detail.js` | Keep the case card stable; local sandbox seed now includes realistic Work Items for positive validation. Consider a read-only context endpoint only if existing detail payload is too thin. |
 | Dokumenty / Knowledge | `/dokumenty`, `/dokumenty/[documentId]` | Real read-only document list and detail | Yes, document list/detail endpoints | Yes | Yes | Yes | No | `test-documents.js`, `test-document-detail.js` | Keep read-only until upload/edit/storage contracts are reviewed. |
 | Kasa | `/kasa` | Real read-only billing ledger view via shared component | Yes, `GET /api/billing/ledger/balances` | Yes | Yes | Yes | No | `test-billing.js` | Keep paired with Rozliczenia; no write actions before import/matching contracts are reviewed. |
@@ -98,7 +99,7 @@ Current CRM write action:
 
 - `POST /api/contractors/{id}/notes?organization_id=...`
 
-Invoice decision helpers exist in the frontend model/API layer, but the visible invoice decision UI remains preview/read-only and does not submit workflow/status decisions from the screen.
+Invoice decision helpers still exist in the frontend model/API layer and are covered by tests for `preview-ready` semantics. The product v1 invoice center does not render workflow decision buttons; only the additive operator comment form is visible.
 
 ## Placeholder Status
 

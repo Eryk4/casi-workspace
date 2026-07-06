@@ -1,6 +1,6 @@
 ﻿# Invoice Actions Readiness
 
-Status: first safe invoice write implemented. The Next UI now exposes only the additive operator comment action; all workflow/status invoice decisions remain preview/read-only.
+Status: first safe invoice write implemented. The Next UI now exposes only the additive operator comment action; workflow/status invoice decisions are not rendered as actions in `Centrum faktury`.
 
 ## Goal
 
@@ -11,7 +11,7 @@ The current Next invoice module already has:
 - organization-scoped invoice inbox,
 - organization-scoped invoice detail,
 - links from inbox rows to invoice detail,
-- read-only decision preview with the existing `preview-ready` semantics,
+- tested frontend decision model with the existing `preview-ready` semantics,
 - one active additive invoice write: operator comment on invoice detail.
 
 ## Existing Mutating Invoice Endpoints
@@ -111,7 +111,7 @@ The implemented `Add invoice comment` flow must keep these guardrails:
 
 ## Current Next UI Notes
 
-- Operator comments are displayed separately from system history on the invoice detail.
+- Operator comments are displayed separately from system history on the invoice center.
 - System history still shows `invoice_comment_added` as an audit event.
 - The comment text itself comes from backend `comments`, not from raw debug payloads.
-- Document/OCR trace avoids exposing raw local paths and storage keys in the invoice detail UI.
+- Document/OCR trace avoids exposing raw local paths and storage keys in the invoice center UI.

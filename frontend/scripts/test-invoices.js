@@ -57,12 +57,18 @@ const {
   INVOICES_ORGANIZATION_REQUIRED_TITLE,
   buildInvoiceActionConfirmation,
   buildInvoiceActionRequest,
+  buildInvoiceBusinessSignals,
+  buildInvoiceCenterSummary,
   buildInvoiceCommentEvents,
   buildInvoiceCommentRequest,
+  buildInvoiceContractorContext,
   buildInvoiceDocumentTraceItems,
   buildInvoiceDetailEvents,
   buildInvoiceDetailFacts,
   buildInvoiceHistoryEvents,
+  buildInvoiceRelatedDocumentRows,
+  buildInvoiceRelatedTaskRows,
+  buildInvoiceRelatedWorkItemRows,
   canUseInvoicesOrganizationScope,
   canRenderInvoiceDetailData,
   createInvoiceActionSubmitter,
@@ -140,7 +146,38 @@ function makeDetail(overrides = {}) {
       source: "email",
       workflow_state: "w_pracy",
       invoice_comment_count: 1,
+      contractor_id: 14,
+      contractor_email: "kontakt@casi.test",
+      contractor_phone: "+48 500 100 200",
+      contractor_is_new: false,
+      contractor_notes: "Staly kontrahent wymagajacy doprecyzowania opisu kosztu.",
     },
+    contractor: {
+      contractor_id: 14,
+      name: "CASI Test Sp. z o.o.",
+      nip: "5250000000",
+      email: "kontakt@casi.test",
+      phone: "+48 500 100 200",
+      is_new: false,
+      notes: "Staly kontrahent.",
+    },
+    contractor_known_before: true,
+    linked_tasks: [
+      {
+        task_id: 31,
+        title: "Uzgodnic opis kosztu z wlascicielem",
+        status: "w_toku",
+        due_at: "2026-05-02",
+      },
+    ],
+    document_intake_items: [
+      {
+        knowledge_document_id: 22,
+        document_title: "Umowa serwisowa CASI",
+        folder_name: "Umowy",
+        status: "zaakceptowany",
+      },
+    ],
     comments: [
       {
         invoice_comment_id: 7,
@@ -157,6 +194,16 @@ function makeDetail(overrides = {}) {
         actor: "System",
         event_time: "2026-04-30",
         decision_reason: "Faktura trafila do inboxu.",
+      },
+      {
+        id: 4,
+        event_type: "invoice_comment_added",
+        actor: "Operator",
+        event_time: "2026-04-30",
+        details: {
+          note_text: "Pelna tresc komentarza nie powinna byc w historii.",
+          invoice_comment_id: 7,
+        },
       },
     ],
     document_trace: {
@@ -235,8 +282,8 @@ assert.equal(canRenderInvoiceDetailData("ready", invoiceDetail), true);
 assert.equal(isInvoiceDetailEmpty("ready", invoiceDetail), false);
 assert.equal(getInvoiceDetailTitle(invoiceDetail, 13), "FV/2026/04/13");
 assert.equal(buildInvoiceDetailFacts(invoiceDetail.invoice).length, 8);
-assert.equal(buildInvoiceDetailEvents(invoiceDetail).length, 2);
-assert.equal(buildInvoiceHistoryEvents(invoiceDetail).length, 1);
+assert.equal(buildInvoiceDetailEvents(invoiceDetail).length, 3);
+assert.equal(buildInvoiceHistoryEvents(invoiceDetail).length, 2);
 assert.equal(buildInvoiceCommentEvents(invoiceDetail).length, 1);
 assert.equal(buildInvoiceCommentEvents(invoiceDetail).find((item) => item.id === "comment-7").type, "Komentarz operatora");
 assert.equal(buildInvoiceCommentEvents(invoiceDetail).find((item) => item.id === "comment-7").actor, "Operator");
@@ -244,9 +291,51 @@ assert.equal(
   buildInvoiceCommentEvents(invoiceDetail).find((item) => item.id === "comment-7").description,
   "Sprawdzono dane kontrahenta.",
 );
+assert.equal(
+  buildInvoiceHistoryEvents(invoiceDetail).find((item) => item.id === "history-4").description,
+  "Dodano komentarz operatora. Pełna treść jest w sekcji komentarzy.",
+);
+assert.equal(
+  buildInvoiceHistoryEvents(invoiceDetail).some((item) => item.description.includes("Pelna tresc komentarza")),
+  false,
+);
+const centerSummary = buildInvoiceCenterSummary(invoiceDetail);
+assert.equal(centerSummary.amountLabel, "620,10 zł");
+assert.equal(centerSummary.contractorLabel, "CASI Test Sp. z o.o.");
+assert.equal(centerSummary.decisionLabel, "Wymaga spokojnej weryfikacji");
+const contractorContext = buildInvoiceContractorContext(invoiceDetail);
+assert.equal(contractorContext.href, "/crm/14");
+assert.equal(contractorContext.contactLabel, "kontakt@casi.test · +48 500 100 200");
+assert.equal(contractorContext.knownBeforeLabel, "Występował wcześniej w fakturach");
+const relatedWorkItems = buildInvoiceRelatedWorkItemRows(invoiceDetail, [
+  {
+    work_item_id: 91,
+    title: "Doprecyzowac opis faktury",
+    status: "w_toku",
+    priority_level: "wysoki",
+    due_at: "2026-05-01",
+    metadata: {
+      invoice_id: 13,
+      contractor_id: 14,
+    },
+  },
+  {
+    work_item_id: 92,
+    title: "Inna sprawa",
+    metadata: {
+      invoice_id: 99,
+    },
+  },
+]);
+assert.equal(relatedWorkItems.length, 1);
+assert.equal(relatedWorkItems[0].href, "/work-items/91");
+assert.equal(buildInvoiceRelatedTaskRows(invoiceDetail)[0].href, "/asystent-szefa");
+assert.equal(buildInvoiceRelatedDocumentRows(invoiceDetail)[0].href, "/dokumenty/22");
+assert.equal(buildInvoiceBusinessSignals(invoiceDetail).some((signal) => signal.label === "Co teraz oznacza ta faktura"), true);
 const traceItems = buildInvoiceDocumentTraceItems(invoiceDetail);
-assert.equal(traceItems.find((item) => item.label === "OCR").value, "Slad OCR dostepny");
+assert.equal(traceItems.find((item) => item.label === "OCR").value, "Ślad OCR dostępny");
 assert.equal(traceItems.some((item) => String(item.value).includes("organizacje/casi")), false);
+assert.equal(traceItems.some((item) => String(item.description).includes("storage")), false);
 assert.equal(isUnsafeTechnicalValue("C:\\Users\\erykl\\plik.pdf"), true);
 assert.equal(isUnsafeTechnicalValue("data/magazyn/faktura.pdf"), true);
 assert.equal(readSafeDisplayString("C:\\Users\\erykl\\plik.pdf", "Ukryto sciezke"), "Ukryto sciezke");
@@ -353,10 +442,10 @@ assert.deepEqual(INVOICE_INBOX_MUTATION_METHODS, []);
 assert.equal(isInvoiceDetailReadOnly(), true);
 assert.deepEqual(INVOICE_DETAIL_MUTATION_METHODS, []);
 assert.deepEqual(INVOICE_COMMENT_MUTATION_METHODS, ["POST"]);
-assert.equal(INVOICES_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizacje, aby zobaczyc faktury");
-assert.match(INVOICES_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id/);
-assert.equal(INVOICE_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizacje, aby zobaczyc fakture");
-assert.match(INVOICE_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION, /kontekscie organizacji/);
+assert.equal(INVOICES_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć faktury");
+assert.match(INVOICES_ORGANIZATION_REQUIRED_DESCRIPTION, /organizację/);
+assert.equal(INVOICE_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć fakturę");
+assert.match(INVOICE_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION, /wybranej organizacji/);
 assert.equal(canUseInvoicesOrganizationScope(null), false);
 assert.equal(canUseInvoicesOrganizationScope(""), false);
 assert.equal(canUseInvoicesOrganizationScope("   "), false);

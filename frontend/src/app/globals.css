@@ -912,6 +912,72 @@ input {
   gap: 10px;
 }
 
+.invoice-center-summary,
+.invoice-contractor-card,
+.invoice-business-signals {
+  display: grid;
+  gap: 10px;
+}
+
+.invoice-center-summary {
+  grid-template-columns: 1.4fr 1fr 0.8fr;
+  margin-bottom: 12px;
+}
+
+.invoice-center-summary div,
+.invoice-contractor-card div,
+.invoice-business-signal {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  padding: 10px;
+}
+
+.invoice-center-summary span,
+.invoice-contractor-card span,
+.invoice-business-signal span {
+  color: var(--color-subtle);
+  font-size: 0.64rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.invoice-center-summary strong,
+.invoice-contractor-card strong,
+.invoice-business-signal strong {
+  min-width: 0;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.invoice-contractor-card {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.invoice-contractor-card__wide,
+.invoice-contractor-card__link {
+  grid-column: 1 / -1;
+}
+
+.invoice-business-signal {
+  border-left: 3px solid var(--color-border);
+}
+
+.invoice-business-signal--info {
+  border-left-color: var(--color-accent);
+}
+
+.invoice-business-signal--warning {
+  border-left-color: var(--color-warning);
+}
+
+.invoice-business-signal--danger {
+  border-left-color: var(--color-danger);
+}
+
 .invoice-fact {
   display: grid;
   gap: 4px;
@@ -1918,6 +1984,8 @@ input {
     white-space: normal;
   }
 
+  .invoice-center-summary,
+  .invoice-contractor-card,
   .invoice-fact-grid,
   .invoice-workflow-strip {
     grid-template-columns: 1fr;

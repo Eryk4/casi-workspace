@@ -160,7 +160,7 @@ Current frontend and backend hardening rules:
 ## Remaining Risks
 
 - Work Items has additional backend write endpoints outside the current Next UI (`create`, broad update, `bulk`, SLA policy). They are not exposed as active Next write actions in this document.
-- Invoice workflow decision helpers still exist as preview/read-only UI. Do not expose them as writes until state-specific confirmations, permissions, and tenant tests are reviewed.
+- Invoice workflow decision helpers still exist in the frontend model and tests, but `Centrum faktury` does not render workflow decision buttons. Do not expose them as writes until state-specific confirmations, permissions, and tenant tests are reviewed.
 - CRM contractor create/edit/delete/import/pipeline are still not implemented in Next and should remain blocked until separate contracts and tests exist.
 
 ## Do Not Implement Yet
