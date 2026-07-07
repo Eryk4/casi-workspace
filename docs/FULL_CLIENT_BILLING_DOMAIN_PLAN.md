@@ -711,6 +711,28 @@ Scope:
 - no inferred period payment from payer-level matches without charge relation,
 - no period write actions or closing workflow.
 
+### Stage 2d: Payments and allocations read-only foundation
+
+Status: implemented as a read-only payments/allocation view under `/rozliczenia/wplaty`.
+
+The implemented stage reuses current `billing_transactions`, `billing_payment_matches`, `billing_charges`, `billing_payers`, and `billing_students`. It shows visible incoming payments and separates them into payments linked to a concrete charge, payments visible only at payer level, and payments that need later clarification.
+
+No tables, migrations, backend endpoints, write actions, payment imports, allocation writes, charge generation, reminders, exports, or accounting operations were added for this stage.
+
+Important limitation: this is not the target `payment_allocation` workflow. Current data can explain whether an existing payment match points to a charge or only to a payer, but it cannot yet model full splits, refunds, unapplied cash decisions, review state, or user-confirmed allocations as a first-class process.
+
+Goal: answer "where do visible payments currently sit?" before adding payment imports, manual allocation, or automated matching.
+
+Scope:
+
+- read-only visible payment list,
+- read-only distinction between charge-linked, payer-only, and unclear payments,
+- links from known payers to `/rozliczenia/platnicy/{payerId}`,
+- no import,
+- no matching,
+- no assignment edits,
+- no accounting or period closing.
+
 ### Stage 3: Manual payments and allocations
 
 Goal: safely add the first payment write path.

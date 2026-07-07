@@ -1,4 +1,4 @@
-﻿# Szczegół płatnika v1
+# Szczegół płatnika v1
 
 `/rozliczenia/platnicy/{payerId}` jest read-only ekranem kontekstu płatnika w module `Rozliczenia`.
 
@@ -47,6 +47,8 @@ Ekran jest w pełni read-only. Dozwolone są tylko odświeżenie danych i linki 
 
 Etap `Usługi i zapisy — read-only foundation` doprecyzowuje sekcję `Usługi do opłacenia`. Dane są wywnioskowane z obecnych naliczeń, modeli rozliczeń i faktur. Widok nie udaje pełnego modelu zapisów, kontraktów ani cenników; pokazuje tylko to, co da się bezpiecznie odczytać z aktualnych danych.
 
+Etap `Wpłaty i przypisania — read-only foundation` ma osobny widok `/rozliczenia/wplaty`. Szczegół płatnika nadal pokazuje widoczne informacje o jednym płatniku, a osobny widok wpłat wyjaśnia, czy wpłata jest przy naliczeniu, tylko przy płatniku czy wymaga późniejszego wyjaśnienia.
+
 ## Czego v1 nie robi
 
 Ekran nie wykonuje:
@@ -65,6 +67,7 @@ Ekran nie wykonuje:
 ## Ograniczenia
 
 - Lista wpłat jest ograniczona do danych widocznych w obecnym read-only modelu. Jeżeli backend udostępnia tylko ostatnią wpłatę w saldzie, ekran pokazuje właśnie tę informację.
+- `/rozliczenia/wplaty` pokazuje szerszy read-only obraz wpłat i obecnych przypisań, ale nadal nie wykonuje dopasowania ani księgowania.
 - Powiązania faktur i spraw zależą od obecnych danych referencyjnych oraz tekstowych. Jeśli relacja nie jest jednoznaczna, ekran pokazuje pusty stan zamiast zgadywać.
 - Ekran nie zastępuje pełnego silnika rozliczeniowego ani księgowości.
 - Sekcja usług nie jest jeszcze pełnym rejestrem zapisów. Pełne zapisy, cenniki, historia statusów i naliczenia będą osobnym etapem.

@@ -7,6 +7,7 @@ from typing import Any
 
 from app.config import KNOWLEDGE_DIR
 from app.config import DEFAULT_ADMIN_LOGIN, DEFAULT_ADMIN_PASSWORD
+from app.db import get_connection
 from app.domain.constants import MANAGER_ASSISTANT_MODULE
 from app.repositories.invoice_repository import InvoiceRepository
 from app.services.auth_service import AuthService
@@ -1489,6 +1490,16 @@ SEED_BILLING_STATEMENT_ROWS = [
     },
 ]
 
+SEED_BILLING_CHARGE_PAYMENT_LINKS = [
+    {
+        "organization_slug": "misja-robotyka",
+        "transaction_reference": "MR-DEMO-008",
+        "payer_phone": "501600700",
+        "period_label": "Listopad 2026",
+        "matched_amount": "228.00",
+    },
+]
+
 SEED_KNOWLEDGE_MANUAL_DOCUMENTS = [
     {
         "organization_slug": "organizacja-domyslna",
@@ -2504,6 +2515,86 @@ def _ensure_demo_billing_data(auth_service: AuthService, billing_service: Billin
             organization_id=organization_id,
         )
         existing_references_by_account.setdefault(account_id, set()).update(incoming_references)
+
+    _ensure_demo_billing_charge_payment_links(organization)
+
+
+def _ensure_demo_billing_charge_payment_links(
+    organization: dict[str, Any],
+) -> None:
+    organization_id = int(organization["organization_id"])
+    links = [
+        payload
+        for payload in SEED_BILLING_CHARGE_PAYMENT_LINKS
+        if _normalize_organization_slug(payload["organization_slug"]) == organization["slug"]
+    ]
+    if not links:
+        return
+
+    with get_connection() as connection:
+        for payload in links:
+            payer = connection.execute(
+                """
+                SELECT billing_payer_id
+                FROM billing_payers
+                WHERE organization_id = ? AND contact_phone = ?
+                """,
+                (organization_id, payload["payer_phone"]),
+            ).fetchone()
+            if not payer:
+                continue
+
+            payer_id = int(payer["billing_payer_id"])
+            charge = connection.execute(
+                """
+                SELECT billing_charge_id
+                FROM billing_charges
+                WHERE organization_id = ?
+                  AND billing_payer_id = ?
+                  AND period_label = ?
+                  AND ROUND(total_amount, 2) = ROUND(?, 2)
+                ORDER BY billing_charge_id ASC
+                LIMIT 1
+                """,
+                (organization_id, payer_id, payload["period_label"], float(payload["matched_amount"])),
+            ).fetchone()
+            transaction = connection.execute(
+                """
+                SELECT billing_transaction_id
+                FROM billing_transactions
+                WHERE organization_id = ? AND reference = ?
+                """,
+                (organization_id, payload["transaction_reference"]),
+            ).fetchone()
+            if not charge or not transaction:
+                continue
+
+            charge_id = int(charge["billing_charge_id"])
+            transaction_id = int(transaction["billing_transaction_id"])
+            connection.execute(
+                """
+                UPDATE billing_payment_matches
+                SET billing_charge_id = ?
+                WHERE organization_id = ?
+                  AND billing_payer_id = ?
+                  AND billing_transaction_id = ?
+                  AND billing_charge_id IS NULL
+                """,
+                (charge_id, organization_id, payer_id, transaction_id),
+            )
+            connection.execute(
+                """
+                UPDATE billing_payer_ledger_entries
+                SET billing_charge_id = ?
+                WHERE organization_id = ?
+                  AND billing_payer_id = ?
+                  AND billing_transaction_id = ?
+                  AND entry_kind = 'payment_matched'
+                  AND billing_charge_id IS NULL
+                """,
+                (charge_id, organization_id, payer_id, transaction_id),
+            )
+        connection.commit()
 
 
 def _ensure_demo_knowledge_data(auth_service: AuthService, knowledge_service: KnowledgeService) -> None:

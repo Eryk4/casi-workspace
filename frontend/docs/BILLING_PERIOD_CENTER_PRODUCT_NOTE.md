@@ -27,6 +27,8 @@ Nie dodano nowego endpointu backendowego. Okresy są wywnioskowane z obecnych `b
 
 Ważne ograniczenie: część wpłat może być widoczna przy płatniku, ale bez relacji do konkretnego naliczenia. Taka wpłata nie jest przypisywana do okresu w tym widoku, bo frontend nie powinien zgadywać, którego miesiąca, semestru albo turnusu dotyczy.
 
+Widok `/rozliczenia/wplaty` pokazuje to ograniczenie osobno: rozdziela wpłaty przypisane do naliczeń, wpłaty widoczne tylko przy płatniku i wpłaty wymagające późniejszego wyjaśnienia.
+
 ## Zakres v1
 
 Ekran pokazuje:
@@ -75,3 +77,5 @@ Ekran nie wykonuje:
 ## Następny bezpieczny krok
 
 Po live-weryfikacji okresów warto utrzymać moduł jako read-only i dopiero osobno zaprojektować pełny model okresu rozliczeniowego, jeśli obecne etykiety okresów okażą się niewystarczające. Przypisywanie wpłat do okresów powinno być osobnym etapem przed importami, automatycznym dopasowaniem i zamykaniem okresów. Write paths dla płatności, importów, dopasowań i zamykania okresu wymagają osobnego audytu kontraktu, uprawnień, izolacji organizacyjnej i UX.
+
+Po dodaniu `/rozliczenia/wplaty` nadal nie ma workflow przypisywania wpłat. Ten ekran tylko wyjaśnia obecny stan danych i pomaga ocenić, które wpłaty mogą wejść do okresu bez zgadywania.

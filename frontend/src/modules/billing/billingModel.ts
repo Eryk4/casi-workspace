@@ -112,6 +112,20 @@ export type BillingPaymentMatchRecord = {
   charge_total_amount?: number | null;
 };
 
+export type BillingTransactionRecord = {
+  billing_transaction_id: number;
+  organization_id?: number;
+  booking_date?: string | null;
+  value_date?: string | null;
+  amount?: number;
+  currency?: string | null;
+  direction?: string | null;
+  counterparty_name?: string | null;
+  title?: string | null;
+  reference?: string | null;
+  matched_status?: string | null;
+};
+
 export type BillingBalanceViewRow = {
   id: string;
   payerLabel: string;
@@ -339,6 +353,39 @@ export type BillingPeriodView = {
   contextItems: Array<{ label: string; value: string }>;
 };
 
+export type BillingPaymentSummary = {
+  totalVisibleAmountLabel: string;
+  paymentCountLabel: string;
+  chargeAssignedCountLabel: string;
+  payerOnlyCountLabel: string;
+  unexplainedCountLabel: string;
+  chargeAssignedAmountLabel: string;
+  needsExplanationAmountLabel: string;
+};
+
+export type BillingPaymentAssignmentRow = {
+  id: string;
+  dateLabel: string;
+  amountLabel: string;
+  payerLabel: string;
+  payerHref?: string;
+  descriptionLabel: string;
+  assignmentLabel: string;
+  periodLabel: string;
+  periodHref?: string;
+  statusLabel: string;
+  statusTone: "ok" | "warning" | "danger" | "info" | "neutral";
+  contextLabel: string;
+};
+
+export type BillingPaymentsAllocationView = {
+  summary: BillingPaymentSummary;
+  chargeAssignedRows: BillingPaymentAssignmentRow[];
+  payerOnlyRows: BillingPaymentAssignmentRow[];
+  unexplainedRows: BillingPaymentAssignmentRow[];
+  contextItems: Array<{ label: string; value: string }>;
+};
+
 export type BillingPayerChargeRow = {
   id: string;
   periodLabel: string;
@@ -394,6 +441,7 @@ export type BillingCenterSnapshot = {
   students: BillingStudentRecord[];
   charges: BillingChargeRecord[];
   paymentMatches?: BillingPaymentMatchRecord[];
+  transactions?: BillingTransactionRecord[];
   invoices: InvoiceRecord[];
   contractors: ContractorRecord[];
   workItems: WorkItemRecord[];
@@ -401,6 +449,7 @@ export type BillingCenterSnapshot = {
 
 export const BILLING_BALANCES_ENDPOINT = "/billing/ledger/balances";
 export const BILLING_PAYMENT_MATCHES_ENDPOINT = "/billing/ledger/matches";
+export const BILLING_TRANSACTIONS_ENDPOINT = "/billing/transactions";
 export const BILLING_PAYERS_ENDPOINT = "/billing/payers";
 export const BILLING_STUDENTS_ENDPOINT = "/billing/students";
 export const BILLING_CHARGES_ENDPOINT = "/billing/charges";
@@ -409,6 +458,7 @@ export const BILLING_CANONICAL_ROUTE = "/rozliczenia";
 export const BILLING_LEGACY_ROUTE = "/kasa";
 export const BILLING_PAYER_DETAIL_ROUTE = `${BILLING_CANONICAL_ROUTE}/platnicy`;
 export const BILLING_PERIODS_ROUTE = `${BILLING_CANONICAL_ROUTE}/okresy`;
+export const BILLING_PAYMENTS_ROUTE = `${BILLING_CANONICAL_ROUTE}/wplaty`;
 export const DEFAULT_CURRENCY = "PLN";
 export const BILLING_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć rozliczenia";
 export const BILLING_ORGANIZATION_REQUIRED_DESCRIPTION =
@@ -424,7 +474,9 @@ export const BILLING_FORBIDDEN_WRITE_ACTIONS = [
   "Dodaj zapis",
   "Edytuj usługę",
   "Edytuj zapis",
+  "Dodaj wpłatę",
   "Dopasuj wpłatę",
+  "Zmień przypisanie",
   "Importuj wyciąg",
   "Wygeneruj naliczenia",
   "Zaksięguj",
@@ -775,6 +827,36 @@ export function readBillingPaymentMatches(payload: unknown): BillingPaymentMatch
       transaction_amount: readNumber(item.transaction_amount) ?? null,
       transaction_title: readOptionalString(item.transaction_title) ?? null,
       charge_total_amount: readNumber(item.charge_total_amount) ?? null,
+    };
+  });
+}
+
+export function readBillingTransactions(payload: unknown): BillingTransactionRecord[] {
+  if (!Array.isArray(payload)) {
+    throw new ApiContractError(BILLING_TRANSACTIONS_ENDPOINT, payload);
+  }
+
+  return payload.map((item) => {
+    if (!isRecord(item)) {
+      throw new ApiContractError(BILLING_TRANSACTIONS_ENDPOINT, payload);
+    }
+    const transactionId = readNumber(item.billing_transaction_id);
+    if (transactionId === undefined) {
+      throw new ApiContractError(BILLING_TRANSACTIONS_ENDPOINT, payload);
+    }
+
+    return {
+      billing_transaction_id: transactionId,
+      organization_id: readNumber(item.organization_id),
+      booking_date: readOptionalString(item.booking_date) ?? null,
+      value_date: readOptionalString(item.value_date) ?? null,
+      amount: readNumber(item.amount) ?? 0,
+      currency: readOptionalString(item.currency) ?? DEFAULT_CURRENCY,
+      direction: readOptionalString(item.direction) ?? null,
+      counterparty_name: readOptionalString(item.counterparty_name) ?? null,
+      title: readOptionalString(item.title) ?? null,
+      reference: readOptionalString(item.reference) ?? null,
+      matched_status: readOptionalString(item.matched_status) ?? null,
     };
   });
 }
@@ -1768,6 +1850,169 @@ export function buildBillingPeriodView(snapshot: BillingCenterSnapshot, selected
       {
         label: "Źródło",
         value: "Część wpłat może być widoczna przy płatniku, ale nie jest przypisana do konkretnego okresu. Ten widok pokazuje tylko wpłaty, które można bezpiecznie powiązać z naliczeniami; pełne przypisywanie wpłat do okresów będzie osobnym etapem.",
+      },
+    ],
+  };
+}
+
+function isIncomingBillingTransaction(transaction: BillingTransactionRecord): boolean {
+  const direction = String(transaction.direction || "").trim().toLowerCase();
+  return !direction || direction === "uznanie" || direction === "inflow" || direction === "credit";
+}
+
+function getMatchAmount(match: BillingPaymentMatchRecord, transaction?: BillingTransactionRecord): number {
+  return roundMoney(match.matched_amount ?? transaction?.amount ?? match.transaction_amount ?? 0);
+}
+
+function getTransactionAmount(transaction: BillingTransactionRecord): number {
+  return roundMoney(Math.max(transaction.amount ?? 0, 0));
+}
+
+function getPaymentDateLabel(match: BillingPaymentMatchRecord, transaction?: BillingTransactionRecord): string {
+  return formatDateLabel(match.transaction_booking_date ?? transaction?.booking_date ?? match.matched_at, "Brak daty");
+}
+
+function getPaymentDescriptionLabel(match: BillingPaymentMatchRecord, transaction?: BillingTransactionRecord): string {
+  return readString(match.transaction_title ?? transaction?.title ?? transaction?.reference, "Wpłata bez opisu");
+}
+
+function getChargeAssignmentLabel(charge?: BillingChargeRecord): string {
+  if (!charge) {
+    return "Naliczenie bez szczegółów";
+  }
+  const service = readString(charge.model_name, "Usługa bez nazwy");
+  const person = charge.billing_student_id ? readString(charge.student_full_name, "Osoba bez nazwy") : "Klient firmowy";
+  return `${service} · ${person}`;
+}
+
+export function buildBillingPaymentsAllocationView(snapshot: BillingCenterSnapshot): BillingPaymentsAllocationView {
+  const transactions = (snapshot.transactions ?? []).filter(isIncomingBillingTransaction);
+  const matches = snapshot.paymentMatches ?? [];
+  const payersById = new Map(snapshot.payers.map((payer) => [payer.billing_payer_id, payer]));
+  const chargesById = new Map(snapshot.charges.map((charge) => [charge.billing_charge_id, charge]));
+  const transactionsById = new Map(transactions.map((transaction) => [transaction.billing_transaction_id, transaction]));
+  const matchedAmountByTransaction = new Map<number, number>();
+
+  matches.forEach((match) => {
+    const transaction = transactionsById.get(match.billing_transaction_id);
+    const amount = getMatchAmount(match, transaction);
+    matchedAmountByTransaction.set(match.billing_transaction_id, roundMoney((matchedAmountByTransaction.get(match.billing_transaction_id) ?? 0) + amount));
+  });
+
+  const chargeAssignedRows: BillingPaymentAssignmentRow[] = matches
+    .filter((match) => match.billing_charge_id)
+    .map((match): BillingPaymentAssignmentRow => {
+      const transaction = transactionsById.get(match.billing_transaction_id);
+      const charge = match.billing_charge_id ? chargesById.get(match.billing_charge_id) : undefined;
+      const payer = payersById.get(match.billing_payer_id);
+      return {
+        id: `charge-match-${match.billing_payment_match_id}`,
+        dateLabel: getPaymentDateLabel(match, transaction),
+        amountLabel: formatMoney(getMatchAmount(match, transaction), transaction?.currency ?? DEFAULT_CURRENCY),
+        payerLabel: readString(match.payer_display_name ?? payer?.display_name, "Płatnik bez nazwy"),
+        payerHref: billingPayerDetailPath(match.billing_payer_id),
+        descriptionLabel: getPaymentDescriptionLabel(match, transaction),
+        assignmentLabel: getChargeAssignmentLabel(charge),
+        periodLabel: charge ? getChargePeriodLabel(charge) : "Okres z naliczenia",
+        periodHref: BILLING_PERIODS_ROUTE,
+        statusLabel: "Przypisana do naliczenia",
+        statusTone: "ok" as const,
+        contextLabel: "Ta wpłata ma relację z naliczeniem, więc można ją bezpiecznie pokazać w okresie.",
+      };
+    })
+    .sort((a, b) => b.dateLabel.localeCompare(a.dateLabel, "pl"));
+
+  const payerOnlyRows: BillingPaymentAssignmentRow[] = matches
+    .filter((match) => !match.billing_charge_id)
+    .map((match): BillingPaymentAssignmentRow => {
+      const transaction = transactionsById.get(match.billing_transaction_id);
+      const payer = payersById.get(match.billing_payer_id);
+      return {
+        id: `payer-match-${match.billing_payment_match_id}`,
+        dateLabel: getPaymentDateLabel(match, transaction),
+        amountLabel: formatMoney(getMatchAmount(match, transaction), transaction?.currency ?? DEFAULT_CURRENCY),
+        payerLabel: readString(match.payer_display_name ?? payer?.display_name, "Płatnik bez nazwy"),
+        payerHref: billingPayerDetailPath(match.billing_payer_id),
+        descriptionLabel: getPaymentDescriptionLabel(match, transaction),
+        assignmentLabel: "Przypisana tylko do płatnika",
+        periodLabel: "Nie przypisano do okresu",
+        statusLabel: "Do wyjaśnienia później",
+        statusTone: "warning" as const,
+        contextLabel: "Wpłata jest widoczna przy płatniku, ale nie jest jeszcze przypisana do konkretnego naliczenia.",
+      };
+    })
+    .sort((a, b) => b.dateLabel.localeCompare(a.dateLabel, "pl"));
+
+  const unexplainedRows: BillingPaymentAssignmentRow[] = transactions
+    .map((transaction): BillingPaymentAssignmentRow | null => {
+      const matchedAmount = matchedAmountByTransaction.get(transaction.billing_transaction_id) ?? 0;
+      const remainingAmount = roundMoney(getTransactionAmount(transaction) - matchedAmount);
+      if (remainingAmount <= 0.009) {
+        return null;
+      }
+      return {
+        id: `unexplained-${transaction.billing_transaction_id}`,
+        dateLabel: formatDateLabel(transaction.booking_date, "Brak daty"),
+        amountLabel: formatMoney(remainingAmount, transaction.currency ?? DEFAULT_CURRENCY),
+        payerLabel: "Nieustalony płatnik",
+        descriptionLabel: readString(transaction.title ?? transaction.reference, "Wpłata bez opisu"),
+        assignmentLabel: matchedAmount > 0 ? "Częściowo przypisana" : "Brak jasnego przypisania",
+        periodLabel: "Nie przypisano do okresu",
+        statusLabel: "Do wyjaśnienia",
+        statusTone: "warning" as const,
+        contextLabel:
+          matchedAmount > 0
+            ? "Część wpłaty ma przypisanie, ale pozostała kwota wymaga późniejszego wyjaśnienia."
+            : "Brak osobnego przypisania do płatnika albo naliczenia w obecnych danych.",
+      };
+    })
+    .filter((row): row is BillingPaymentAssignmentRow => row !== null)
+    .sort((a, b) => b.dateLabel.localeCompare(a.dateLabel, "pl"));
+
+  const totalVisibleAmount = roundMoney(transactions.reduce((sum, transaction) => sum + getTransactionAmount(transaction), 0));
+  const chargeAssignedAmount = roundMoney(
+    matches
+      .filter((match) => match.billing_charge_id)
+      .reduce((sum, match) => sum + getMatchAmount(match, transactionsById.get(match.billing_transaction_id)), 0),
+  );
+  const payerOnlyAmount = roundMoney(
+    matches
+      .filter((match) => !match.billing_charge_id)
+      .reduce((sum, match) => sum + getMatchAmount(match, transactionsById.get(match.billing_transaction_id)), 0),
+  );
+  const unexplainedAmount = roundMoney(
+    transactions.reduce((sum, transaction) => {
+      const matchedAmount = matchedAmountByTransaction.get(transaction.billing_transaction_id) ?? 0;
+      const remainingAmount = roundMoney(getTransactionAmount(transaction) - matchedAmount);
+      return remainingAmount > 0.009 ? sum + remainingAmount : sum;
+    }, 0),
+  );
+
+  return {
+    summary: {
+      totalVisibleAmountLabel: formatMoney(totalVisibleAmount, DEFAULT_CURRENCY),
+      paymentCountLabel: String(transactions.length),
+      chargeAssignedCountLabel: String(chargeAssignedRows.length),
+      payerOnlyCountLabel: String(payerOnlyRows.length),
+      unexplainedCountLabel: String(unexplainedRows.length),
+      chargeAssignedAmountLabel: formatMoney(chargeAssignedAmount, DEFAULT_CURRENCY),
+      needsExplanationAmountLabel: formatMoney(roundMoney(payerOnlyAmount + unexplainedAmount), DEFAULT_CURRENCY),
+    },
+    chargeAssignedRows,
+    payerOnlyRows,
+    unexplainedRows,
+    contextItems: [
+      {
+        label: "Co mówi widok",
+        value: "Pokazuje widoczne wpłaty i to, czy są przypisane do naliczenia, tylko do płatnika albo wymagają późniejszego wyjaśnienia.",
+      },
+      {
+        label: "Czego nie robi",
+        value: "Widok nie dodaje wpłat, nie importuje przelewów, nie zmienia przypisań i nie wykonuje księgowania.",
+      },
+      {
+        label: "Okresy",
+        value: "Wpłata trafia do okresu tylko wtedy, gdy ma bezpieczną relację z konkretnym naliczeniem. Pełne przypisywanie wpłat do naliczeń będzie osobnym etapem.",
       },
     ],
   };

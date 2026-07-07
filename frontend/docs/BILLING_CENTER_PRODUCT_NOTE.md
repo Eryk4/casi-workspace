@@ -49,6 +49,8 @@ Etap `Okres rozliczeniowy — read-only v1` dodaje trasę `/rozliczenia/okresy`.
 
 Widok okresu nie przypisuje globalnych wpłat płatnika do okresu, jeśli nie ma relacji z konkretnym naliczeniem. Dzięki temu ekran nie udaje nadpłaty ani rozliczenia okresu bez danych. Pełne przypisywanie wpłat do okresów wymaga osobnego modelu alokacji płatności.
 
+Etap `Wpłaty i przypisania — read-only foundation` dodaje trasę `/rozliczenia/wplaty`. Widok pokazuje istniejące wpłaty, ich obecne przypisanie do naliczenia, przypisanie tylko do płatnika albo brak jasnego przypisania. Nadal nie importuje przelewów, nie zmienia dopasowań, nie księguje i nie wykonuje operacji finansowych.
+
 Ekran nie wykonuje:
 
 - importu wyciągów,
@@ -103,6 +105,7 @@ Przyszły pełny moduł powinien uwzględnić:
 - pokazuje rodziny, uczniów, płatników i rodzeństwo tylko w trybie read-only,
 - pokazuje usługi i zapisy tylko jako read-only fundament wywnioskowany z obecnych danych,
 - pokazuje okresy rozliczeniowe tylko jako read-only widok wywnioskowany z obecnych naliczeń i dopasowanych wpłat,
+- pokazuje wpłaty i przypisania tylko jako read-only kontrolę istniejących danych,
 - wyjaśnia saldo tylko na podstawie obecnych danych read-only,
 - nie prowadzi pełnego modelu usług, zapisów, umów ani cenników,
 - nie prowadzi pełnego docelowego salda klienta, ucznia ani rodziny,

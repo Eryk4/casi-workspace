@@ -689,6 +689,10 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
                   <span>Okresy rozliczeniowe</span>
                   <CalendarDays aria-hidden="true" size={15} />
                 </Link>
+                <Link className="module-quick-action" href="/rozliczenia/wplaty">
+                  <span>Wpłaty i przypisania</span>
+                  <WalletCards aria-hidden="true" size={15} />
+                </Link>
                 <Link className="module-quick-action" href="/pulpit-dnia">
                   <span>Pulpit dnia</span>
                   <ArrowRight aria-hidden="true" size={15} />

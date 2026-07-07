@@ -48,9 +48,11 @@ const {
   BILLING_CHARGES_ENDPOINT,
   BILLING_PAYERS_ENDPOINT,
   BILLING_PAYMENT_MATCHES_ENDPOINT,
+  BILLING_PAYMENTS_ROUTE,
   BILLING_PERIODS_ROUTE,
   BILLING_READ_ONLY,
   BILLING_STUDENTS_ENDPOINT,
+  BILLING_TRANSACTIONS_ENDPOINT,
   billingBalanceTone,
   billingPayerDetailPath,
   billingScreenHasForbiddenTechnicalText,
@@ -64,6 +66,7 @@ const {
   buildBillingKpis,
   buildBillingMoneySummary,
   buildBillingPayerDetailView,
+  buildBillingPaymentsAllocationView,
   buildBillingPeriodView,
   buildBillingRecentPaymentRows,
   buildBillingRelatedWorkItemRows,
@@ -81,6 +84,7 @@ const {
   readBillingPaymentMatches,
   readBillingPayers,
   readBillingStudents,
+  readBillingTransactions,
 } = require("../src/modules/billing/billingModel.ts");
 
 function makeBalance(overrides = {}) {
@@ -179,6 +183,23 @@ function makePaymentMatch(overrides = {}) {
     transaction_amount: 228,
     transaction_title: "Czesne marzec",
     charge_total_amount: 228,
+    ...overrides,
+  };
+}
+
+function makeTransaction(overrides = {}) {
+  return {
+    billing_transaction_id: 61,
+    organization_id: 1,
+    booking_date: "2026-03-08",
+    value_date: "2026-03-08",
+    amount: 228,
+    currency: "PLN",
+    direction: "inflow",
+    counterparty_name: "Rodzina Kowalskich",
+    title: "Czesne marzec",
+    reference: "TRX-61",
+    matched_status: "matched",
     ...overrides,
   };
 }
@@ -290,6 +311,13 @@ const paymentMatches = readBillingPaymentMatches([
 assert.equal(paymentMatches.length, 2);
 assert.equal(paymentMatches[0].billing_charge_id, 31);
 assert.equal(paymentMatches[1].matched_amount, 171);
+const transactions = readBillingTransactions([
+  makeTransaction({ billing_transaction_id: 61, amount: 228 }),
+  makeTransaction({ billing_transaction_id: 62, amount: 171, title: "Czesne Maja marzec" }),
+]);
+assert.equal(transactions.length, 2);
+assert.equal(transactions[0].billing_transaction_id, 61);
+assert.equal(transactions[1].amount, 171);
 
 const rows = buildBillingBalanceRows(balances);
 assert.equal(rows[0].payerLabel, "Rodzina Kowalskich");
@@ -374,10 +402,17 @@ const snapshot = {
     makeCharge({ billing_charge_id: 34, billing_payer_id: 2, billing_student_id: null, student_full_name: null, payer_display_name: "Misja Robotyka", model_name: "Abonament CASI", period_label: "Marzec 2026", total_amount: 100 }),
   ]),
   paymentMatches: readBillingPaymentMatches([
-    makePaymentMatch({ billing_payment_match_id: 51, billing_payer_id: 1, billing_charge_id: 31, matched_amount: 228 }),
-    makePaymentMatch({ billing_payment_match_id: 52, billing_payer_id: 1, billing_charge_id: 32, matched_amount: 171 }),
-    makePaymentMatch({ billing_payment_match_id: 53, billing_payer_id: 2, billing_charge_id: 34, matched_amount: 140 }),
-    makePaymentMatch({ billing_payment_match_id: 54, billing_payer_id: 1, billing_charge_id: null, matched_amount: 999 }),
+    makePaymentMatch({ billing_payment_match_id: 51, billing_transaction_id: 61, billing_payer_id: 1, billing_charge_id: 31, matched_amount: 228 }),
+    makePaymentMatch({ billing_payment_match_id: 52, billing_transaction_id: 62, billing_payer_id: 1, billing_charge_id: 32, matched_amount: 171 }),
+    makePaymentMatch({ billing_payment_match_id: 53, billing_transaction_id: 63, billing_payer_id: 2, billing_charge_id: 34, matched_amount: 140 }),
+    makePaymentMatch({ billing_payment_match_id: 54, billing_transaction_id: 64, billing_payer_id: 1, billing_charge_id: null, matched_amount: 999 }),
+  ]),
+  transactions: readBillingTransactions([
+    makeTransaction({ billing_transaction_id: 61, amount: 228, title: "Czesne Lena marzec" }),
+    makeTransaction({ billing_transaction_id: 62, amount: 171, title: "Czesne Maja marzec" }),
+    makeTransaction({ billing_transaction_id: 63, amount: 140, counterparty_name: "Misja Robotyka", title: "Abonament CASI marzec" }),
+    makeTransaction({ billing_transaction_id: 64, amount: 999, title: "Wpłata ogólna Rodzina Kowalskich", matched_status: "payer_only" }),
+    makeTransaction({ billing_transaction_id: 65, amount: 77, title: "Przelew bez identyfikatora", matched_status: "unmatched" }),
   ]),
   invoices: readBillingInvoices([
     makeInvoice({ invoice_id: 18, contractor_id: 14, invoice_number: "FV/CASI/18", duplicate_type: "podejrzenie" }),
@@ -472,6 +507,33 @@ assert.match(periodContextText, /Część wpłat może być widoczna przy płatn
 assert.match(periodContextText, /pełne przypisywanie wpłat do okresów będzie osobnym etapem/i);
 assert.doesNotMatch(periodContextText, /endpoint|payload|debug|demo/i);
 
+const paymentsAllocationView = buildBillingPaymentsAllocationView(snapshot);
+assert.equal(paymentsAllocationView.summary.totalVisibleAmountLabel, "1615,00 PLN");
+assert.equal(paymentsAllocationView.summary.paymentCountLabel, "5");
+assert.equal(paymentsAllocationView.summary.chargeAssignedCountLabel, "3");
+assert.equal(paymentsAllocationView.summary.payerOnlyCountLabel, "1");
+assert.equal(paymentsAllocationView.summary.unexplainedCountLabel, "1");
+assert.equal(paymentsAllocationView.summary.chargeAssignedAmountLabel, "539,00 PLN");
+assert.equal(paymentsAllocationView.summary.needsExplanationAmountLabel, "1076,00 PLN");
+const paymentChargeRow = paymentsAllocationView.chargeAssignedRows.find((row) => row.payerLabel === "Rodzina Kowalskich");
+assert.ok(paymentChargeRow);
+assert.equal(paymentChargeRow.payerHref, "/rozliczenia/platnicy/1");
+assert.equal(paymentChargeRow.periodHref, "/rozliczenia/okresy");
+assert.match(paymentChargeRow.assignmentLabel, /Robotyka junior/);
+assert.match(paymentChargeRow.contextLabel, /bezpiecznie pokazać w okresie/);
+const payerOnlyPaymentRow = paymentsAllocationView.payerOnlyRows[0];
+assert.ok(payerOnlyPaymentRow);
+assert.equal(payerOnlyPaymentRow.periodLabel, "Nie przypisano do okresu");
+assert.match(payerOnlyPaymentRow.contextLabel, /nie jest jeszcze przypisana do konkretnego naliczenia/i);
+const unexplainedPaymentRow = paymentsAllocationView.unexplainedRows[0];
+assert.ok(unexplainedPaymentRow);
+assert.equal(unexplainedPaymentRow.payerLabel, "Nieustalony płatnik");
+assert.equal(unexplainedPaymentRow.statusLabel, "Do wyjaśnienia");
+const paymentsContextText = paymentsAllocationView.contextItems.map((item) => item.value).join(" ");
+assert.match(paymentsContextText, /nie dodaje wpłat/i);
+assert.match(paymentsContextText, /Wpłata trafia do okresu tylko wtedy/i);
+assert.doesNotMatch(paymentsContextText, /endpoint|payload|debug|demo/i);
+
 const relatedWorkItems = buildBillingRelatedWorkItemRows(snapshot.workItems, snapshot.invoices, snapshot.contractors);
 assert.equal(relatedWorkItems[0].href, "/work-items/44");
 assert.match(relatedWorkItems[0].reasonLabel, /rozliczenie faktury/);
@@ -513,10 +575,12 @@ assert.equal(BILLING_PAYMENT_MATCHES_ENDPOINT, "/billing/ledger/matches");
 assert.equal(BILLING_PAYERS_ENDPOINT, "/billing/payers");
 assert.equal(BILLING_STUDENTS_ENDPOINT, "/billing/students");
 assert.equal(BILLING_CHARGES_ENDPOINT, "/billing/charges");
+assert.equal(BILLING_TRANSACTIONS_ENDPOINT, "/billing/transactions");
 assert.equal(BILLING_CANONICAL_ROUTE, "/rozliczenia");
 assert.equal(BILLING_LEGACY_ROUTE, "/kasa");
 assert.equal(BILLING_PAYER_DETAIL_ROUTE, "/rozliczenia/platnicy");
 assert.equal(BILLING_PERIODS_ROUTE, "/rozliczenia/okresy");
+assert.equal(BILLING_PAYMENTS_ROUTE, "/rozliczenia/wplaty");
 assert.equal(BILLING_READ_ONLY, true);
 assert.deepEqual(BILLING_FORBIDDEN_WRITE_ACTIONS, [
   "Dodaj płatność",
@@ -526,7 +590,9 @@ assert.deepEqual(BILLING_FORBIDDEN_WRITE_ACTIONS, [
   "Dodaj zapis",
   "Edytuj usługę",
   "Edytuj zapis",
+  "Dodaj wpłatę",
   "Dopasuj wpłatę",
+  "Zmień przypisanie",
   "Importuj wyciąg",
   "Wygeneruj naliczenia",
   "Zaksięguj",
@@ -605,6 +671,40 @@ const screenStrings = [
         ...periodView.contextItems.flatMap((item) => [item.label, item.value]),
       ]
     : []),
+  ...paymentsAllocationView.chargeAssignedRows.flatMap((row) => [
+    row.dateLabel,
+    row.amountLabel,
+    row.payerLabel,
+    row.descriptionLabel,
+    row.assignmentLabel,
+    row.periodLabel,
+    row.statusLabel,
+    row.contextLabel,
+    row.payerHref,
+    row.periodHref,
+  ]),
+  ...paymentsAllocationView.payerOnlyRows.flatMap((row) => [
+    row.dateLabel,
+    row.amountLabel,
+    row.payerLabel,
+    row.descriptionLabel,
+    row.assignmentLabel,
+    row.periodLabel,
+    row.statusLabel,
+    row.contextLabel,
+    row.payerHref,
+  ]),
+  ...paymentsAllocationView.unexplainedRows.flatMap((row) => [
+    row.dateLabel,
+    row.amountLabel,
+    row.payerLabel,
+    row.descriptionLabel,
+    row.assignmentLabel,
+    row.periodLabel,
+    row.statusLabel,
+    row.contextLabel,
+  ]),
+  ...paymentsAllocationView.contextItems.flatMap((item) => [item.label, item.value]),
   ...(payerDetail
     ? [
         payerDetail.title,
@@ -632,6 +732,8 @@ assert.throws(() => readBillingStudents({ students: [] }), ApiContractError);
 assert.throws(() => readBillingStudents([{ full_name: "Brak płatnika" }]), ApiContractError);
 assert.throws(() => readBillingCharges({ charges: [] }), ApiContractError);
 assert.throws(() => readBillingCharges([{ period_label: "Brak płatnika" }]), ApiContractError);
+assert.throws(() => readBillingTransactions({ transactions: [] }), ApiContractError);
+assert.throws(() => readBillingTransactions([{ title: "Brak ID" }]), ApiContractError);
 assert.throws(() => readBillingInvoices({ invoices: [] }), ApiContractError);
 
 assert.equal(getBillingErrorState(new ApiError("Brak sesji", 401, {})).status, "unauthenticated");
@@ -674,6 +776,9 @@ async function main() {
       if (url.startsWith(`/api${BILLING_PAYMENT_MATCHES_ENDPOINT}`)) {
         return jsonResponse(200, [makePaymentMatch()]);
       }
+      if (url.startsWith(`/api${BILLING_TRANSACTIONS_ENDPOINT}`)) {
+        return jsonResponse(200, [makeTransaction()]);
+      }
       if (url.startsWith("/api/invoices")) {
         return jsonResponse(200, [makeInvoice()]);
       }
@@ -688,12 +793,13 @@ async function main() {
     async () => {
       const query = withActiveOrganizationQuery("42");
       const workItemsQuery = withActiveOrganizationQuery("42", { limit: 100, only_open: 1 });
-      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, matchesPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, matchesPayload, transactionsPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
         api.ledgerBalances(query),
         api.billingPayers(query),
         api.billingStudents(query),
         api.billingCharges(withActiveOrganizationQuery("42", { limit: 100 })),
         api.billingLedgerMatches(withActiveOrganizationQuery("42", { limit: 1000 })),
+        api.billingTransactions(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.invoices(query),
         api.contractors(query),
         api.workItems(workItemsQuery),
@@ -703,6 +809,7 @@ async function main() {
       assert.equal(readBillingStudents(studentsPayload).length, 1);
       assert.equal(readBillingCharges(chargesPayload).length, 1);
       assert.equal(readBillingPaymentMatches(matchesPayload).length, 1);
+      assert.equal(readBillingTransactions(transactionsPayload).length, 1);
       assert.equal(readBillingInvoices(invoicesPayload).length, 1);
       assert.equal(Array.isArray(contractorsPayload), true);
       assert.equal(Array.isArray(workItemsPayload), true);
@@ -712,6 +819,7 @@ async function main() {
   assert.ok(requestedUrls.every((url) => url.includes("organization_id=42")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/charges") && url.includes("limit=100")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/ledger/matches") && url.includes("limit=1000")));
+  assert.ok(requestedUrls.some((url) => url.includes("/api/billing/transactions") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/work-items") && url.includes("only_open=1") && url.includes("limit=100")));
 
   console.log("Billing regression tests passed.");

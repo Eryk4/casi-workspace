@@ -89,6 +89,24 @@ class DemoSeedTests(unittest.TestCase):
         transactions = self.billing_service.list_transactions(organization_id=robotyka_id, limit=100)
         self.assertGreaterEqual(len(transactions), 10)
         self.assertTrue(any(item["reference"] == "MR-DEMO-010" for item in transactions))
+        payment_matches = self.services["billing_ledger_service"].list_payment_matches(
+            organization_id=robotyka_id,
+            limit=1000,
+        )
+        self.assertTrue(any(item.get("billing_charge_id") for item in payment_matches))
+        self.assertTrue(any(not item.get("billing_charge_id") for item in payment_matches))
+        nowak_november_match = next(
+            item for item in payment_matches if item.get("transaction_reference") == "MR-DEMO-008"
+        )
+        self.assertIsNotNone(nowak_november_match.get("billing_charge_id"))
+        self.assertAlmostEqual(float(nowak_november_match.get("matched_amount") or 0), 228.0)
+        charges_by_id = {int(item["billing_charge_id"]): item for item in charges}
+        linked_charge = charges_by_id[int(nowak_november_match["billing_charge_id"])]
+        self.assertEqual(linked_charge["period_label"], "Listopad 2026")
+        self.assertEqual(
+            int(linked_charge["billing_payer_id"]),
+            int(nowak_november_match["billing_payer_id"]),
+        )
         balances = self.services["billing_ledger_service"].list_balances(organization_id=robotyka_id)
         balances_by_name = {item["display_name"]: item for item in balances}
         self.assertTrue(any(float(item.get("balance_due") or 0) < 0 for item in balances))
@@ -280,10 +298,13 @@ class DemoSeedTests(unittest.TestCase):
         first_casi_work_item_count = len(casi_work_items)
         first_robotyka_work_item_count = len(robotyka_work_items)
         first_payment_match_count = len(
-            self.services["billing_ledger_service"].list_payment_matches(
-                organization_id=robotyka_id,
-                limit=1000,
-            )
+            payment_matches
+        )
+        first_charge_linked_match_count = len(
+            [item for item in payment_matches if item.get("billing_charge_id")]
+        )
+        first_payer_only_match_count = len(
+            [item for item in payment_matches if not item.get("billing_charge_id")]
         )
         first_balances_by_name = {
             item["display_name"]: item
@@ -329,13 +350,20 @@ class DemoSeedTests(unittest.TestCase):
             first_robotyka_work_item_count,
         )
         self.assertEqual(
-            len(
-                self.services["billing_ledger_service"].list_payment_matches(
-                    organization_id=robotyka_id,
-                    limit=1000,
-                )
-            ),
+            len(self.services["billing_ledger_service"].list_payment_matches(organization_id=robotyka_id, limit=1000)),
             first_payment_match_count,
+        )
+        second_payment_matches = self.services["billing_ledger_service"].list_payment_matches(
+            organization_id=robotyka_id,
+            limit=1000,
+        )
+        self.assertEqual(
+            len([item for item in second_payment_matches if item.get("billing_charge_id")]),
+            first_charge_linked_match_count,
+        )
+        self.assertEqual(
+            len([item for item in second_payment_matches if not item.get("billing_charge_id")]),
+            first_payer_only_match_count,
         )
         second_balances_by_name = {
             item["display_name"]: item
