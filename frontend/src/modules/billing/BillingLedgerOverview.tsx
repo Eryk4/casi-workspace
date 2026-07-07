@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Building2, CreditCard, FileText, ListChecks, RefreshCw, UsersRound, WalletCards } from "lucide-react";
+import { ArrowRight, Building2, CalendarDays, CreditCard, FileText, ListChecks, RefreshCw, UsersRound, WalletCards } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -684,6 +684,10 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
                 <Link className="module-quick-action" href="/work-items">
                   <span>Sprawy</span>
                   <ListChecks aria-hidden="true" size={15} />
+                </Link>
+                <Link className="module-quick-action" href="/rozliczenia/okresy">
+                  <span>Okresy rozliczeniowe</span>
+                  <CalendarDays aria-hidden="true" size={15} />
                 </Link>
                 <Link className="module-quick-action" href="/pulpit-dnia">
                   <span>Pulpit dnia</span>

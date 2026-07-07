@@ -98,6 +98,20 @@ export type BillingChargeRecord = {
   payer_display_name?: string | null;
 };
 
+export type BillingPaymentMatchRecord = {
+  billing_payment_match_id: number;
+  billing_transaction_id: number;
+  billing_payer_id: number;
+  billing_charge_id?: number | null;
+  matched_amount?: number;
+  matched_at?: string | null;
+  payer_display_name?: string | null;
+  transaction_booking_date?: string | null;
+  transaction_amount?: number | null;
+  transaction_title?: string | null;
+  charge_total_amount?: number | null;
+};
+
 export type BillingBalanceViewRow = {
   id: string;
   payerLabel: string;
@@ -258,6 +272,73 @@ export type BillingServiceEnrollmentRow = {
   contextLabel: string;
 };
 
+export type BillingPeriodOptionRow = {
+  id: string;
+  label: string;
+  hintLabel: string;
+  chargedLabel: string;
+  paidLabel: string;
+  balanceLabel: string;
+  statusLabel: string;
+  statusTone: "ok" | "warning" | "danger" | "info" | "neutral";
+};
+
+export type BillingPeriodSummary = {
+  chargedLabel: string;
+  paidLabel: string;
+  balanceLabel: string;
+  payerCountLabel: string;
+  personCountLabel: string;
+  serviceCountLabel: string;
+  dueCountLabel: string;
+  overpaidCountLabel: string;
+  settledCountLabel: string;
+  sourceLabel: string;
+};
+
+export type BillingPeriodPayerRow = {
+  id: string;
+  href: string;
+  payerLabel: string;
+  peopleLabel: string;
+  servicesLabel: string;
+  chargedLabel: string;
+  paidLabel: string;
+  balanceLabel: string;
+  statusLabel: string;
+  statusTone: "ok" | "warning" | "danger" | "info" | "neutral";
+};
+
+export type BillingPeriodServiceRow = {
+  id: string;
+  serviceLabel: string;
+  serviceTypeLabel: string;
+  payerCountLabel: string;
+  personCountLabel: string;
+  chargedLabel: string;
+  sourceLabel: string;
+};
+
+export type BillingPeriodAttentionRow = {
+  id: string;
+  titleLabel: string;
+  reasonLabel: string;
+  tone: "ok" | "warning" | "danger" | "info" | "neutral";
+  href: string;
+};
+
+export type BillingPeriodView = {
+  selectedPeriodId: string;
+  selectedPeriodLabel: string;
+  selectedPeriodHint: string;
+  options: BillingPeriodOptionRow[];
+  summary: BillingPeriodSummary;
+  payerRows: BillingPeriodPayerRow[];
+  serviceRows: BillingPeriodServiceRow[];
+  attentionRows: BillingPeriodAttentionRow[];
+  contextItems: Array<{ label: string; value: string }>;
+};
+
 export type BillingPayerChargeRow = {
   id: string;
   periodLabel: string;
@@ -312,12 +393,14 @@ export type BillingCenterSnapshot = {
   payers: BillingPayerRecord[];
   students: BillingStudentRecord[];
   charges: BillingChargeRecord[];
+  paymentMatches?: BillingPaymentMatchRecord[];
   invoices: InvoiceRecord[];
   contractors: ContractorRecord[];
   workItems: WorkItemRecord[];
 };
 
 export const BILLING_BALANCES_ENDPOINT = "/billing/ledger/balances";
+export const BILLING_PAYMENT_MATCHES_ENDPOINT = "/billing/ledger/matches";
 export const BILLING_PAYERS_ENDPOINT = "/billing/payers";
 export const BILLING_STUDENTS_ENDPOINT = "/billing/students";
 export const BILLING_CHARGES_ENDPOINT = "/billing/charges";
@@ -325,6 +408,7 @@ export const BILLING_READ_ONLY = true;
 export const BILLING_CANONICAL_ROUTE = "/rozliczenia";
 export const BILLING_LEGACY_ROUTE = "/kasa";
 export const BILLING_PAYER_DETAIL_ROUTE = `${BILLING_CANONICAL_ROUTE}/platnicy`;
+export const BILLING_PERIODS_ROUTE = `${BILLING_CANONICAL_ROUTE}/okresy`;
 export const DEFAULT_CURRENCY = "PLN";
 export const BILLING_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć rozliczenia";
 export const BILLING_ORGANIZATION_REQUIRED_DESCRIPTION =
@@ -658,6 +742,39 @@ export function readBillingCharges(payload: unknown): BillingChargeRecord[] {
       model_name: readOptionalString(item.model_name) ?? null,
       student_full_name: readOptionalString(item.student_full_name) ?? null,
       payer_display_name: readOptionalString(item.payer_display_name) ?? null,
+    };
+  });
+}
+
+export function readBillingPaymentMatches(payload: unknown): BillingPaymentMatchRecord[] {
+  if (!Array.isArray(payload)) {
+    throw new ApiContractError(BILLING_PAYMENT_MATCHES_ENDPOINT, payload);
+  }
+
+  return payload.map((item) => {
+    if (!isRecord(item)) {
+      throw new ApiContractError(BILLING_PAYMENT_MATCHES_ENDPOINT, payload);
+    }
+
+    const matchId = readNumber(item.billing_payment_match_id);
+    const transactionId = readNumber(item.billing_transaction_id);
+    const payerId = readNumber(item.billing_payer_id);
+    if (!matchId || !transactionId || !payerId) {
+      throw new ApiContractError(BILLING_PAYMENT_MATCHES_ENDPOINT, payload);
+    }
+
+    return {
+      billing_payment_match_id: matchId,
+      billing_transaction_id: transactionId,
+      billing_payer_id: payerId,
+      billing_charge_id: readNumber(item.billing_charge_id) ?? null,
+      matched_amount: readNumber(item.matched_amount) ?? 0,
+      matched_at: readOptionalString(item.matched_at) ?? null,
+      payer_display_name: readOptionalString(item.payer_display_name) ?? null,
+      transaction_booking_date: readOptionalString(item.transaction_booking_date) ?? null,
+      transaction_amount: readNumber(item.transaction_amount) ?? null,
+      transaction_title: readOptionalString(item.transaction_title) ?? null,
+      charge_total_amount: readNumber(item.charge_total_amount) ?? null,
     };
   });
 }
@@ -1253,7 +1370,9 @@ function buildPayerServiceRows(charges: BillingChargeRecord[], students: Billing
         chargeCount: 0,
         isActive: student?.is_active !== false,
       };
-    current.people.add(readString(charge.student_full_name || student?.full_name, "Osoba bez nazwy"));
+    current.people.add(
+      charge.billing_student_id ? readString(charge.student_full_name || student?.full_name, "Osoba bez nazwy") : "Klient firmowy bez uczniów",
+    );
     current.periods.add(readString(charge.period_label, "Okres bez nazwy"));
     current.statuses.add(readString(charge.status, "status nieznany"));
     current.amount = roundMoney(current.amount + (charge.total_amount ?? 0));
@@ -1321,7 +1440,9 @@ export function buildBillingServiceEnrollmentRows(
         chargeCount: 0,
         isActive: payer?.is_active !== false && student?.is_active !== false,
       };
-    current.people.add(readString(charge.student_full_name || student?.full_name, "Osoba bez nazwy"));
+    current.people.add(
+      charge.billing_student_id ? readString(charge.student_full_name || student?.full_name, "Osoba bez nazwy") : "Klient firmowy bez uczniów",
+    );
     current.periods.add(readString(charge.period_label, "Okres bez nazwy"));
     current.statuses.add(readString(charge.status, "status nieznany"));
     current.amount = roundMoney(current.amount + (charge.total_amount ?? 0));
@@ -1376,6 +1497,280 @@ export function buildBillingServiceEnrollmentRows(
   return [...familyRows, ...companyRows]
     .sort((a, b) => a.payerLabel.localeCompare(b.payerLabel, "pl") || a.serviceLabel.localeCompare(b.serviceLabel, "pl"))
     .slice(0, limit);
+}
+
+type BillingPeriodPayerAggregate = {
+  payerId: number;
+  payerLabel: string;
+  people: Set<string>;
+  services: Set<string>;
+  charged: number;
+  paid: number;
+};
+
+type BillingPeriodServiceAggregate = {
+  serviceLabel: string;
+  serviceTypeLabel: string;
+  payers: Set<number>;
+  people: Set<string>;
+  charged: number;
+};
+
+type BillingPeriodAggregate = {
+  id: string;
+  label: string;
+  charges: BillingChargeRecord[];
+  charged: number;
+  paid: number;
+  payers: Map<number, BillingPeriodPayerAggregate>;
+  services: Map<string, BillingPeriodServiceAggregate>;
+};
+
+function billingPeriodStatus(balance: number): { label: string; tone: BillingPeriodOptionRow["statusTone"] } {
+  if (balance > 0) {
+    return { label: "Do dopłaty", tone: "warning" };
+  }
+  if (balance < 0) {
+    return { label: "Nadpłata", tone: "info" };
+  }
+  return { label: "Rozliczone", tone: "ok" };
+}
+
+function billingPeriodSortKey(label: string): string {
+  const normalized = normalizeText(label);
+  const monthOrder = [
+    "styczen",
+    "luty",
+    "marzec",
+    "kwiecien",
+    "maj",
+    "czerwiec",
+    "lipiec",
+    "sierpien",
+    "wrzesien",
+    "pazdziernik",
+    "listopad",
+    "grudzien",
+  ];
+  const monthIndex = monthOrder.findIndex((month) => normalized.includes(month));
+  const yearMatch = normalized.match(/20\d{2}/);
+  const year = yearMatch ? yearMatch[0] : "9999";
+  if (monthIndex >= 0) {
+    return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${label}`;
+  }
+  if (normalized.includes("zimowy")) {
+    return `${year}-01-${label}`;
+  }
+  if (normalized.includes("letni")) {
+    return `${year}-06-${label}`;
+  }
+  return `${year}-99-${label}`;
+}
+
+function getChargePeriodLabel(charge: BillingChargeRecord): string {
+  return readString(charge.period_label, "Okres wywnioskowany z naliczeń");
+}
+
+function getPeriodPaymentMap(matches: BillingPaymentMatchRecord[]): Map<number, number> {
+  const values = new Map<number, number>();
+  matches.forEach((match) => {
+    if (!match.billing_charge_id) {
+      return;
+    }
+    values.set(match.billing_charge_id, roundMoney((values.get(match.billing_charge_id) ?? 0) + (match.matched_amount ?? 0)));
+  });
+  return values;
+}
+
+function buildBillingPeriodAggregates(snapshot: BillingCenterSnapshot): BillingPeriodAggregate[] {
+  const payersById = new Map(snapshot.payers.map((payer) => [payer.billing_payer_id, payer]));
+  const studentsById = new Map(snapshot.students.map((student) => [student.billing_student_id, student]));
+  const paidByChargeId = getPeriodPaymentMap(snapshot.paymentMatches ?? []);
+  const periods = new Map<string, BillingPeriodAggregate>();
+
+  snapshot.charges.forEach((charge) => {
+    const label = getChargePeriodLabel(charge);
+    const period =
+      periods.get(label) ??
+      {
+        id: `period-${normalizeText(label).replace(/[^a-z0-9]+/g, "-") || "unknown"}`,
+        label,
+        charges: [],
+        charged: 0,
+        paid: 0,
+        payers: new Map<number, BillingPeriodPayerAggregate>(),
+        services: new Map<string, BillingPeriodServiceAggregate>(),
+      };
+    const charged = charge.total_amount ?? 0;
+    const paid = paidByChargeId.get(charge.billing_charge_id) ?? 0;
+    const payer = payersById.get(charge.billing_payer_id);
+    const student = charge.billing_student_id ? studentsById.get(charge.billing_student_id) : undefined;
+    const payerLabel = payer ? getPayerLabel(payer) : readString(charge.payer_display_name, `Płatnik #${charge.billing_payer_id}`);
+    const personLabel = charge.billing_student_id
+      ? readString(charge.student_full_name || student?.full_name, "Osoba bez nazwy")
+      : "Klient firmowy bez uczniów";
+    const serviceLabel = readString(charge.model_name || student?.model_name, "Usługa bez nazwy");
+    const payerAggregate =
+      period.payers.get(charge.billing_payer_id) ??
+      {
+        payerId: charge.billing_payer_id,
+        payerLabel,
+        people: new Set<string>(),
+        services: new Set<string>(),
+        charged: 0,
+        paid: 0,
+      };
+    const serviceAggregate =
+      period.services.get(serviceLabel) ??
+      {
+        serviceLabel,
+        serviceTypeLabel: inferServiceTypeLabel([serviceLabel, label, student?.group_name, student?.model_settlement_mode]),
+        payers: new Set<number>(),
+        people: new Set<string>(),
+        charged: 0,
+      };
+
+    period.charges.push(charge);
+    period.charged = roundMoney(period.charged + charged);
+    period.paid = roundMoney(period.paid + paid);
+    payerAggregate.people.add(personLabel);
+    payerAggregate.services.add(serviceLabel);
+    payerAggregate.charged = roundMoney(payerAggregate.charged + charged);
+    payerAggregate.paid = roundMoney(payerAggregate.paid + paid);
+    serviceAggregate.payers.add(charge.billing_payer_id);
+    serviceAggregate.people.add(personLabel);
+    serviceAggregate.charged = roundMoney(serviceAggregate.charged + charged);
+    period.payers.set(charge.billing_payer_id, payerAggregate);
+    period.services.set(serviceLabel, serviceAggregate);
+    periods.set(label, period);
+  });
+
+  return Array.from(periods.values()).sort((a, b) => billingPeriodSortKey(a.label).localeCompare(billingPeriodSortKey(b.label), "pl"));
+}
+
+export function buildBillingPeriodView(snapshot: BillingCenterSnapshot, selectedPeriodId?: string | null): BillingPeriodView | null {
+  const periods = buildBillingPeriodAggregates(snapshot);
+  if (!periods.length) {
+    return null;
+  }
+
+  const selectedPeriod = periods.find((period) => period.id === selectedPeriodId) ?? periods[0];
+  const periodBalance = roundMoney(selectedPeriod.charged - selectedPeriod.paid);
+  const payerRows = Array.from(selectedPeriod.payers.values())
+    .map((payer) => {
+      const balance = roundMoney(payer.charged - payer.paid);
+      const status = billingPeriodStatus(balance);
+      return {
+        id: String(payer.payerId),
+        href: billingPayerDetailPath(payer.payerId),
+        payerLabel: payer.payerLabel,
+        peopleLabel: summarizePeople(payer.people),
+        servicesLabel: summarizePeriods(payer.services),
+        chargedLabel: formatMoney(payer.charged, DEFAULT_CURRENCY),
+        paidLabel: formatMoney(payer.paid, DEFAULT_CURRENCY),
+        balanceLabel: formatMoney(balance, DEFAULT_CURRENCY),
+        statusLabel: status.label,
+        statusTone: status.tone,
+      };
+    })
+    .sort((a, b) => {
+      const aWeight = a.statusLabel === "Do dopłaty" ? 0 : a.statusLabel === "Nadpłata" ? 1 : 2;
+      const bWeight = b.statusLabel === "Do dopłaty" ? 0 : b.statusLabel === "Nadpłata" ? 1 : 2;
+      if (aWeight !== bWeight) {
+        return aWeight - bWeight;
+      }
+      return a.payerLabel.localeCompare(b.payerLabel, "pl");
+    });
+  const serviceRows = Array.from(selectedPeriod.services.values())
+    .map((service) => ({
+      id: service.serviceLabel,
+      serviceLabel: service.serviceLabel,
+      serviceTypeLabel: service.serviceTypeLabel,
+      payerCountLabel: `${service.payers.size}`,
+      personCountLabel: `${service.people.size}`,
+      chargedLabel: formatMoney(service.charged, DEFAULT_CURRENCY),
+      sourceLabel: "Wywnioskowane z naliczeń tego okresu",
+    }))
+    .sort((a, b) => b.chargedLabel.localeCompare(a.chargedLabel, "pl"));
+  const status = billingPeriodStatus(periodBalance);
+  const dueRows = payerRows.filter((row) => row.statusLabel === "Do dopłaty");
+  const overpaidRows = payerRows.filter((row) => row.statusLabel === "Nadpłata");
+  const settledRows = payerRows.filter((row) => row.statusLabel === "Rozliczone");
+  const attentionRows: BillingPeriodAttentionRow[] = [
+    ...dueRows.slice(0, 3).map((row) => ({
+      id: `due-${row.id}`,
+      titleLabel: row.payerLabel,
+      reasonLabel: `Do dopłaty w tym okresie: ${row.balanceLabel}.`,
+      tone: "warning" as const,
+      href: row.href,
+    })),
+    ...payerRows
+      .filter((row) => row.paidLabel === formatMoney(0, DEFAULT_CURRENCY) && row.statusLabel === "Do dopłaty")
+      .slice(0, 2)
+      .map((row) => ({
+        id: `no-payment-${row.id}`,
+        titleLabel: row.payerLabel,
+        reasonLabel: "Brak widocznej wpłaty dopasowanej do naliczeń tego okresu.",
+        tone: "danger" as const,
+        href: row.href,
+      })),
+    ...overpaidRows.slice(0, 2).map((row) => ({
+      id: `overpaid-${row.id}`,
+      titleLabel: row.payerLabel,
+      reasonLabel: `Nadpłata w tym okresie: ${row.balanceLabel.replace("-", "")}.`,
+      tone: "info" as const,
+      href: row.href,
+    })),
+  ].slice(0, 6);
+
+  return {
+    selectedPeriodId: selectedPeriod.id,
+    selectedPeriodLabel: selectedPeriod.label,
+    selectedPeriodHint: "Okres wywnioskowany z etykiet naliczeń. Ten widok pokazuje tylko wpłaty, które można bezpiecznie powiązać z naliczeniami tego okresu.",
+    options: periods.map((period) => {
+      const balance = roundMoney(period.charged - period.paid);
+      const optionStatus = billingPeriodStatus(balance);
+      return {
+        id: period.id,
+        label: period.label,
+        hintLabel: "Wywnioskowany z naliczeń",
+        chargedLabel: formatMoney(period.charged, DEFAULT_CURRENCY),
+        paidLabel: formatMoney(period.paid, DEFAULT_CURRENCY),
+        balanceLabel: formatMoney(balance, DEFAULT_CURRENCY),
+        statusLabel: optionStatus.label,
+        statusTone: optionStatus.tone,
+      };
+    }),
+    summary: {
+      chargedLabel: formatMoney(selectedPeriod.charged, DEFAULT_CURRENCY),
+      paidLabel: formatMoney(selectedPeriod.paid, DEFAULT_CURRENCY),
+      balanceLabel: formatMoney(periodBalance, DEFAULT_CURRENCY),
+      payerCountLabel: String(selectedPeriod.payers.size),
+      personCountLabel: String(new Set(selectedPeriod.charges.map((charge) => charge.billing_student_id).filter(Boolean)).size),
+      serviceCountLabel: String(selectedPeriod.services.size),
+      dueCountLabel: String(dueRows.length),
+      overpaidCountLabel: String(overpaidRows.length),
+      settledCountLabel: String(settledRows.length),
+      sourceLabel: `${status.label}. Kwoty są liczone z naliczeń i dopasowanych wpłat widocznych w obecnych danych.`,
+    },
+    payerRows,
+    serviceRows,
+    attentionRows,
+    contextItems: [
+      {
+        label: "Co mówi widok",
+        value: "Pokazuje, jak wygląda rozliczenie jednego okresu: komu naliczono, kto zapłacił i gdzie zostaje różnica.",
+      },
+      {
+        label: "Czego nie robi",
+        value: "Widok nie nalicza opłat, nie zamyka okresu, nie importuje płatności i nie wykonuje księgowania.",
+      },
+      {
+        label: "Źródło",
+        value: "Część wpłat może być widoczna przy płatniku, ale nie jest przypisana do konkretnego okresu. Ten widok pokazuje tylko wpłaty, które można bezpiecznie powiązać z naliczeniami; pełne przypisywanie wpłat do okresów będzie osobnym etapem.",
+      },
+    ],
+  };
 }
 
 function buildPayerChargeRows(charges: BillingChargeRecord[]): BillingPayerChargeRow[] {

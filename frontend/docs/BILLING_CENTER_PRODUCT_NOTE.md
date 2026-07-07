@@ -45,6 +45,10 @@ Etap `Szczegół płatnika — read-only v1` dodaje trasę `/rozliczenia/platnic
 
 Etap `Usługi i zapisy — read-only foundation` dodaje sekcję `Usługi i zapisy`. Usługi są widoczne przez naliczenia, modele rozliczeń i faktury, bez pełnego modelu kontraktów, zapisów ani cenników. Ekran pokazuje nazwę usługi, typ, płatnika, osobę objętą rozliczeniem, okres, status i źródło danych. Część danych jest wywnioskowana z naliczeń, co jest jawnie oznaczone w UI.
 
+Etap `Okres rozliczeniowy — read-only v1` dodaje trasę `/rozliczenia/okresy`. Widok odpowiada na pytanie, jak wygląda rozliczenie za konkretny okres: którzy płatnicy mają dopłatę, nadpłatę albo rozliczony okres, jakie usługi zostały naliczone i które pozycje wymagają uwagi. Okresy są wywnioskowane z obecnych naliczeń i dopasowanych wpłat, bez dodawania pełnego obiektu okresu rozliczeniowego.
+
+Widok okresu nie przypisuje globalnych wpłat płatnika do okresu, jeśli nie ma relacji z konkretnym naliczeniem. Dzięki temu ekran nie udaje nadpłaty ani rozliczenia okresu bez danych. Pełne przypisywanie wpłat do okresów wymaga osobnego modelu alokacji płatności.
+
 Ekran nie wykonuje:
 
 - importu wyciągów,
@@ -60,6 +64,8 @@ Ekran nie wykonuje:
 - Salda płatników pochodzą z istniejącego ledgeru i nie zastępują pełnej księgowości.
 - Rodziny i uczniowie są pokazani przez kompatybilny model nad istniejącymi tabelami, bez nowych tras szczegółu i bez edycji relacji.
 - Usługi i zapisy są w tej wersji odczytywane z istniejących modeli, naliczeń i faktur. To nie jest jeszcze pełny model umów, zapisów, cenników ani zmian statusów.
+- Okresy rozliczeniowe są w tej wersji wywnioskowane z `period_label` w naliczeniach. To nie jest jeszcze pełny model zamykania okresu, przenoszenia nadpłat ani rozliczeń międzyokresowych.
+- Wpłaty bez relacji z konkretnym naliczeniem pozostają informacją przy płatniku, ale nie są zaliczane jako wpłata danego okresu.
 - Wyjaśnienie salda korzysta z istniejących naliczeń i sald. Jeśli brakuje szczegółowych naliczeń, ekran pokazuje bezpieczny empty state zamiast udawać pełną dokładność księgową.
 - Powiązania faktur, kontrahentów i spraw są budowane deterministycznie z dostępnych danych. Nie używają AI ani ukrytej automatyzacji.
 - Historia pokazuje tylko bezpieczne, wysokopoziomowe informacje o ostatnich wpłatach. Nie pokazuje technicznych szczegółów bankowych, storage keys ani payloadów.
@@ -96,6 +102,7 @@ Przyszły pełny moduł powinien uwzględnić:
 - nie nalicza opłat uczniom,
 - pokazuje rodziny, uczniów, płatników i rodzeństwo tylko w trybie read-only,
 - pokazuje usługi i zapisy tylko jako read-only fundament wywnioskowany z obecnych danych,
+- pokazuje okresy rozliczeniowe tylko jako read-only widok wywnioskowany z obecnych naliczeń i dopasowanych wpłat,
 - wyjaśnia saldo tylko na podstawie obecnych danych read-only,
 - nie prowadzi pełnego modelu usług, zapisów, umów ani cenników,
 - nie prowadzi pełnego docelowego salda klienta, ucznia ani rodziny,
@@ -105,6 +112,7 @@ Przyszły pełny moduł powinien uwzględnić:
 - nie dodaje ręcznych płatności,
 - nie obsługuje płatności częściowych jako workflow,
 - nie przenosi nadpłat między okresami,
+- nie zamyka okresów rozliczeniowych,
 - nie wysyła przypomnień,
 - nie zastępuje księgowości,
 - nie wykonuje operacji finansowych ani eksportów.

@@ -687,6 +687,30 @@ Scope:
 - company client service context without students,
 - no new service or enrollment routes.
 
+### Stage 2c: Billing period read-only view
+
+Status: implemented as a read-only period view under `/rozliczenia/okresy`.
+
+The implemented stage reuses current `billing_charges.period_label` and `billing_payment_matches` linked to charges. It shows available periods, selected period summary, payer rows, people covered by each payer, services in the period, visible matched payments, amount due, overpayment, settled rows, and attention items.
+
+No tables, migrations, backend endpoints, write actions, payment imports, payment matching workflow, charge generation, reminders, exports, or period closing were added for this stage.
+
+Important limitation: this is not the target `billing_period` domain object. Current data can explain visible settlements for a period, but it does not yet store formal period lifecycle, opening/closing state, carry-forward rules, accounting locks, or full allocation history.
+
+Payment limitation: the read-only period view only counts payments when the payment match points to a concrete charge. Matches visible at payer level but not linked to a charge are intentionally not assigned to a period. A missing overpayment or settled row in the period view does not prove that the payer has no payments globally. Full period settlement needs a later `payment_allocation` model or an equivalent charge/payment allocation contract.
+
+Goal: answer "what happened in this billing period?" before adding payment and allocation workflows.
+
+Scope:
+
+- read-only period list inferred from existing charges,
+- read-only selected period summary,
+- payer rows with charge/payment/balance explanation,
+- service rows for the selected period,
+- attention items for due and overpaid payers,
+- no inferred period payment from payer-level matches without charge relation,
+- no period write actions or closing workflow.
+
 ### Stage 3: Manual payments and allocations
 
 Goal: safely add the first payment write path.

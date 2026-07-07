@@ -47,6 +47,8 @@ const {
   BILLING_PAYER_DETAIL_ROUTE,
   BILLING_CHARGES_ENDPOINT,
   BILLING_PAYERS_ENDPOINT,
+  BILLING_PAYMENT_MATCHES_ENDPOINT,
+  BILLING_PERIODS_ROUTE,
   BILLING_READ_ONLY,
   BILLING_STUDENTS_ENDPOINT,
   billingBalanceTone,
@@ -62,6 +64,7 @@ const {
   buildBillingKpis,
   buildBillingMoneySummary,
   buildBillingPayerDetailView,
+  buildBillingPeriodView,
   buildBillingRecentPaymentRows,
   buildBillingRelatedWorkItemRows,
   buildBillingServiceEnrollmentRows,
@@ -75,6 +78,7 @@ const {
   readBillingBalances,
   readBillingCharges,
   readBillingInvoices,
+  readBillingPaymentMatches,
   readBillingPayers,
   readBillingStudents,
 } = require("../src/modules/billing/billingModel.ts");
@@ -158,6 +162,23 @@ function makeCharge(overrides = {}) {
     model_name: "Robotyka junior",
     student_full_name: "Lena Kowalska",
     payer_display_name: "Rodzina Kowalskich",
+    ...overrides,
+  };
+}
+
+function makePaymentMatch(overrides = {}) {
+  return {
+    billing_payment_match_id: 51,
+    billing_transaction_id: 61,
+    billing_payer_id: 14,
+    billing_charge_id: 31,
+    matched_amount: 228,
+    matched_at: "2026-03-08T10:00:00",
+    payer_display_name: "Rodzina Kowalskich",
+    transaction_booking_date: "2026-03-08",
+    transaction_amount: 228,
+    transaction_title: "Czesne marzec",
+    charge_total_amount: 228,
     ...overrides,
   };
 }
@@ -262,6 +283,13 @@ const charges = readBillingCharges([
 assert.equal(charges.length, 2);
 assert.equal(charges[0].billing_payer_id, 14);
 assert.equal(charges[1].total_amount, 228);
+const paymentMatches = readBillingPaymentMatches([
+  makePaymentMatch({ billing_payment_match_id: 51, billing_charge_id: 31, matched_amount: 228 }),
+  makePaymentMatch({ billing_payment_match_id: 52, billing_charge_id: 32, matched_amount: 171 }),
+]);
+assert.equal(paymentMatches.length, 2);
+assert.equal(paymentMatches[0].billing_charge_id, 31);
+assert.equal(paymentMatches[1].matched_amount, 171);
 
 const rows = buildBillingBalanceRows(balances);
 assert.equal(rows[0].payerLabel, "Rodzina Kowalskich");
@@ -340,8 +368,16 @@ const snapshot = {
     makeStudent({ billing_student_id: 22, billing_payer_id: 1, full_name: "Maja Kowalska", family_billing_order: 2 }),
   ]),
   charges: readBillingCharges([
-    makeCharge({ billing_charge_id: 31, billing_payer_id: 1, billing_student_id: 21, student_full_name: "Lena Kowalska" }),
-    makeCharge({ billing_charge_id: 32, billing_payer_id: 1, billing_student_id: 22, student_full_name: "Maja Kowalska" }),
+    makeCharge({ billing_charge_id: 31, billing_payer_id: 1, billing_student_id: 21, student_full_name: "Lena Kowalska", period_label: "Marzec 2026", total_amount: 228 }),
+    makeCharge({ billing_charge_id: 32, billing_payer_id: 1, billing_student_id: 22, student_full_name: "Maja Kowalska", period_label: "Marzec 2026", total_amount: 228 }),
+    makeCharge({ billing_charge_id: 33, billing_payer_id: 1, billing_student_id: 21, student_full_name: "Lena Kowalska", period_label: "Kwiecień 2026", total_amount: 228 }),
+    makeCharge({ billing_charge_id: 34, billing_payer_id: 2, billing_student_id: null, student_full_name: null, payer_display_name: "Misja Robotyka", model_name: "Abonament CASI", period_label: "Marzec 2026", total_amount: 100 }),
+  ]),
+  paymentMatches: readBillingPaymentMatches([
+    makePaymentMatch({ billing_payment_match_id: 51, billing_payer_id: 1, billing_charge_id: 31, matched_amount: 228 }),
+    makePaymentMatch({ billing_payment_match_id: 52, billing_payer_id: 1, billing_charge_id: 32, matched_amount: 171 }),
+    makePaymentMatch({ billing_payment_match_id: 53, billing_payer_id: 2, billing_charge_id: 34, matched_amount: 140 }),
+    makePaymentMatch({ billing_payment_match_id: 54, billing_payer_id: 1, billing_charge_id: null, matched_amount: 999 }),
   ]),
   invoices: readBillingInvoices([
     makeInvoice({ invoice_id: 18, contractor_id: 14, invoice_number: "FV/CASI/18", duplicate_type: "podejrzenie" }),
@@ -393,14 +429,48 @@ assert.equal(familyServiceRow.serviceTypeLabel, "zajęcia cykliczne");
 assert.match(familyServiceRow.personLabel, /Lena Kowalska/);
 assert.match(familyServiceRow.personLabel, /Maja Kowalska/);
 assert.equal(familyServiceRow.statusLabel, "Aktywny zapis");
-assert.equal(familyServiceRow.chargeCountLabel, "2 naliczeń");
+assert.equal(familyServiceRow.chargeCountLabel, "3 naliczeń");
 assert.match(familyServiceRow.sourceLabel, /Wywnioskowane z naliczeń/);
 assert.doesNotMatch(familyServiceRow.contextLabel, /pełny model zapisów|endpoint|payload|debug|demo/i);
-const companyServiceRow = serviceEnrollmentRows.find((row) => row.payerLabel === "Misja Robotyka");
+const companyServiceRow = serviceEnrollmentRows.find((row) => row.payerLabel === "Misja Robotyka" && /faktur/.test(row.sourceLabel));
 assert.ok(companyServiceRow);
 assert.equal(companyServiceRow.serviceTypeLabel, "usługa firmowa");
 assert.equal(companyServiceRow.personLabel, "Klient firmowy bez uczniów");
 assert.match(companyServiceRow.sourceLabel, /Wywnioskowane z faktur/);
+
+const periodView = buildBillingPeriodView(snapshot, null);
+assert.ok(periodView);
+assert.equal(periodView.selectedPeriodLabel, "Marzec 2026");
+assert.match(periodView.selectedPeriodHint, /wywnioskowany/i);
+assert.match(periodView.selectedPeriodHint, /bezpiecznie powiązać z naliczeniami/i);
+assert.equal(periodView.summary.chargedLabel, "556,00 PLN");
+assert.equal(periodView.summary.paidLabel, "539,00 PLN");
+assert.equal(periodView.summary.balanceLabel, "17,00 PLN");
+assert.equal(periodView.summary.payerCountLabel, "2");
+assert.equal(periodView.summary.personCountLabel, "2");
+assert.equal(periodView.summary.serviceCountLabel, "2");
+assert.equal(periodView.summary.dueCountLabel, "1");
+assert.equal(periodView.summary.overpaidCountLabel, "1");
+assert.equal(periodView.options.some((row) => row.label === "Kwiecień 2026"), true);
+const periodFamilyRow = periodView.payerRows.find((row) => row.payerLabel === "Rodzina Kowalskich");
+assert.ok(periodFamilyRow);
+assert.equal(periodFamilyRow.href, "/rozliczenia/platnicy/1");
+assert.match(periodFamilyRow.peopleLabel, /Lena Kowalska/);
+assert.match(periodFamilyRow.peopleLabel, /Maja Kowalska/);
+assert.equal(periodFamilyRow.statusLabel, "Do dopłaty");
+assert.equal(periodFamilyRow.paidLabel, "399,00 PLN");
+assert.equal(periodFamilyRow.balanceLabel, "57,00 PLN");
+const periodCompanyRow = periodView.payerRows.find((row) => row.payerLabel === "Misja Robotyka");
+assert.ok(periodCompanyRow);
+assert.equal(periodCompanyRow.peopleLabel, "Klient firmowy bez uczniów");
+assert.equal(periodCompanyRow.statusLabel, "Nadpłata");
+assert.equal(periodCompanyRow.balanceLabel, "-40,00 PLN");
+assert.equal(periodView.serviceRows.some((row) => row.serviceLabel === "Robotyka junior" && row.sourceLabel.includes("Wywnioskowane")), true);
+assert.ok(periodView.attentionRows.some((row) => row.href === "/rozliczenia/platnicy/1" && /Do dopłaty/.test(row.reasonLabel)));
+const periodContextText = periodView.contextItems.map((item) => item.value).join(" ");
+assert.match(periodContextText, /Część wpłat może być widoczna przy płatniku/i);
+assert.match(periodContextText, /pełne przypisywanie wpłat do okresów będzie osobnym etapem/i);
+assert.doesNotMatch(periodContextText, /endpoint|payload|debug|demo/i);
 
 const relatedWorkItems = buildBillingRelatedWorkItemRows(snapshot.workItems, snapshot.invoices, snapshot.contractors);
 assert.equal(relatedWorkItems[0].href, "/work-items/44");
@@ -422,9 +492,9 @@ assert.equal(payerDetail.serviceRows[0].serviceTypeLabel, "zajęcia cykliczne");
 assert.match(payerDetail.serviceRows[0].peopleLabel, /Lena Kowalska/);
 assert.match(payerDetail.serviceRows[0].peopleLabel, /Maja Kowalska/);
 assert.equal(payerDetail.serviceRows[0].statusLabel, "Aktywny zapis");
-assert.equal(payerDetail.serviceRows[0].chargeCountLabel, "2 naliczeń");
+assert.equal(payerDetail.serviceRows[0].chargeCountLabel, "3 naliczeń");
 assert.match(payerDetail.serviceRows[0].sourceLabel, /Wywnioskowane z naliczeń/);
-assert.equal(payerDetail.chargeRows.length, 2);
+assert.equal(payerDetail.chargeRows.length, 3);
 assert.equal(payerDetail.paymentRows[0].amountLabel, "300,00 PLN");
 assert.equal(payerDetail.invoiceRows[0].href, "/faktury/18");
 assert.equal(payerDetail.workItemRows[0].href, "/work-items/44");
@@ -439,12 +509,14 @@ assert.equal(isBillingCenterEmpty("ready", { balances: [], payers: [], students:
 assert.equal(hasBillingData("loading", balances), false);
 
 assert.equal(BILLING_BALANCES_ENDPOINT, "/billing/ledger/balances");
+assert.equal(BILLING_PAYMENT_MATCHES_ENDPOINT, "/billing/ledger/matches");
 assert.equal(BILLING_PAYERS_ENDPOINT, "/billing/payers");
 assert.equal(BILLING_STUDENTS_ENDPOINT, "/billing/students");
 assert.equal(BILLING_CHARGES_ENDPOINT, "/billing/charges");
 assert.equal(BILLING_CANONICAL_ROUTE, "/rozliczenia");
 assert.equal(BILLING_LEGACY_ROUTE, "/kasa");
 assert.equal(BILLING_PAYER_DETAIL_ROUTE, "/rozliczenia/platnicy");
+assert.equal(BILLING_PERIODS_ROUTE, "/rozliczenia/okresy");
 assert.equal(BILLING_READ_ONLY, true);
 assert.deepEqual(BILLING_FORBIDDEN_WRITE_ACTIONS, [
   "Dodaj płatność",
@@ -521,6 +593,18 @@ const screenStrings = [
   ...invoiceRows.flatMap((row) => [row.invoiceLabel, row.contractorLabel, row.reasonLabel, row.href]),
   ...contractorRows.flatMap((row) => [row.contractorLabel, row.contactLabel, row.balanceLabel, row.href]),
   ...relatedWorkItems.flatMap((row) => [row.titleLabel, row.reasonLabel, row.href]),
+  ...(periodView
+    ? [
+        periodView.selectedPeriodLabel,
+        periodView.selectedPeriodHint,
+        periodView.summary.sourceLabel,
+        ...periodView.options.flatMap((row) => [row.label, row.hintLabel, row.statusLabel]),
+        ...periodView.payerRows.flatMap((row) => [row.payerLabel, row.peopleLabel, row.servicesLabel, row.statusLabel, row.href]),
+        ...periodView.serviceRows.flatMap((row) => [row.serviceLabel, row.serviceTypeLabel, row.sourceLabel]),
+        ...periodView.attentionRows.flatMap((row) => [row.titleLabel, row.reasonLabel, row.href]),
+        ...periodView.contextItems.flatMap((item) => [item.label, item.value]),
+      ]
+    : []),
   ...(payerDetail
     ? [
         payerDetail.title,
@@ -587,6 +671,9 @@ async function main() {
       if (url.startsWith(`/api${BILLING_CHARGES_ENDPOINT}`)) {
         return jsonResponse(200, [makeCharge()]);
       }
+      if (url.startsWith(`/api${BILLING_PAYMENT_MATCHES_ENDPOINT}`)) {
+        return jsonResponse(200, [makePaymentMatch()]);
+      }
       if (url.startsWith("/api/invoices")) {
         return jsonResponse(200, [makeInvoice()]);
       }
@@ -601,11 +688,12 @@ async function main() {
     async () => {
       const query = withActiveOrganizationQuery("42");
       const workItemsQuery = withActiveOrganizationQuery("42", { limit: 100, only_open: 1 });
-      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, matchesPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
         api.ledgerBalances(query),
         api.billingPayers(query),
         api.billingStudents(query),
         api.billingCharges(withActiveOrganizationQuery("42", { limit: 100 })),
+        api.billingLedgerMatches(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.invoices(query),
         api.contractors(query),
         api.workItems(workItemsQuery),
@@ -614,6 +702,7 @@ async function main() {
       assert.equal(readBillingPayers(payersPayload).length, 1);
       assert.equal(readBillingStudents(studentsPayload).length, 1);
       assert.equal(readBillingCharges(chargesPayload).length, 1);
+      assert.equal(readBillingPaymentMatches(matchesPayload).length, 1);
       assert.equal(readBillingInvoices(invoicesPayload).length, 1);
       assert.equal(Array.isArray(contractorsPayload), true);
       assert.equal(Array.isArray(workItemsPayload), true);
@@ -622,6 +711,7 @@ async function main() {
 
   assert.ok(requestedUrls.every((url) => url.includes("organization_id=42")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/charges") && url.includes("limit=100")));
+  assert.ok(requestedUrls.some((url) => url.includes("/api/billing/ledger/matches") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/work-items") && url.includes("only_open=1") && url.includes("limit=100")));
 
   console.log("Billing regression tests passed.");
