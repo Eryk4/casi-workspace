@@ -32,6 +32,7 @@ import {
   buildBillingMoneySummary,
   buildBillingRecentPaymentRows,
   buildBillingRelatedWorkItemRows,
+  buildBillingServiceEnrollmentRows,
   canUseBillingOrganizationScope,
   formatMoney,
   getBillingErrorState,
@@ -53,6 +54,7 @@ import {
   type BillingInvoicePaymentRow,
   type BillingRecentPaymentRow,
   type BillingRelatedWorkItemRow,
+  type BillingServiceEnrollmentRow,
   type BillingStatus,
 } from "./billingModel";
 
@@ -175,6 +177,42 @@ const balanceExplanationColumns: Array<TableColumn<BillingBalanceExplanationRow>
       <span className="billing-family-cell">
         <span>{row.topItemsLabel}</span>
         <span>{row.explanationLabel}</span>
+      </span>
+    ),
+  },
+];
+
+const serviceEnrollmentColumns: Array<TableColumn<BillingServiceEnrollmentRow>> = [
+  {
+    key: "service",
+    header: "Usługa",
+    render: (row) => (
+      <Link className="module-link" href={row.href}>
+        {row.serviceLabel}
+      </Link>
+    ),
+  },
+  { key: "type", header: "Typ", render: (row) => row.serviceTypeLabel },
+  {
+    key: "payer",
+    header: "Płatnik",
+    render: (row) => (
+      <span className="billing-family-cell">
+        <strong>{row.payerLabel}</strong>
+        <span>{row.personLabel}</span>
+      </span>
+    ),
+  },
+  { key: "period", header: "Okres", render: (row) => row.periodLabel },
+  { key: "status", header: "Status", render: (row) => row.statusLabel },
+  { key: "amount", header: "Naliczenia", align: "right", render: (row) => row.amountLabel },
+  {
+    key: "source",
+    header: "Źródło danych",
+    render: (row) => (
+      <span className="billing-family-cell">
+        <span>{row.sourceLabel}</span>
+        <span>{row.contextLabel}</span>
       </span>
     ),
   },
@@ -410,6 +448,7 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
       ),
     [snapshot],
   );
+  const serviceEnrollmentRows = useMemo(() => (snapshot ? buildBillingServiceEnrollmentRows(snapshot) : []), [snapshot]);
   const companyClientRows = useMemo(
     () => buildBillingCompanyClientRows(snapshot?.contractors ?? [], snapshot?.balances ?? [], snapshot?.payers ?? []),
     [snapshot],
@@ -529,6 +568,18 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
                   columns={companyClientColumns}
                   data={companyClientRows}
                   emptyMessage="Brak klientów firmowych do pokazania w tej organizacji."
+                  getRowKey={(row) => row.id}
+                />
+              </Card>
+
+              <Card
+                description="Read-only fundament odpowiedzi: za co płatnik płaci. W tej wersji część usług jest odczytywana z modeli, naliczeń i faktur, bez pełnego modelu zapisów."
+                title="Usługi i zapisy"
+              >
+                <Table
+                  columns={serviceEnrollmentColumns}
+                  data={serviceEnrollmentRows}
+                  emptyMessage="Brak usług do pokazania. W tej wersji usługi są widoczne tylko wtedy, gdy wynikają z naliczeń albo faktur."
                   getRowKey={(row) => row.id}
                 />
               </Card>

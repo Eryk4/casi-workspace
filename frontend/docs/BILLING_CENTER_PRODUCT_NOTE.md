@@ -43,6 +43,8 @@ Etap `Read-only wyjaśnienie naliczeń i sald` dodaje sekcję `Skąd wynika sald
 
 Etap `Szczegół płatnika — read-only v1` dodaje trasę `/rozliczenia/platnicy/{payerId}`. Widok rozwija dane jednego płatnika: osoby objęte rozliczeniem, usługi, naliczenia, ostatnią widoczną wpłatę oraz powiązane faktury i sprawy, bez dodawania akcji finansowych.
 
+Etap `Usługi i zapisy — read-only foundation` dodaje sekcję `Usługi i zapisy`. Usługi są widoczne przez naliczenia, modele rozliczeń i faktury, bez pełnego modelu kontraktów, zapisów ani cenników. Ekran pokazuje nazwę usługi, typ, płatnika, osobę objętą rozliczeniem, okres, status i źródło danych. Część danych jest wywnioskowana z naliczeń, co jest jawnie oznaczone w UI.
+
 Ekran nie wykonuje:
 
 - importu wyciągów,
@@ -57,6 +59,7 @@ Ekran nie wykonuje:
 
 - Salda płatników pochodzą z istniejącego ledgeru i nie zastępują pełnej księgowości.
 - Rodziny i uczniowie są pokazani przez kompatybilny model nad istniejącymi tabelami, bez nowych tras szczegółu i bez edycji relacji.
+- Usługi i zapisy są w tej wersji odczytywane z istniejących modeli, naliczeń i faktur. To nie jest jeszcze pełny model umów, zapisów, cenników ani zmian statusów.
 - Wyjaśnienie salda korzysta z istniejących naliczeń i sald. Jeśli brakuje szczegółowych naliczeń, ekran pokazuje bezpieczny empty state zamiast udawać pełną dokładność księgową.
 - Powiązania faktur, kontrahentów i spraw są budowane deterministycznie z dostępnych danych. Nie używają AI ani ukrytej automatyzacji.
 - Historia pokazuje tylko bezpieczne, wysokopoziomowe informacje o ostatnich wpłatach. Nie pokazuje technicznych szczegółów bankowych, storage keys ani payloadów.
@@ -92,7 +95,9 @@ Przyszły pełny moduł powinien uwzględnić:
 
 - nie nalicza opłat uczniom,
 - pokazuje rodziny, uczniów, płatników i rodzeństwo tylko w trybie read-only,
+- pokazuje usługi i zapisy tylko jako read-only fundament wywnioskowany z obecnych danych,
 - wyjaśnia saldo tylko na podstawie obecnych danych read-only,
+- nie prowadzi pełnego modelu usług, zapisów, umów ani cenników,
 - nie prowadzi pełnego docelowego salda klienta, ucznia ani rodziny,
 - nie generuje należności,
 - nie dopasowuje przelewów,

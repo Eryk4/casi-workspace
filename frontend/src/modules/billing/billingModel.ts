@@ -233,9 +233,28 @@ export type BillingPayerPersonRow = {
 export type BillingPayerServiceRow = {
   id: string;
   serviceLabel: string;
+  serviceTypeLabel: string;
   peopleLabel: string;
   periodsLabel: string;
+  statusLabel: string;
   amountLabel: string;
+  chargeCountLabel: string;
+  sourceLabel: string;
+  contextLabel: string;
+};
+
+export type BillingServiceEnrollmentRow = {
+  id: string;
+  href: string;
+  serviceLabel: string;
+  serviceTypeLabel: string;
+  payerLabel: string;
+  personLabel: string;
+  periodLabel: string;
+  statusLabel: string;
+  amountLabel: string;
+  chargeCountLabel: string;
+  sourceLabel: string;
   contextLabel: string;
 };
 
@@ -317,6 +336,10 @@ export const BILLING_FORBIDDEN_WRITE_ACTIONS = [
   "Dodaj płatność",
   "Edytuj płatność",
   "Usuń płatność",
+  "Dodaj usługę",
+  "Dodaj zapis",
+  "Edytuj usługę",
+  "Edytuj zapis",
   "Dopasuj wpłatę",
   "Importuj wyciąg",
   "Wygeneruj naliczenia",
@@ -1140,15 +1163,78 @@ function buildPayerPersonRows(students: BillingStudentRecord[]): BillingPayerPer
     }));
 }
 
+function inferServiceTypeLabel(parts: Array<unknown>, fallback = "zajęcia cykliczne"): string {
+  const text = normalizeText(parts.filter(Boolean).join(" "));
+  if (text.includes("abonament") || text.includes("casi") || text.includes("wdrozen") || text.includes("hosting")) {
+    return "usługa firmowa";
+  }
+  if (text.includes("polkolon") || text.includes("turnus") || text.includes("wakacyj")) {
+    return "półkolonie";
+  }
+  if (text.includes("warsztat") || text.includes("pakiet startowy") || text.includes("startowy")) {
+    return "warsztat";
+  }
+  if (text.includes("indywidual")) {
+    return "inne";
+  }
+  if (text.includes("semestr") || text.includes("miesiecz") || text.includes("poniedzialek") || text.includes("wtorek") || text.includes("sroda") || text.includes("piatek")) {
+    return "zajęcia cykliczne";
+  }
+  return fallback;
+}
+
+function serviceStatusLabel(isActive: boolean, chargeStatuses: Set<string>, periods: Set<string>): string {
+  if (!isActive) {
+    return "Zapis nieaktywny";
+  }
+  const statuses = Array.from(chargeStatuses).map(normalizeText);
+  if (statuses.some((status) => status.includes("open") || status.includes("oczek") || status.includes("now"))) {
+    return "Aktywny zapis";
+  }
+  if (periods.size > 0) {
+    return "Widoczny w naliczeniach";
+  }
+  return "Status wywnioskowany";
+}
+
+function summarizePeople(people: Set<string>): string {
+  const names = Array.from(people).filter(Boolean);
+  if (names.length === 0) {
+    return "Klient firmowy bez uczniów";
+  }
+  if (names.length === 1) {
+    return names[0];
+  }
+  if (names.length === 2) {
+    return names.join(", ");
+  }
+  return `rodzeństwo — ${names.length} osoby objęte rozliczeniem`;
+}
+
+function summarizePeriods(periods: Set<string>): string {
+  const values = Array.from(periods).filter(Boolean);
+  if (values.length === 0) {
+    return "Okres wywnioskowany z danych";
+  }
+  if (values.length <= 3) {
+    return values.join(", ");
+  }
+  return `${values.slice(0, 3).join(", ")} i ${values.length - 3} więcej`;
+}
+
 function buildPayerServiceRows(charges: BillingChargeRecord[], students: BillingStudentRecord[]): BillingPayerServiceRow[] {
   const studentsById = new Map(students.map((student) => [student.billing_student_id, student]));
   const groups = new Map<
     string,
     {
       serviceLabel: string;
+      serviceTypeLabel: string;
       people: Set<string>;
       periods: Set<string>;
+      statuses: Set<string>;
       amount: number;
+      chargeCount: number;
+      isActive: boolean;
     }
   >();
 
@@ -1159,24 +1245,137 @@ function buildPayerServiceRows(charges: BillingChargeRecord[], students: Billing
       groups.get(serviceLabel) ??
       {
         serviceLabel,
+        serviceTypeLabel: inferServiceTypeLabel([charge.model_name, charge.period_label, student?.group_name, student?.model_settlement_mode]),
         people: new Set<string>(),
         periods: new Set<string>(),
+        statuses: new Set<string>(),
         amount: 0,
+        chargeCount: 0,
+        isActive: student?.is_active !== false,
       };
     current.people.add(readString(charge.student_full_name || student?.full_name, "Osoba bez nazwy"));
     current.periods.add(readString(charge.period_label, "Okres bez nazwy"));
+    current.statuses.add(readString(charge.status, "status nieznany"));
     current.amount = roundMoney(current.amount + (charge.total_amount ?? 0));
+    current.chargeCount += 1;
+    if (student?.is_active === false) {
+      current.isActive = false;
+    }
     groups.set(serviceLabel, current);
   });
 
   return Array.from(groups.values()).map((group, index) => ({
     id: `service-${index}-${group.serviceLabel}`,
     serviceLabel: group.serviceLabel,
-    peopleLabel: Array.from(group.people).join(", "),
-    periodsLabel: Array.from(group.periods).slice(0, 4).join(", "),
+    serviceTypeLabel: group.serviceTypeLabel,
+    peopleLabel: summarizePeople(group.people),
+    periodsLabel: summarizePeriods(group.periods),
+    statusLabel: serviceStatusLabel(group.isActive, group.statuses, group.periods),
     amountLabel: formatMoney(group.amount, DEFAULT_CURRENCY),
-    contextLabel: "Suma naliczeń widocznych dla tej usługi i płatnika.",
+    chargeCountLabel: group.chargeCount === 1 ? "1 naliczenie" : `${group.chargeCount} naliczeń`,
+    sourceLabel: "Wywnioskowane z naliczeń",
+    contextLabel: "Usługa jest odczytana z modelu i naliczeń. To nie jest jeszcze pełny zapis ani cennik.",
   }));
+}
+
+export function buildBillingServiceEnrollmentRows(
+  snapshot: BillingCenterSnapshot,
+  limit = 10,
+): BillingServiceEnrollmentRow[] {
+  const payersById = new Map(snapshot.payers.map((payer) => [payer.billing_payer_id, payer]));
+  const studentsById = new Map(snapshot.students.map((student) => [student.billing_student_id, student]));
+  const payerNames = new Set(snapshot.payers.map((payer) => normalizeText(payer.display_name)));
+  const groups = new Map<
+    string,
+    {
+      payerId: number;
+      payerLabel: string;
+      serviceLabel: string;
+      serviceTypeLabel: string;
+      people: Set<string>;
+      periods: Set<string>;
+      statuses: Set<string>;
+      amount: number;
+      chargeCount: number;
+      isActive: boolean;
+    }
+  >();
+
+  snapshot.charges.forEach((charge) => {
+    const payer = payersById.get(charge.billing_payer_id);
+    const student = charge.billing_student_id ? studentsById.get(charge.billing_student_id) : undefined;
+    const serviceLabel = readString(charge.model_name || student?.model_name, "Usługa bez nazwy");
+    const payerLabel = payer ? getPayerLabel(payer) : readString(charge.payer_display_name, `Płatnik #${charge.billing_payer_id}`);
+    const key = `payer-${charge.billing_payer_id}-${serviceLabel}`;
+    const current =
+      groups.get(key) ??
+      {
+        payerId: charge.billing_payer_id,
+        payerLabel,
+        serviceLabel,
+        serviceTypeLabel: inferServiceTypeLabel([charge.model_name, charge.period_label, student?.group_name, student?.model_settlement_mode]),
+        people: new Set<string>(),
+        periods: new Set<string>(),
+        statuses: new Set<string>(),
+        amount: 0,
+        chargeCount: 0,
+        isActive: payer?.is_active !== false && student?.is_active !== false,
+      };
+    current.people.add(readString(charge.student_full_name || student?.full_name, "Osoba bez nazwy"));
+    current.periods.add(readString(charge.period_label, "Okres bez nazwy"));
+    current.statuses.add(readString(charge.status, "status nieznany"));
+    current.amount = roundMoney(current.amount + (charge.total_amount ?? 0));
+    current.chargeCount += 1;
+    if (payer?.is_active === false || student?.is_active === false) {
+      current.isActive = false;
+    }
+    groups.set(key, current);
+  });
+
+  const familyRows = Array.from(groups.values()).map((group) => ({
+    id: `billing-service-${group.payerId}-${group.serviceLabel}`,
+    href: billingPayerDetailPath(group.payerId),
+    serviceLabel: group.serviceLabel,
+    serviceTypeLabel: group.serviceTypeLabel,
+    payerLabel: group.payerLabel,
+    personLabel: summarizePeople(group.people),
+    periodLabel: summarizePeriods(group.periods),
+    statusLabel: serviceStatusLabel(group.isActive, group.statuses, group.periods),
+    amountLabel: formatMoney(group.amount, DEFAULT_CURRENCY),
+    chargeCountLabel: group.chargeCount === 1 ? "1 naliczenie" : `${group.chargeCount} naliczeń`,
+    sourceLabel: "Wywnioskowane z naliczeń",
+    contextLabel: "Usługa widoczna przez obecne naliczenia i model rozliczeniowy.",
+  }));
+
+  const companyRows = snapshot.contractors
+    .filter((contractor) => {
+      const name = normalizeText(contractor.name);
+      return name && !payerNames.has(name) && !name.startsWith("rodzina") && (contractor.invoice_count ?? 0) > 0;
+    })
+    .slice(0, 4)
+    .map((contractor) => {
+      const contractorInvoices = snapshot.invoices.filter((invoice) => getContractorId(invoice) === contractor.contractor_id);
+      const amount = roundMoney(contractorInvoices.reduce((sum, invoice) => sum + getInvoiceAmount(invoice), 0));
+      const periods = new Set(contractorInvoices.map((invoice) => formatDateLabel(invoice.incoming_date || invoice.issue_date || invoice.created_at, "Okres z faktury")));
+      return {
+        id: `billing-service-company-${contractor.contractor_id}`,
+        href: `/crm/${contractor.contractor_id}`,
+        serviceLabel: normalizeText(contractor.name).includes("casi") ? "Abonament CASI" : "Usługa firmowa",
+        serviceTypeLabel: "usługa firmowa",
+        payerLabel: getContractorLabel(contractor),
+        personLabel: "Klient firmowy bez uczniów",
+        periodLabel: summarizePeriods(periods),
+        statusLabel: "Widoczna przez faktury",
+        amountLabel: amount > 0 ? formatMoney(amount, DEFAULT_CURRENCY) : "Kwota z faktur",
+        chargeCountLabel: contractorInvoices.length === 1 ? "1 faktura" : `${contractorInvoices.length || contractor.invoice_count || 0} faktur`,
+        sourceLabel: "Wywnioskowane z faktur",
+        contextLabel: "Klient firmowy jest pokazany osobno od rodzin i uczniów.",
+      };
+    });
+
+  return [...familyRows, ...companyRows]
+    .sort((a, b) => a.payerLabel.localeCompare(b.payerLabel, "pl") || a.serviceLabel.localeCompare(b.serviceLabel, "pl"))
+    .slice(0, limit);
 }
 
 function buildPayerChargeRows(charges: BillingChargeRecord[]): BillingPayerChargeRow[] {

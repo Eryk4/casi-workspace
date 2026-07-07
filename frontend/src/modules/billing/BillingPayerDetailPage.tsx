@@ -62,9 +62,21 @@ const personColumns: Array<TableColumn<BillingPayerPersonRow>> = [
 
 const serviceColumns: Array<TableColumn<BillingPayerServiceRow>> = [
   { key: "service", header: "Usługa", render: (row) => row.serviceLabel },
+  { key: "type", header: "Typ", render: (row) => row.serviceTypeLabel },
   { key: "people", header: "Kogo dotyczy", render: (row) => row.peopleLabel },
   { key: "periods", header: "Okresy", render: (row) => row.periodsLabel },
+  { key: "status", header: "Status", render: (row) => row.statusLabel },
   { key: "amount", header: "Naliczenia", align: "right", render: (row) => row.amountLabel },
+  {
+    key: "source",
+    header: "Źródło danych",
+    render: (row) => (
+      <span className="billing-family-cell">
+        <span>{row.chargeCountLabel}</span>
+        <span>{row.sourceLabel}</span>
+      </span>
+    ),
+  },
   { key: "context", header: "Kontekst", render: (row) => row.contextLabel },
 ];
 
@@ -280,7 +292,7 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
                 <Table columns={personColumns} data={detail.peopleRows} emptyMessage="Brak osób przypisanych do tego płatnika." getRowKey={(row) => row.id} />
               </Card>
 
-              <Card description="Usługi widoczne w naliczeniach tego płatnika, bez generowania nowych opłat." title="Usługi do opłacenia">
+              <Card description="Usługi widoczne przez naliczenia i modele rozliczeń. To nadal read-only fundament, bez pełnego modelu zapisów i cenników." title="Usługi do opłacenia">
                 <Table columns={serviceColumns} data={detail.serviceRows} emptyMessage="Brak usług lub naliczeń przypisanych do tego płatnika." getRowKey={(row) => row.id} />
               </Card>
 

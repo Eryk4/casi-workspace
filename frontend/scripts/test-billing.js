@@ -64,6 +64,7 @@ const {
   buildBillingPayerDetailView,
   buildBillingRecentPaymentRows,
   buildBillingRelatedWorkItemRows,
+  buildBillingServiceEnrollmentRows,
   canUseBillingOrganizationScope,
   formatMoney,
   getBillingErrorState,
@@ -383,6 +384,24 @@ assert.equal(companyClientRows[0].href, "/crm/8");
 assert.equal(companyClientRows[0].companyLabel, "Misja Robotyka");
 assert.match(companyClientRows[0].contextLabel, /Klient firmowy/);
 
+const serviceEnrollmentRows = buildBillingServiceEnrollmentRows(snapshot);
+assert.equal(serviceEnrollmentRows.some((row) => row.payerLabel === "Rodzina Kowalskich"), true);
+const familyServiceRow = serviceEnrollmentRows.find((row) => row.payerLabel === "Rodzina Kowalskich");
+assert.ok(familyServiceRow);
+assert.equal(familyServiceRow.serviceLabel, "Robotyka junior");
+assert.equal(familyServiceRow.serviceTypeLabel, "zajęcia cykliczne");
+assert.match(familyServiceRow.personLabel, /Lena Kowalska/);
+assert.match(familyServiceRow.personLabel, /Maja Kowalska/);
+assert.equal(familyServiceRow.statusLabel, "Aktywny zapis");
+assert.equal(familyServiceRow.chargeCountLabel, "2 naliczeń");
+assert.match(familyServiceRow.sourceLabel, /Wywnioskowane z naliczeń/);
+assert.doesNotMatch(familyServiceRow.contextLabel, /pełny model zapisów|endpoint|payload|debug|demo/i);
+const companyServiceRow = serviceEnrollmentRows.find((row) => row.payerLabel === "Misja Robotyka");
+assert.ok(companyServiceRow);
+assert.equal(companyServiceRow.serviceTypeLabel, "usługa firmowa");
+assert.equal(companyServiceRow.personLabel, "Klient firmowy bez uczniów");
+assert.match(companyServiceRow.sourceLabel, /Wywnioskowane z faktur/);
+
 const relatedWorkItems = buildBillingRelatedWorkItemRows(snapshot.workItems, snapshot.invoices, snapshot.contractors);
 assert.equal(relatedWorkItems[0].href, "/work-items/44");
 assert.match(relatedWorkItems[0].reasonLabel, /rozliczenie faktury/);
@@ -399,8 +418,12 @@ assert.equal(payerDetail.balanceMeaningLabel, "Do dopłaty pozostaje 220,00 PLN"
 assert.equal(payerDetail.peopleRows.length, 2);
 assert.equal(payerDetail.peopleRows[0].personLabel, "Lena Kowalska");
 assert.equal(payerDetail.serviceRows.length, 1);
+assert.equal(payerDetail.serviceRows[0].serviceTypeLabel, "zajęcia cykliczne");
 assert.match(payerDetail.serviceRows[0].peopleLabel, /Lena Kowalska/);
 assert.match(payerDetail.serviceRows[0].peopleLabel, /Maja Kowalska/);
+assert.equal(payerDetail.serviceRows[0].statusLabel, "Aktywny zapis");
+assert.equal(payerDetail.serviceRows[0].chargeCountLabel, "2 naliczeń");
+assert.match(payerDetail.serviceRows[0].sourceLabel, /Wywnioskowane z naliczeń/);
 assert.equal(payerDetail.chargeRows.length, 2);
 assert.equal(payerDetail.paymentRows[0].amountLabel, "300,00 PLN");
 assert.equal(payerDetail.invoiceRows[0].href, "/faktury/18");
@@ -427,6 +450,10 @@ assert.deepEqual(BILLING_FORBIDDEN_WRITE_ACTIONS, [
   "Dodaj płatność",
   "Edytuj płatność",
   "Usuń płatność",
+  "Dodaj usługę",
+  "Dodaj zapis",
+  "Edytuj usługę",
+  "Edytuj zapis",
   "Dopasuj wpłatę",
   "Importuj wyciąg",
   "Wygeneruj naliczenia",
@@ -470,6 +497,7 @@ assert.match(billingProductNote, /eksport księgowy/);
 assert.match(billingProductNote, /Czego v1 jeszcze nie robi/);
 assert.match(billingProductNote, /nie nalicza opłat uczniom/);
 assert.match(billingProductNote, /pokazuje rodziny/);
+assert.match(billingProductNote, /Usługi są widoczne przez naliczenia/);
 assert.match(billingProductNote, /trybie read-only/);
 assert.match(billingProductNote, /nie dopasowuje przelewów/);
 assert.match(billingProductNote, /nie zastępuje księgowości/);
@@ -480,6 +508,16 @@ const screenStrings = [
   ...familyFoundationRows.flatMap((row) => [row.familyLabel, row.payerLabel, row.studentsLabel, row.siblingLabel, row.contextLabel]),
   ...balanceExplanationRows.flatMap((row) => [row.payerLabel, row.familyTypeLabel, row.balanceMeaningLabel, row.topItemsLabel, row.explanationLabel]),
   ...companyClientRows.flatMap((row) => [row.companyLabel, row.contactLabel, row.contextLabel, row.href]),
+  ...serviceEnrollmentRows.flatMap((row) => [
+    row.serviceLabel,
+    row.serviceTypeLabel,
+    row.payerLabel,
+    row.personLabel,
+    row.periodLabel,
+    row.statusLabel,
+    row.sourceLabel,
+    row.contextLabel,
+  ]),
   ...invoiceRows.flatMap((row) => [row.invoiceLabel, row.contractorLabel, row.reasonLabel, row.href]),
   ...contractorRows.flatMap((row) => [row.contractorLabel, row.contactLabel, row.balanceLabel, row.href]),
   ...relatedWorkItems.flatMap((row) => [row.titleLabel, row.reasonLabel, row.href]),
@@ -490,7 +528,7 @@ const screenStrings = [
         payerDetail.balanceMeaningLabel,
         payerDetail.lastPaymentLabel,
         ...payerDetail.peopleRows.flatMap((row) => [row.personLabel, row.serviceLabel, row.contextLabel]),
-        ...payerDetail.serviceRows.flatMap((row) => [row.serviceLabel, row.peopleLabel, row.contextLabel]),
+        ...payerDetail.serviceRows.flatMap((row) => [row.serviceLabel, row.serviceTypeLabel, row.peopleLabel, row.statusLabel, row.sourceLabel, row.contextLabel]),
         ...payerDetail.chargeRows.flatMap((row) => [row.periodLabel, row.personLabel, row.serviceLabel]),
         ...payerDetail.paymentRows.flatMap((row) => [row.dateLabel, row.amountLabel, row.titleLabel, row.contextLabel]),
         ...payerDetail.invoiceRows.flatMap((row) => [row.invoiceLabel, row.contractorLabel, row.href]),

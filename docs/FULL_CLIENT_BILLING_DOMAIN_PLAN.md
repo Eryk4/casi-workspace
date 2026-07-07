@@ -668,6 +668,25 @@ Scope:
 - links from `/rozliczenia` to payer/student/family contexts,
 - no generation button yet.
 
+### Stage 2b: Services and enrollments read-only foundation
+
+Status: implemented as a compatibility read model in `/rozliczenia` and `/rozliczenia/platnicy/{payerId}`.
+
+The implemented stage adds `Usługi i zapisy` in the billing center and makes `Usługi do opłacenia` more explicit in payer detail. It reuses current `billing_models`, `billing_students`, `billing_charges`, invoices, and contractors. It shows service name, service type, payer, beneficiary, period, inferred enrollment status, charge count, and whether the row is inferred from charges or invoices.
+
+No tables, migrations, routes, write actions, payment imports, charge generation, reminders, service creation, enrollment editing, or pricing changes were added for this stage.
+
+Important limitation: this is not the target service/enrollment contract. Current data can explain what the payer appears to pay for, but it does not yet store full service catalog items, contracts, enrollment lifecycle, start/end dates, status history, or price rules.
+
+Goal: answer "what is this payer paying for?" before adding payment and allocation workflows.
+
+Scope:
+
+- read-only service/enrollment rows inferred from existing charges and invoices,
+- payer detail service rows with people, periods, status, amount, and charge count,
+- company client service context without students,
+- no new service or enrollment routes.
+
 ### Stage 3: Manual payments and allocations
 
 Goal: safely add the first payment write path.

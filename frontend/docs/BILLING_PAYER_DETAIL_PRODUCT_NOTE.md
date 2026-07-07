@@ -35,7 +35,7 @@ Ekran pokazuje:
 
 - profil płatnika,
 - osoby objęte rozliczeniem,
-- usługi do opłacenia,
+- usługi do opłacenia, w tym typ usługi, okres, status, liczbę naliczeń i źródło danych,
 - wyjaśnienie salda,
 - naliczenia,
 - ostatnią widoczną wpłatę, jeśli jest dostępna,
@@ -44,6 +44,8 @@ Ekran pokazuje:
 - kontekst biznesowy.
 
 Ekran jest w pełni read-only. Dozwolone są tylko odświeżenie danych i linki do istniejących modułów.
+
+Etap `Usługi i zapisy — read-only foundation` doprecyzowuje sekcję `Usługi do opłacenia`. Dane są wywnioskowane z obecnych naliczeń, modeli rozliczeń i faktur. Widok nie udaje pełnego modelu zapisów, kontraktów ani cenników; pokazuje tylko to, co da się bezpiecznie odczytać z aktualnych danych.
 
 ## Czego v1 nie robi
 
@@ -65,7 +67,8 @@ Ekran nie wykonuje:
 - Lista wpłat jest ograniczona do danych widocznych w obecnym read-only modelu. Jeżeli backend udostępnia tylko ostatnią wpłatę w saldzie, ekran pokazuje właśnie tę informację.
 - Powiązania faktur i spraw zależą od obecnych danych referencyjnych oraz tekstowych. Jeśli relacja nie jest jednoznaczna, ekran pokazuje pusty stan zamiast zgadywać.
 - Ekran nie zastępuje pełnego silnika rozliczeniowego ani księgowości.
+- Sekcja usług nie jest jeszcze pełnym rejestrem zapisów. Pełne zapisy, cenniki, historia statusów i naliczenia będą osobnym etapem.
 
 ## Następny bezpieczny krok
 
-Po live-weryfikacji warto rozważyć osobny read-only widok naliczenia albo usługi/zapisu, nadal bez importów, płatności i akcji zapisu.
+Po live-weryfikacji warto rozważyć osobny read-only kontrakt backendowy dla usług/zapisów tylko wtedy, gdy frontendowa inferencja z naliczeń okaże się zbyt płytka. Nadal bez importów, płatności i akcji zapisu.
