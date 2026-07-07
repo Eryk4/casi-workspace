@@ -41,6 +41,8 @@ W obecnym zakresie ekran pokazuje też fundament `Rodziny, uczniowie i płatnicy
 
 Etap `Read-only wyjaśnienie naliczeń i sald` dodaje sekcję `Skąd wynika saldo`. Sekcja pokazuje naliczone kwoty, widoczne wpłaty, różnicę, nadpłatę albo dopłatę oraz kilka najważniejszych pozycji wpływających na saldo. To nadal jest wyjaśnienie informacyjne, a nie pełny silnik naliczeń, księgowanie ani workflow płatności.
 
+Etap `Szczegół płatnika — read-only v1` dodaje trasę `/rozliczenia/platnicy/{payerId}`. Widok rozwija dane jednego płatnika: osoby objęte rozliczeniem, usługi, naliczenia, ostatnią widoczną wpłatę oraz powiązane faktury i sprawy, bez dodawania akcji finansowych.
+
 Ekran nie wykonuje:
 
 - importu wyciągów,

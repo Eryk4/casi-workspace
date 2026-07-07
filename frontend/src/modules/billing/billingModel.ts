@@ -127,6 +127,7 @@ export type BillingBalanceExplanationRow = {
 
 export type BillingFamilyFoundationRow = {
   id: string;
+  href: string;
   familyLabel: string;
   payerLabel: string;
   contactLabel: string;
@@ -220,6 +221,73 @@ export type BillingRecentPaymentRow = {
   titleLabel: string;
 };
 
+export type BillingPayerPersonRow = {
+  id: string;
+  personLabel: string;
+  serviceLabel: string;
+  groupLabel: string;
+  statusLabel: string;
+  contextLabel: string;
+};
+
+export type BillingPayerServiceRow = {
+  id: string;
+  serviceLabel: string;
+  peopleLabel: string;
+  periodsLabel: string;
+  amountLabel: string;
+  contextLabel: string;
+};
+
+export type BillingPayerChargeRow = {
+  id: string;
+  periodLabel: string;
+  personLabel: string;
+  serviceLabel: string;
+  amountLabel: string;
+  statusLabel: string;
+};
+
+export type BillingPayerPaymentRow = {
+  id: string;
+  dateLabel: string;
+  amountLabel: string;
+  titleLabel: string;
+  contextLabel: string;
+};
+
+export type BillingPayerRelatedInvoiceRow = {
+  id: string;
+  href: string;
+  invoiceLabel: string;
+  contractorLabel: string;
+  amountLabel: string;
+  statusLabel: string;
+};
+
+export type BillingPayerDetailView = {
+  id: string;
+  title: string;
+  statusLabel: string;
+  statusTone: "ok" | "warning" | "danger" | "info" | "neutral";
+  payerTypeLabel: string;
+  contactLabel: string;
+  paymentIdentifierLabel: string;
+  balanceMeaningLabel: string;
+  chargedLabel: string;
+  paidLabel: string;
+  balanceLabel: string;
+  lastPaymentLabel: string;
+  peopleRows: BillingPayerPersonRow[];
+  serviceRows: BillingPayerServiceRow[];
+  balanceExplanationRows: BillingBalanceExplanationRow[];
+  chargeRows: BillingPayerChargeRow[];
+  paymentRows: BillingPayerPaymentRow[];
+  invoiceRows: BillingPayerRelatedInvoiceRow[];
+  workItemRows: BillingRelatedWorkItemRow[];
+  contextItems: Array<{ label: string; value: string }>;
+};
+
 export type BillingCenterSnapshot = {
   balances: BillingBalanceRecord[];
   payers: BillingPayerRecord[];
@@ -237,10 +305,14 @@ export const BILLING_CHARGES_ENDPOINT = "/billing/charges";
 export const BILLING_READ_ONLY = true;
 export const BILLING_CANONICAL_ROUTE = "/rozliczenia";
 export const BILLING_LEGACY_ROUTE = "/kasa";
+export const BILLING_PAYER_DETAIL_ROUTE = `${BILLING_CANONICAL_ROUTE}/platnicy`;
 export const DEFAULT_CURRENCY = "PLN";
 export const BILLING_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć rozliczenia";
 export const BILLING_ORGANIZATION_REQUIRED_DESCRIPTION =
   "Najpierw wskaż organizację w topbarze. Rozliczenia pokazują dane tylko dla wybranej firmy.";
+export const BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć płatnika";
+export const BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION =
+  "Najpierw wskaż organizację w topbarze. Szczegół płatnika pokazuje tylko dane z wybranej organizacji.";
 export const BILLING_FORBIDDEN_WRITE_ACTIONS = [
   "Dodaj płatność",
   "Edytuj płatność",
@@ -251,6 +323,10 @@ export const BILLING_FORBIDDEN_WRITE_ACTIONS = [
   "Zaksięguj",
   "Eksportuj",
 ];
+
+export function billingPayerDetailPath(payerId: number | string): string {
+  return `${BILLING_PAYER_DETAIL_ROUTE}/${payerId}`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -703,7 +779,7 @@ export function buildBillingAttentionItems(snapshot: BillingCenterSnapshot, limi
       reason: `Do rozliczenia pozostaje ${formatMoney(item.balance_due, DEFAULT_CURRENCY)}.`,
       category: "Rozliczenia" as const,
       tone: "warning" as const,
-      href: BILLING_CANONICAL_ROUTE,
+      href: billingPayerDetailPath(item.billing_payer_id),
     }));
 
   const invoiceItems = snapshot.invoices
@@ -842,6 +918,7 @@ export function buildBillingFamilyFoundationRows(
 
       return {
         id: String(payer.billing_payer_id),
+        href: billingPayerDetailPath(payer.billing_payer_id),
         familyLabel: payerLabel,
         payerLabel,
         contactLabel: readString(payer.contact_phone || payer.email || payer.payment_identifier, "Brak kontaktu"),
@@ -1000,6 +1077,275 @@ export function buildBillingBalanceExplanationRows(
     });
 
   return [...balanceRows, ...payerOnlyRows].slice(0, limit);
+}
+
+function getPayerLabel(payer: BillingPayerRecord): string {
+  return readString(payer.display_name, `Płatnik #${payer.billing_payer_id}`);
+}
+
+function getPayerBalanceValues(
+  payer: BillingPayerRecord,
+  balance: BillingBalanceRecord | undefined,
+): {
+  totalCharges: number;
+  totalMatches: number;
+  balanceDue: number;
+  lastPaymentDate: string | null | undefined;
+  lastPaymentAmount: number | null | undefined;
+  lastPaymentCurrency: string | null | undefined;
+  lastPaymentTitle: string | null | undefined;
+} {
+  return {
+    totalCharges: balance?.total_charges ?? payer.billing_total_charges ?? 0,
+    totalMatches: balance?.total_matches ?? payer.billing_total_matches ?? 0,
+    balanceDue: balance?.balance_due ?? payer.billing_balance_due ?? 0,
+    lastPaymentDate: balance?.last_payment_at ?? payer.billing_last_payment_at ?? payer.latest_payment_date,
+    lastPaymentAmount: balance?.last_payment_amount ?? payer.billing_last_payment_amount ?? payer.latest_payment_amount,
+    lastPaymentCurrency: balance?.last_payment_currency ?? payer.billing_last_payment_currency ?? payer.latest_payment_currency ?? DEFAULT_CURRENCY,
+    lastPaymentTitle: balance?.last_payment_title ?? payer.billing_last_payment_title ?? payer.latest_payment_title,
+  };
+}
+
+function getPayerTypeLabel(students: BillingStudentRecord[]): string {
+  if (students.length > 1) {
+    return `Płatnik rodzinny · rodzeństwo (${students.length} uczniów)`;
+  }
+  if (students.length === 1) {
+    return "Płatnik rodzinny · 1 uczeń";
+  }
+  return "Płatnik bez przypisanych osób w obecnych danych";
+}
+
+function balanceMeaningLabel(balanceDue: number): string {
+  if (balanceDue > 0) {
+    return `Do dopłaty pozostaje ${formatMoney(balanceDue, DEFAULT_CURRENCY)}`;
+  }
+  if (balanceDue < 0) {
+    return `Nadpłata wynosi ${formatMoney(Math.abs(balanceDue), DEFAULT_CURRENCY)}`;
+  }
+  return "Saldo jest rozliczone";
+}
+
+function buildPayerPersonRows(students: BillingStudentRecord[]): BillingPayerPersonRow[] {
+  return students
+    .slice()
+    .sort((a, b) => (a.family_billing_order ?? 1) - (b.family_billing_order ?? 1))
+    .map((student) => ({
+      id: String(student.billing_student_id),
+      personLabel: readString(student.full_name, "Osoba bez nazwy"),
+      serviceLabel: readString(student.model_name || student.school_short_name, "Brak przypisanej usługi"),
+      groupLabel: readString(student.group_name || student.lesson_day || student.model_lesson_day, "Brak grupy w danych"),
+      statusLabel: student.is_active === false ? "Nieaktywny" : "Aktywny",
+      contextLabel: student.family_billing_order && student.family_billing_order > 1 ? "Kolejna osoba w rozliczeniu rodzinnym." : "Osoba objęta tym rozliczeniem.",
+    }));
+}
+
+function buildPayerServiceRows(charges: BillingChargeRecord[], students: BillingStudentRecord[]): BillingPayerServiceRow[] {
+  const studentsById = new Map(students.map((student) => [student.billing_student_id, student]));
+  const groups = new Map<
+    string,
+    {
+      serviceLabel: string;
+      people: Set<string>;
+      periods: Set<string>;
+      amount: number;
+    }
+  >();
+
+  charges.forEach((charge) => {
+    const student = charge.billing_student_id ? studentsById.get(charge.billing_student_id) : undefined;
+    const serviceLabel = readString(charge.model_name || student?.model_name, "Usługa bez nazwy");
+    const current =
+      groups.get(serviceLabel) ??
+      {
+        serviceLabel,
+        people: new Set<string>(),
+        periods: new Set<string>(),
+        amount: 0,
+      };
+    current.people.add(readString(charge.student_full_name || student?.full_name, "Osoba bez nazwy"));
+    current.periods.add(readString(charge.period_label, "Okres bez nazwy"));
+    current.amount = roundMoney(current.amount + (charge.total_amount ?? 0));
+    groups.set(serviceLabel, current);
+  });
+
+  return Array.from(groups.values()).map((group, index) => ({
+    id: `service-${index}-${group.serviceLabel}`,
+    serviceLabel: group.serviceLabel,
+    peopleLabel: Array.from(group.people).join(", "),
+    periodsLabel: Array.from(group.periods).slice(0, 4).join(", "),
+    amountLabel: formatMoney(group.amount, DEFAULT_CURRENCY),
+    contextLabel: "Suma naliczeń widocznych dla tej usługi i płatnika.",
+  }));
+}
+
+function buildPayerChargeRows(charges: BillingChargeRecord[]): BillingPayerChargeRow[] {
+  return charges
+    .slice()
+    .sort((a, b) => String(b.due_date ?? b.period_label ?? "").localeCompare(String(a.due_date ?? a.period_label ?? "")))
+    .map((charge) => ({
+      id: String(charge.billing_charge_id),
+      periodLabel: readString(charge.period_label, "Okres bez nazwy"),
+      personLabel: readString(charge.student_full_name, "Osoba bez nazwy"),
+      serviceLabel: readString(charge.model_name, "Usługa bez nazwy"),
+      amountLabel: formatMoney(charge.total_amount, DEFAULT_CURRENCY),
+      statusLabel: readString(charge.status, "Status nieznany"),
+    }));
+}
+
+function buildPayerPaymentRows(
+  payer: BillingPayerRecord,
+  balance: BillingBalanceRecord | undefined,
+): BillingPayerPaymentRow[] {
+  const values = getPayerBalanceValues(payer, balance);
+  if (!values.lastPaymentDate) {
+    return [];
+  }
+
+  return [
+    {
+      id: `last-payment-${payer.billing_payer_id}`,
+      dateLabel: formatDateLabel(values.lastPaymentDate),
+      amountLabel: formatMoney(values.lastPaymentAmount, values.lastPaymentCurrency ?? DEFAULT_CURRENCY),
+      titleLabel: readString(values.lastPaymentTitle, "Ostatnia widoczna wpłata"),
+      contextLabel: "To ostatnia wpłata dostępna w obecnym read-only widoku rozliczeń.",
+    },
+  ];
+}
+
+function buildPayerRelatedInvoiceRows(
+  payer: BillingPayerRecord,
+  students: BillingStudentRecord[],
+  invoices: InvoiceRecord[],
+): BillingPayerRelatedInvoiceRow[] {
+  const names = new Set([getPayerLabel(payer), ...students.map((student) => readString(student.full_name, ""))].map(normalizeText).filter(Boolean));
+  return invoices
+    .filter((invoice) => {
+      const contractorLabel = normalizeText(getInvoiceContractorLabel(invoice));
+      return contractorLabel && names.has(contractorLabel);
+    })
+    .slice(0, 8)
+    .map((invoice, index) => {
+      const invoiceId = getInvoiceId(invoice);
+      return {
+        id: String(invoiceId ?? index),
+        href: invoiceId ? `/faktury/${invoiceId}` : "/faktury",
+        invoiceLabel: getInvoiceLabel(invoice),
+        contractorLabel: getInvoiceContractorLabel(invoice),
+        amountLabel: formatMoney(getInvoiceAmount(invoice), invoice.currency || DEFAULT_CURRENCY),
+        statusLabel: readString(invoice.status || invoice.workflow_state, "Status nieznany"),
+      };
+    });
+}
+
+function buildPayerRelatedWorkItemRows(
+  payer: BillingPayerRecord,
+  students: BillingStudentRecord[],
+  workItems: WorkItemRecord[],
+): BillingRelatedWorkItemRow[] {
+  const searchTerms = [
+    getPayerLabel(payer),
+    payer.contact_phone,
+    payer.payment_identifier,
+    payer.email,
+    ...students.map((student) => student.full_name),
+  ]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  return workItems
+    .filter((item) => {
+      if (item.is_closed) {
+        return false;
+      }
+      const metadata = isRecord(item.metadata) ? item.metadata : {};
+      const metadataPayerId = readNumber(metadata.billing_payer_id ?? metadata.payer_id ?? metadata.billingPayerId);
+      if (metadataPayerId === payer.billing_payer_id) {
+        return true;
+      }
+      const haystack = normalizeText(`${item.title ?? ""} ${item.description ?? ""} ${item.source_type ?? ""}`);
+      return searchTerms.some((term) => term.length >= 3 && haystack.includes(term));
+    })
+    .sort((a, b) => (b.priority_score ?? 0) - (a.priority_score ?? 0))
+    .slice(0, 8)
+    .map((item) => ({
+      id: String(item.work_item_id),
+      href: `/work-items/${item.work_item_id}`,
+      titleLabel: readString(item.title, `Sprawa #${item.work_item_id}`),
+      statusLabel: readString(item.status, "Status nieznany"),
+      priorityLabel: readString(item.priority_level, "Priorytet nieznany"),
+      reasonLabel: item.is_sla_overdue || item.is_due_overdue ? "Termin sprawy wymaga uwagi." : "Sprawa może dotyczyć tego płatnika lub osób objętych rozliczeniem.",
+    }));
+}
+
+export function buildBillingPayerDetailView(snapshot: BillingCenterSnapshot, payerId: number): BillingPayerDetailView | null {
+  const payer = snapshot.payers.find((item) => item.billing_payer_id === payerId);
+  if (!payer) {
+    return null;
+  }
+
+  const payerStudents = snapshot.students.filter((student) => student.billing_payer_id === payer.billing_payer_id);
+  const payerCharges = snapshot.charges.filter((charge) => charge.billing_payer_id === payer.billing_payer_id);
+  const payerBalance = snapshot.balances.find((balance) => balance.billing_payer_id === payer.billing_payer_id);
+  const values = getPayerBalanceValues(payer, payerBalance);
+  const title = getPayerLabel(payer);
+  const balanceRecord: BillingBalanceRecord = {
+    billing_payer_id: payer.billing_payer_id,
+    display_name: payer.display_name,
+    contact_phone: payer.contact_phone,
+    payment_identifier: payer.payment_identifier,
+    email: payer.email,
+    is_active: payer.is_active,
+    total_charges: values.totalCharges,
+    total_matches: values.totalMatches,
+    balance_due: values.balanceDue,
+    last_payment_at: values.lastPaymentDate ?? null,
+    last_payment_amount: values.lastPaymentAmount ?? null,
+    last_payment_currency: values.lastPaymentCurrency ?? DEFAULT_CURRENCY,
+    last_payment_title: values.lastPaymentTitle ?? null,
+    matched_payment_count: payer.billing_matched_payment_count ?? payerBalance?.matched_payment_count ?? 0,
+  };
+
+  return {
+    id: String(payer.billing_payer_id),
+    title,
+    statusLabel: payer.is_active === false ? "Nieaktywny" : values.balanceDue > 0 ? "Do dopłaty" : values.balanceDue < 0 ? "Nadpłata" : "Rozliczony",
+    statusTone: payer.is_active === false ? "neutral" : values.balanceDue > 0 ? "warning" : values.balanceDue < 0 ? "info" : "ok",
+    payerTypeLabel: getPayerTypeLabel(payerStudents),
+    contactLabel: readString(payer.contact_phone || payer.email, "Brak kontaktu w danych"),
+    paymentIdentifierLabel: readString(payer.payment_identifier, "Brak identyfikatora płatności"),
+    balanceMeaningLabel: balanceMeaningLabel(values.balanceDue),
+    chargedLabel: formatMoney(values.totalCharges, DEFAULT_CURRENCY),
+    paidLabel: formatMoney(values.totalMatches, DEFAULT_CURRENCY),
+    balanceLabel: formatMoney(values.balanceDue, DEFAULT_CURRENCY),
+    lastPaymentLabel: values.lastPaymentDate
+      ? `${formatDateLabel(values.lastPaymentDate)} · ${formatMoney(values.lastPaymentAmount, values.lastPaymentCurrency ?? DEFAULT_CURRENCY)}`
+      : "Brak ostatniej wpłaty",
+    peopleRows: buildPayerPersonRows(payerStudents),
+    serviceRows: buildPayerServiceRows(payerCharges, payerStudents),
+    balanceExplanationRows: buildBillingBalanceExplanationRows([balanceRecord], [payer], payerStudents, payerCharges, 1),
+    chargeRows: buildPayerChargeRows(payerCharges),
+    paymentRows: buildPayerPaymentRows(payer, payerBalance),
+    invoiceRows: buildPayerRelatedInvoiceRows(payer, payerStudents, snapshot.invoices),
+    workItemRows: buildPayerRelatedWorkItemRows(payer, payerStudents, snapshot.workItems),
+    contextItems: [
+      {
+        label: "Zakres",
+        value: "Szczegół płatnika łączy osoby objęte rozliczeniem, usługi, naliczenia i widoczne wpłaty.",
+      },
+      {
+        label: "Tryb",
+        value: "Widok jest tylko do odczytu. Nie dodaje płatności, nie nalicza opłat i nie księguje sald.",
+      },
+      {
+        label: "Płatnik a rodzina",
+        value:
+          payerStudents.length > 1
+            ? "Ten płatnik obejmuje kilka osób, więc rodzina jest szczególnym przypadkiem płatnika."
+            : "Płatnik jest główną jednostką rozliczenia; rodzina jest tylko jednym z możliwych typów płatnika.",
+      },
+    ],
+  };
 }
 
 export function buildBillingRelatedWorkItemRows(

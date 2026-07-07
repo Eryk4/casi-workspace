@@ -42,11 +42,15 @@ const {
   BILLING_LEGACY_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
+  BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
+  BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_TITLE,
+  BILLING_PAYER_DETAIL_ROUTE,
   BILLING_CHARGES_ENDPOINT,
   BILLING_PAYERS_ENDPOINT,
   BILLING_READ_ONLY,
   BILLING_STUDENTS_ENDPOINT,
   billingBalanceTone,
+  billingPayerDetailPath,
   billingScreenHasForbiddenTechnicalText,
   buildBillingAttentionItems,
   buildBillingBalanceRows,
@@ -57,6 +61,7 @@ const {
   buildBillingInvoiceRows,
   buildBillingKpis,
   buildBillingMoneySummary,
+  buildBillingPayerDetailView,
   buildBillingRecentPaymentRows,
   buildBillingRelatedWorkItemRows,
   canUseBillingOrganizationScope,
@@ -189,7 +194,7 @@ function makeContractor(overrides = {}) {
 function makeWorkItem(overrides = {}) {
   return {
     work_item_id: 44,
-    title: "Wyjaśnić płatność do faktury FV/CASI/18",
+    title: "Wyjaśnić płatność Rodzina Kowalskich do faktury FV/CASI/18",
     description: "Sprawa może blokować rozliczenie faktury.",
     status: "w_toku",
     priority_level: "wysoki",
@@ -269,6 +274,7 @@ assert.equal(rows[0].lastPaymentLabel, "2099-05-03 · 300,00 PLN");
 assert.equal(rows[0].matchedPaymentCountLabel, "2");
 const familyFoundationRows = buildBillingFamilyFoundationRows(payers, students, balances);
 assert.equal(familyFoundationRows.length, 1);
+assert.equal(familyFoundationRows[0].href, "/rozliczenia/platnicy/14");
 assert.equal(familyFoundationRows[0].familyLabel, "Rodzina Kowalskich");
 assert.equal(familyFoundationRows[0].payerLabel, "Rodzina Kowalskich");
 assert.equal(familyFoundationRows[0].studentSummaryLabel, "2 uczniów");
@@ -349,7 +355,7 @@ const snapshot = {
 
 const attentionItems = buildBillingAttentionItems(snapshot);
 assert.ok(attentionItems.length <= 6);
-assert.ok(attentionItems.some((item) => item.category === "Rozliczenia" && item.href === BILLING_CANONICAL_ROUTE));
+assert.ok(attentionItems.some((item) => item.category === "Rozliczenia" && item.href === "/rozliczenia/platnicy/1"));
 assert.ok(attentionItems.some((item) => item.category === "Faktury" && item.href === "/faktury/18"));
 assert.ok(attentionItems.some((item) => item.category === "Sprawy" && item.href === "/work-items/44"));
 
@@ -385,6 +391,23 @@ const recentPayments = buildBillingRecentPaymentRows(snapshot.balances);
 assert.equal(recentPayments[0].amountLabel, "300,00 PLN");
 assert.equal(recentPayments[0].titleLabel, "Czesne maj");
 
+const payerDetail = buildBillingPayerDetailView(snapshot, 1);
+assert.ok(payerDetail);
+assert.equal(payerDetail.title, "Rodzina Kowalskich");
+assert.equal(payerDetail.payerTypeLabel, "Płatnik rodzinny · rodzeństwo (2 uczniów)");
+assert.equal(payerDetail.balanceMeaningLabel, "Do dopłaty pozostaje 220,00 PLN");
+assert.equal(payerDetail.peopleRows.length, 2);
+assert.equal(payerDetail.peopleRows[0].personLabel, "Lena Kowalska");
+assert.equal(payerDetail.serviceRows.length, 1);
+assert.match(payerDetail.serviceRows[0].peopleLabel, /Lena Kowalska/);
+assert.match(payerDetail.serviceRows[0].peopleLabel, /Maja Kowalska/);
+assert.equal(payerDetail.chargeRows.length, 2);
+assert.equal(payerDetail.paymentRows[0].amountLabel, "300,00 PLN");
+assert.equal(payerDetail.invoiceRows[0].href, "/faktury/18");
+assert.equal(payerDetail.workItemRows[0].href, "/work-items/44");
+assert.equal(buildBillingPayerDetailView(snapshot, 999), null);
+assert.equal(billingPayerDetailPath(14), "/rozliczenia/platnicy/14");
+
 assert.equal(formatMoney(1234.5).endsWith("PLN"), true);
 assert.equal(hasBillingData("ready", balances), true);
 assert.equal(isBillingEmpty("ready", []), true);
@@ -398,6 +421,7 @@ assert.equal(BILLING_STUDENTS_ENDPOINT, "/billing/students");
 assert.equal(BILLING_CHARGES_ENDPOINT, "/billing/charges");
 assert.equal(BILLING_CANONICAL_ROUTE, "/rozliczenia");
 assert.equal(BILLING_LEGACY_ROUTE, "/kasa");
+assert.equal(BILLING_PAYER_DETAIL_ROUTE, "/rozliczenia/platnicy");
 assert.equal(BILLING_READ_ONLY, true);
 assert.deepEqual(BILLING_FORBIDDEN_WRITE_ACTIONS, [
   "Dodaj płatność",
@@ -411,6 +435,8 @@ assert.deepEqual(BILLING_FORBIDDEN_WRITE_ACTIONS, [
 ]);
 assert.equal(BILLING_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć rozliczenia");
 assert.doesNotMatch(BILLING_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id|endpoint|payload|debug/i);
+assert.equal(BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć płatnika");
+assert.doesNotMatch(BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id|endpoint|payload|debug/i);
 assert.equal(navigationItems.some((item) => item.path === "/kasa" || item.label === "Kasa"), false);
 const billingNavigationItem = findNavigationItem("/rozliczenia");
 assert.equal(billingNavigationItem.id, "billing");
@@ -457,6 +483,21 @@ const screenStrings = [
   ...invoiceRows.flatMap((row) => [row.invoiceLabel, row.contractorLabel, row.reasonLabel, row.href]),
   ...contractorRows.flatMap((row) => [row.contractorLabel, row.contactLabel, row.balanceLabel, row.href]),
   ...relatedWorkItems.flatMap((row) => [row.titleLabel, row.reasonLabel, row.href]),
+  ...(payerDetail
+    ? [
+        payerDetail.title,
+        payerDetail.payerTypeLabel,
+        payerDetail.balanceMeaningLabel,
+        payerDetail.lastPaymentLabel,
+        ...payerDetail.peopleRows.flatMap((row) => [row.personLabel, row.serviceLabel, row.contextLabel]),
+        ...payerDetail.serviceRows.flatMap((row) => [row.serviceLabel, row.peopleLabel, row.contextLabel]),
+        ...payerDetail.chargeRows.flatMap((row) => [row.periodLabel, row.personLabel, row.serviceLabel]),
+        ...payerDetail.paymentRows.flatMap((row) => [row.dateLabel, row.amountLabel, row.titleLabel, row.contextLabel]),
+        ...payerDetail.invoiceRows.flatMap((row) => [row.invoiceLabel, row.contractorLabel, row.href]),
+        ...payerDetail.workItemRows.flatMap((row) => [row.titleLabel, row.reasonLabel, row.href]),
+        ...payerDetail.contextItems.flatMap((item) => [item.label, item.value]),
+      ]
+    : []),
 ];
 assert.equal(billingScreenHasForbiddenTechnicalText(screenStrings), false);
 assert.equal(billingScreenHasForbiddenTechnicalText(["storage_key", "data/magazyn", "C:\\Users\\x", "payload"]), true);

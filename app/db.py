@@ -2635,6 +2635,8 @@ PRAGMA foreign_keys = OFF;
   DROP TABLE IF EXISTS system_email_google_connections;
   DROP TABLE IF EXISTS user_module_inbox_state;
   DROP TABLE IF EXISTS billing_payer_charge_state;
+DROP TABLE IF EXISTS billing_payer_ledger_entries;
+DROP TABLE IF EXISTS billing_payment_matches;
 DROP TABLE IF EXISTS billing_student_charge_state;
 DROP TABLE IF EXISTS billing_charges;
 DROP TABLE IF EXISTS billing_charge_batches;
@@ -2689,6 +2691,8 @@ POSTGRES_RESET_SCRIPT = """
   DROP TABLE IF EXISTS system_email_google_connections CASCADE;
   DROP TABLE IF EXISTS user_module_inbox_state CASCADE;
   DROP TABLE IF EXISTS billing_payer_charge_state CASCADE;
+DROP TABLE IF EXISTS billing_payer_ledger_entries CASCADE;
+DROP TABLE IF EXISTS billing_payment_matches CASCADE;
 DROP TABLE IF EXISTS billing_student_charge_state CASCADE;
 DROP TABLE IF EXISTS billing_charges CASCADE;
 DROP TABLE IF EXISTS billing_charge_batches CASCADE;

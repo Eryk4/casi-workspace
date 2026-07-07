@@ -90,8 +90,13 @@ class DemoSeedTests(unittest.TestCase):
         self.assertGreaterEqual(len(transactions), 10)
         self.assertTrue(any(item["reference"] == "MR-DEMO-010" for item in transactions))
         balances = self.services["billing_ledger_service"].list_balances(organization_id=robotyka_id)
+        balances_by_name = {item["display_name"]: item for item in balances}
         self.assertTrue(any(float(item.get("balance_due") or 0) < 0 for item in balances))
         self.assertTrue(any(float(item.get("balance_due") or 0) > 0 for item in balances))
+        self.assertAlmostEqual(float(balances_by_name["Rodzina Kruk"].get("balance_due") or 0), -30.0)
+        self.assertAlmostEqual(float(balances_by_name["Rodzina Zielinskich"].get("balance_due") or 0), 200.0)
+        self.assertLess(abs(float(balances_by_name["Rodzina Kruk"].get("balance_due") or 0)), 1000)
+        self.assertLess(abs(float(balances_by_name["Rodzina Zielinskich"].get("balance_due") or 0)), 1000)
         self.assertTrue(
             any(
                 item.get("display_name") == "Rodzina Lewandowskich"
@@ -274,6 +279,16 @@ class DemoSeedTests(unittest.TestCase):
         first_task_count = len(default_tasks)
         first_casi_work_item_count = len(casi_work_items)
         first_robotyka_work_item_count = len(robotyka_work_items)
+        first_payment_match_count = len(
+            self.services["billing_ledger_service"].list_payment_matches(
+                organization_id=robotyka_id,
+                limit=1000,
+            )
+        )
+        first_balances_by_name = {
+            item["display_name"]: item
+            for item in self.services["billing_ledger_service"].list_balances(organization_id=robotyka_id)
+        }
         seed_demo_data(
             self.invoice_service,
             self.invoice_repository,
@@ -312,6 +327,27 @@ class DemoSeedTests(unittest.TestCase):
         self.assertEqual(
             len(self.work_item_service.list_work_items(organization_id=int(robotyka["organization_id"]), limit=50)),
             first_robotyka_work_item_count,
+        )
+        self.assertEqual(
+            len(
+                self.services["billing_ledger_service"].list_payment_matches(
+                    organization_id=robotyka_id,
+                    limit=1000,
+                )
+            ),
+            first_payment_match_count,
+        )
+        second_balances_by_name = {
+            item["display_name"]: item
+            for item in self.services["billing_ledger_service"].list_balances(organization_id=robotyka_id)
+        }
+        self.assertAlmostEqual(
+            float(second_balances_by_name["Rodzina Kruk"].get("balance_due") or 0),
+            float(first_balances_by_name["Rodzina Kruk"].get("balance_due") or 0),
+        )
+        self.assertAlmostEqual(
+            float(second_balances_by_name["Rodzina Zielinskich"].get("balance_due") or 0),
+            float(first_balances_by_name["Rodzina Zielinskich"].get("balance_due") or 0),
         )
 
     def test_seed_demo_data_adds_demo_users_even_when_invoices_already_exist(self) -> None:

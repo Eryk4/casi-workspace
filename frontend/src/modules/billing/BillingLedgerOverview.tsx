@@ -94,12 +94,12 @@ const balanceColumns: Array<TableColumn<BillingBalanceViewRow>> = [
 const familyFoundationColumns: Array<TableColumn<BillingFamilyFoundationRow>> = [
   {
     key: "family",
-    header: "Rodzina / płatnik",
+    header: "Płatnik",
     render: (row) => (
-      <span className="module-row-title">
+      <Link className="module-row-title module-link" href={row.href}>
         <UsersRound aria-hidden="true" size={16} />
         {row.familyLabel}
-      </span>
+      </Link>
     ),
   },
   {
@@ -511,13 +511,13 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
               </Card>
 
               <Card
-                description="Pierwsza warstwa pełnego modułu rozliczeń: kto płaci, za kogo płaci i czy klient jest rodziną ucznia czy firmą."
-                title="Rodziny, uczniowie i płatnicy"
+                description="Pierwsza warstwa pełnego modułu rozliczeń: kto jest płatnikiem, za kogo płaci i czy klient jest rodziną ucznia czy firmą."
+                title="Płatnicy i osoby objęte rozliczeniem"
               >
                 <Table
                   columns={familyFoundationColumns}
                   data={familyRows}
-                  emptyMessage="Brak rodzin, uczniów i płatników dla tej organizacji."
+                  emptyMessage="Brak płatników i osób objętych rozliczeniem dla tej organizacji."
                   getRowKey={(row) => row.id}
                 />
 

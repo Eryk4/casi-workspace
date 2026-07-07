@@ -29,7 +29,7 @@ The module must not become a small `kasa` table. It should be a domain model for
 
 - Canonical route: `/rozliczenia`.
 - Legacy route: `/kasa`, redirect only.
-- Active screen: `Centrum rozliczen v1`.
+- Active screen: `Centrum rozliczen v1`, with read-only payer detail under `/rozliczenia/platnicy/{payerId}`.
 - Current screen mode: read-only.
 - Current frontend sources:
   - `GET /api/billing/ledger/balances?organization_id=...`,
@@ -65,14 +65,15 @@ The frontend already has:
 - contractor rows,
 - related Work Item rows,
 - recent payment rows,
+- read-only payer detail route,
 - read-only guardrails,
 - technical leakage checks,
 - `/kasa` redirect regression.
 
 The frontend does not yet have:
 
-- family detail route,
-- payer detail route,
+- family detail route as a separate concept, if product scope later requires it,
+- payer detail route is now started in Next as read-only `/rozliczenia/platnicy/{payerId}`,
 - student detail route,
 - enrollment list/detail,
 - charge center,
