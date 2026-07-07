@@ -42,6 +42,10 @@ const {
   BILLING_LEGACY_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
+  BILLING_PAYER_NOTE_CREATE_ENABLED,
+  BILLING_PAYER_NOTE_ENDPOINT_SUFFIX,
+  BILLING_PAYER_NOTE_HELP_TEXT,
+  BILLING_PAYER_NOTE_MAX_LENGTH,
   BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_TITLE,
   BILLING_PAYER_DETAIL_ROUTE,
@@ -55,6 +59,7 @@ const {
   BILLING_TRANSACTIONS_ENDPOINT,
   billingBalanceTone,
   billingPayerDetailPath,
+  billingPayerNoteEndpoint,
   billingScreenHasForbiddenTechnicalText,
   buildBillingAttentionItems,
   buildBillingBalanceRows,
@@ -66,14 +71,17 @@ const {
   buildBillingKpis,
   buildBillingMoneySummary,
   buildBillingPayerDetailView,
+  buildBillingPayerNoteRequest,
   buildBillingPaymentsAllocationView,
   buildBillingPeriodView,
   buildBillingRecentPaymentRows,
   buildBillingRelatedWorkItemRows,
   buildBillingServiceEnrollmentRows,
   canUseBillingOrganizationScope,
+  createBillingPayerNoteSubmitter,
   formatMoney,
   getBillingErrorState,
+  getBillingPayerNoteErrorState,
   hasBillingCenterData,
   hasBillingData,
   isBillingCenterEmpty,
@@ -81,6 +89,7 @@ const {
   readBillingBalances,
   readBillingCharges,
   readBillingInvoices,
+  readBillingPayerNotes,
   readBillingPaymentMatches,
   readBillingPayers,
   readBillingStudents,
@@ -318,6 +327,31 @@ const transactions = readBillingTransactions([
 assert.equal(transactions.length, 2);
 assert.equal(transactions[0].billing_transaction_id, 61);
 assert.equal(transactions[1].amount, 171);
+const payerNotes = readBillingPayerNotes([
+  {
+    billing_note_id: 701,
+    organization_id: 1,
+    billing_payer_id: 14,
+    author_user_id: 2,
+    author_user_name: "Operator",
+    note_type: "operator_note",
+    note_text: "Rodzic potwierdził wyjaśnienie salda.",
+    created_at: "2099-05-08T10:00:00",
+  },
+  {
+    billing_note_id: 702,
+    organization_id: 1,
+    billing_payer_id: 14,
+    author_user_id: 2,
+    author_user_name: "Operator",
+    note_type: "operator_note",
+    note_text: "C:\\Users\\secret\\ledger.txt",
+    created_at: "2099-05-09T10:00:00",
+  },
+]);
+assert.equal(payerNotes.length, 2);
+assert.equal(payerNotes[0].note_text, "Rodzic potwierdził wyjaśnienie salda.");
+assert.equal(payerNotes[1].note_text, "Ukryto techniczną lub wrażliwą treść notatki.");
 
 const rows = buildBillingBalanceRows(balances);
 assert.equal(rows[0].payerLabel, "Rodzina Kowalskich");
@@ -413,6 +447,18 @@ const snapshot = {
     makeTransaction({ billing_transaction_id: 63, amount: 140, counterparty_name: "Misja Robotyka", title: "Abonament CASI marzec" }),
     makeTransaction({ billing_transaction_id: 64, amount: 999, title: "Wpłata ogólna Rodzina Kowalskich", matched_status: "payer_only" }),
     makeTransaction({ billing_transaction_id: 65, amount: 77, title: "Przelew bez identyfikatora", matched_status: "unmatched" }),
+  ]),
+  payerNotes: readBillingPayerNotes([
+    {
+      billing_note_id: 701,
+      organization_id: 1,
+      billing_payer_id: 1,
+      author_user_id: 2,
+      author_user_name: "Operator",
+      note_type: "operator_note",
+      note_text: "Ustalono rozmowę o saldzie po zajęciach.",
+      created_at: "2099-05-08T10:00:00",
+    },
   ]),
   invoices: readBillingInvoices([
     makeInvoice({ invoice_id: 18, contractor_id: 14, invoice_number: "FV/CASI/18", duplicate_type: "podejrzenie" }),
@@ -558,6 +604,9 @@ assert.equal(payerDetail.serviceRows[0].chargeCountLabel, "3 naliczeń");
 assert.match(payerDetail.serviceRows[0].sourceLabel, /Wywnioskowane z naliczeń/);
 assert.equal(payerDetail.chargeRows.length, 3);
 assert.equal(payerDetail.paymentRows[0].amountLabel, "300,00 PLN");
+assert.equal(payerDetail.noteRows.length, 1);
+assert.equal(payerDetail.noteRows[0].typeLabel, "Notatka operatora");
+assert.equal(payerDetail.noteRows[0].noteText, "Ustalono rozmowę o saldzie po zajęciach.");
 assert.equal(payerDetail.invoiceRows[0].href, "/faktury/18");
 assert.equal(payerDetail.workItemRows[0].href, "/work-items/44");
 assert.equal(buildBillingPayerDetailView(snapshot, 999), null);
@@ -582,6 +631,13 @@ assert.equal(BILLING_PAYER_DETAIL_ROUTE, "/rozliczenia/platnicy");
 assert.equal(BILLING_PERIODS_ROUTE, "/rozliczenia/okresy");
 assert.equal(BILLING_PAYMENTS_ROUTE, "/rozliczenia/wplaty");
 assert.equal(BILLING_READ_ONLY, true);
+assert.equal(BILLING_PAYER_NOTE_CREATE_ENABLED, true);
+assert.equal(BILLING_PAYER_NOTE_MAX_LENGTH, 2000);
+assert.equal(BILLING_PAYER_NOTE_ENDPOINT_SUFFIX, "/notes");
+assert.equal(billingPayerNoteEndpoint(14), "/billing/payers/14/notes");
+assert.match(BILLING_PAYER_NOTE_HELP_TEXT, /nie zmienia salda/i);
+assert.match(BILLING_PAYER_NOTE_HELP_TEXT, /przypisań wpłat/i);
+assert.doesNotMatch(BILLING_PAYER_NOTE_HELP_TEXT, /endpoint|payload|debug|demo/i);
 assert.deepEqual(BILLING_FORBIDDEN_WRITE_ACTIONS, [
   "Dodaj płatność",
   "Edytuj płatność",
@@ -617,6 +673,14 @@ assert.equal(canUseBillingOrganizationScope("   "), false);
 assert.equal(canUseBillingOrganizationScope("42"), true);
 assert.equal(canUseBillingOrganizationScope(42), true);
 assert.deepEqual(withActiveOrganizationQuery("42"), { organization_id: "42" });
+assert.deepEqual(buildBillingPayerNoteRequest("  Ustalono termin dopłaty.  ", "42"), {
+  ok: true,
+  payload: { note_text: "Ustalono termin dopłaty." },
+});
+assert.equal(buildBillingPayerNoteRequest("Ustalono termin dopłaty.", null).ok, false);
+assert.equal(buildBillingPayerNoteRequest("   ", "42").ok, false);
+assert.equal(buildBillingPayerNoteRequest("x".repeat(BILLING_PAYER_NOTE_MAX_LENGTH + 1), "42").ok, false);
+assert.equal(getBillingPayerNoteErrorState(new ApiError("Nie zapisano", 500)).title, "Backend nie zapisał notatki");
 
 const billingProductNote = fs.readFileSync(path.join(srcRoot, "..", "docs", "BILLING_CENTER_PRODUCT_NOTE.md"), "utf8");
 assert.match(billingProductNote, /Docelowy zakres pełnego modułu rozliczeń/);
@@ -715,6 +779,7 @@ const screenStrings = [
         ...payerDetail.serviceRows.flatMap((row) => [row.serviceLabel, row.serviceTypeLabel, row.peopleLabel, row.statusLabel, row.sourceLabel, row.contextLabel]),
         ...payerDetail.chargeRows.flatMap((row) => [row.periodLabel, row.personLabel, row.serviceLabel]),
         ...payerDetail.paymentRows.flatMap((row) => [row.dateLabel, row.amountLabel, row.titleLabel, row.contextLabel]),
+        ...payerDetail.noteRows.flatMap((row) => [row.authorLabel, row.dateLabel, row.typeLabel, row.noteText]),
         ...payerDetail.invoiceRows.flatMap((row) => [row.invoiceLabel, row.contractorLabel, row.href]),
         ...payerDetail.workItemRows.flatMap((row) => [row.titleLabel, row.reasonLabel, row.href]),
         ...payerDetail.contextItems.flatMap((item) => [item.label, item.value]),
@@ -728,6 +793,8 @@ assert.throws(() => readBillingBalances({ balances: [] }), ApiContractError);
 assert.throws(() => readBillingBalances([{ display_name: "Brak ID" }]), ApiContractError);
 assert.throws(() => readBillingPayers({ payers: [] }), ApiContractError);
 assert.throws(() => readBillingPayers([{ display_name: "Brak ID" }]), ApiContractError);
+assert.throws(() => readBillingPayerNotes({ notes: [] }), ApiContractError);
+assert.throws(() => readBillingPayerNotes([{ note_text: "Brak ID" }]), ApiContractError);
 assert.throws(() => readBillingStudents({ students: [] }), ApiContractError);
 assert.throws(() => readBillingStudents([{ full_name: "Brak płatnika" }]), ApiContractError);
 assert.throws(() => readBillingCharges({ charges: [] }), ApiContractError);
@@ -756,6 +823,52 @@ async function main() {
     },
   );
 
+  await withMockedFetch(
+    async (url, options) => {
+      assert.equal(url, "/api/billing/payers/14/notes?organization_id=42");
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body), { note_text: "Ustalono termin dopłaty." });
+      return jsonResponse(201, payerNotes[0]);
+    },
+    async () => {
+      const payload = await api.addBillingPayerNote(14, "Ustalono termin dopłaty.", "42");
+      assert.equal(readBillingPayerNotes([payload])[0].note_text, "Rodzic potwierdził wyjaśnienie salda.");
+    },
+  );
+
+  let refreshCount = 0;
+  let submittingStates = [];
+  let submittedPayload = null;
+  const submitter = createBillingPayerNoteSubmitter({
+    refreshDetail: async () => {
+      refreshCount += 1;
+    },
+    setSubmitting: (isSubmitting) => {
+      submittingStates.push(isSubmitting);
+    },
+    submitNote: async (payload) => {
+      submittedPayload = payload;
+    },
+  });
+  const submitResult = await submitter(buildBillingPayerNoteRequest("  Ustalono termin dopłaty.  ", "42"));
+  assert.equal(submitResult.status, "success");
+  assert.deepEqual(submittedPayload, { note_text: "Ustalono termin dopłaty." });
+  assert.equal(refreshCount, 1);
+  assert.deepEqual(submittingStates, [true, false]);
+
+  const failingSubmitter = createBillingPayerNoteSubmitter({
+    refreshDetail: async () => {
+      throw new Error("Refresh should not run after failed submit.");
+    },
+    setSubmitting: () => {},
+    submitNote: async () => {
+      throw new ApiError("Backend odmówił", 500);
+    },
+  });
+  const failingResult = await failingSubmitter(buildBillingPayerNoteRequest("Treść", "42"));
+  assert.equal(failingResult.status, "error");
+  assert.equal(failingResult.errorState.title, "Backend nie zapisał notatki");
+
   const requestedUrls = [];
   await withMockedFetch(
     async (url, options) => {
@@ -763,6 +876,9 @@ async function main() {
       assert.equal(options.method, "GET");
       if (url.startsWith(`/api${BILLING_BALANCES_ENDPOINT}`)) {
         return jsonResponse(200, [makeBalance()]);
+      }
+      if (url.startsWith(`/api${billingPayerNoteEndpoint(14)}`)) {
+        return jsonResponse(200, [payerNotes[0]]);
       }
       if (url.startsWith(`/api${BILLING_PAYERS_ENDPOINT}`)) {
         return jsonResponse(200, [makePayer()]);
@@ -793,11 +909,12 @@ async function main() {
     async () => {
       const query = withActiveOrganizationQuery("42");
       const workItemsQuery = withActiveOrganizationQuery("42", { limit: 100, only_open: 1 });
-      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, matchesPayload, transactionsPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, notesPayload, matchesPayload, transactionsPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
         api.ledgerBalances(query),
         api.billingPayers(query),
         api.billingStudents(query),
         api.billingCharges(withActiveOrganizationQuery("42", { limit: 100 })),
+        api.billingPayerNotes(14, withActiveOrganizationQuery("42", { limit: 100 })),
         api.billingLedgerMatches(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.billingTransactions(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.invoices(query),
@@ -808,6 +925,7 @@ async function main() {
       assert.equal(readBillingPayers(payersPayload).length, 1);
       assert.equal(readBillingStudents(studentsPayload).length, 1);
       assert.equal(readBillingCharges(chargesPayload).length, 1);
+      assert.equal(readBillingPayerNotes(notesPayload).length, 1);
       assert.equal(readBillingPaymentMatches(matchesPayload).length, 1);
       assert.equal(readBillingTransactions(transactionsPayload).length, 1);
       assert.equal(readBillingInvoices(invoicesPayload).length, 1);
@@ -818,6 +936,7 @@ async function main() {
 
   assert.ok(requestedUrls.every((url) => url.includes("organization_id=42")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/charges") && url.includes("limit=100")));
+  assert.ok(requestedUrls.some((url) => url.includes("/api/billing/payers/14/notes") && url.includes("limit=100")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/ledger/matches") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/transactions") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/work-items") && url.includes("only_open=1") && url.includes("limit=100")));

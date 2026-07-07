@@ -235,6 +235,18 @@ export const api = {
   billingLedgerMatches: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/ledger/matches", { query }),
   billingTransactions: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/transactions", { query }),
   billingPayers: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/payers", { query }),
+  billingPayerNotes: (payerId: number | string, query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>(`/billing/payers/${payerId}/notes`, { query }),
+  addBillingPayerNote: (
+    payerId: number | string,
+    noteText: string,
+    organizationId?: string | null,
+  ) =>
+    apiRequest<Record<string, unknown>>(`/billing/payers/${payerId}/notes`, {
+      method: "POST",
+      body: { note_text: noteText },
+      query: withOrganizationQuery(organizationId),
+    }),
   billingStudents: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/students", { query }),
   billingCharges: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/charges", { query }),
   organizations: () => apiRequest<Record<string, unknown>>("/organizations"),

@@ -61,6 +61,7 @@ CRITICAL_TABLES = {
     "billing_transactions",
     "billing_payment_matches",
     "billing_payer_ledger_entries",
+    "billing_notes",
     "knowledge_documents",
     "knowledge_document_versions",
     "knowledge_document_comments",

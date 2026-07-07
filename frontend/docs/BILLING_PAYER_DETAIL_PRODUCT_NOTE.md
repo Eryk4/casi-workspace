@@ -25,7 +25,8 @@ Ekran korzysta z istniejących, organizacyjnie scoped źródeł read-only:
 - `GET /api/billing/charges?organization_id=...`,
 - `GET /api/invoices?organization_id=...`,
 - `GET /api/contractors?organization_id=...`,
-- `GET /api/work-items?organization_id=...&only_open=1&limit=100`.
+- `GET /api/work-items?organization_id=...&only_open=1&limit=100`,
+- `GET /api/billing/payers/{payerId}/notes?organization_id=...`.
 
 Nie dodano nowego endpointu backendowego. Relacje są składane deterministycznie po stronie frontendu z dostępnych danych.
 
@@ -41,7 +42,8 @@ Ekran pokazuje:
 - ostatnią widoczną wpłatę, jeśli jest dostępna,
 - powiązane faktury, jeśli można je bezpiecznie ustalić,
 - powiązane sprawy, jeśli można je bezpiecznie ustalić,
-- kontekst biznesowy.
+- kontekst biznesowy,
+- notatki rozliczeniowe operatora.
 
 Ekran jest w pełni read-only. Dozwolone są tylko odświeżenie danych i linki do istniejących modułów.
 
@@ -63,6 +65,12 @@ Ekran nie wykonuje:
 - edycji płatnika,
 - edycji ucznia,
 - usuwania danych.
+
+Dozwolona akcja v1:
+
+- dodanie notatki rozliczeniowej operatora do p?atnika.
+
+Notatka jest addytywna, wymaga aktywnej organizacji, przyjmuje wy??cznie pole `note_text`, ma limit 2000 znak?w i nie loguje pe?nej tre?ci w zdarzeniu systemowym. Historia systemowa zapisuje tylko metadane: identyfikator notatki, p?atnika i d?ugo?? tre?ci.
 
 ## Ograniczenia
 

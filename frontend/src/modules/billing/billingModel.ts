@@ -403,6 +403,26 @@ export type BillingPayerPaymentRow = {
   contextLabel: string;
 };
 
+export type BillingPayerNoteRecord = {
+  billing_note_id: number;
+  organization_id?: number;
+  billing_payer_id: number;
+  author_user_id?: number;
+  author_user_name?: string | null;
+  author_user_role?: string | null;
+  note_type?: string | null;
+  note_text: string;
+  created_at?: string | null;
+};
+
+export type BillingPayerNoteRow = {
+  id: string;
+  authorLabel: string;
+  dateLabel: string;
+  typeLabel: string;
+  noteText: string;
+};
+
 export type BillingPayerRelatedInvoiceRow = {
   id: string;
   href: string;
@@ -430,6 +450,7 @@ export type BillingPayerDetailView = {
   balanceExplanationRows: BillingBalanceExplanationRow[];
   chargeRows: BillingPayerChargeRow[];
   paymentRows: BillingPayerPaymentRow[];
+  noteRows: BillingPayerNoteRow[];
   invoiceRows: BillingPayerRelatedInvoiceRow[];
   workItemRows: BillingRelatedWorkItemRow[];
   contextItems: Array<{ label: string; value: string }>;
@@ -442,18 +463,60 @@ export type BillingCenterSnapshot = {
   charges: BillingChargeRecord[];
   paymentMatches?: BillingPaymentMatchRecord[];
   transactions?: BillingTransactionRecord[];
+  payerNotes?: BillingPayerNoteRecord[];
   invoices: InvoiceRecord[];
   contractors: ContractorRecord[];
   workItems: WorkItemRecord[];
+};
+
+export type BillingPayerNoteValidationResult =
+  | {
+      ok: true;
+      payload: {
+        note_text: string;
+      };
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
+export type BillingPayerNoteErrorState = BillingErrorState;
+
+export type BillingPayerNoteSubmitResult =
+  | {
+      status: "success";
+    }
+  | {
+      status: "blocked";
+      message: string;
+    }
+  | {
+      status: "ignored";
+    }
+  | {
+      status: "error";
+      errorState: BillingPayerNoteErrorState;
+    };
+
+export type BillingPayerNoteSubmitterDeps = {
+  refreshDetail: () => Promise<void>;
+  setSubmitting: (isSubmitting: boolean) => void;
+  submitNote: (payload: { note_text: string }) => Promise<unknown>;
 };
 
 export const BILLING_BALANCES_ENDPOINT = "/billing/ledger/balances";
 export const BILLING_PAYMENT_MATCHES_ENDPOINT = "/billing/ledger/matches";
 export const BILLING_TRANSACTIONS_ENDPOINT = "/billing/transactions";
 export const BILLING_PAYERS_ENDPOINT = "/billing/payers";
+export const BILLING_PAYER_NOTE_ENDPOINT_SUFFIX = "/notes";
 export const BILLING_STUDENTS_ENDPOINT = "/billing/students";
 export const BILLING_CHARGES_ENDPOINT = "/billing/charges";
 export const BILLING_READ_ONLY = true;
+export const BILLING_PAYER_NOTE_CREATE_ENABLED = true;
+export const BILLING_PAYER_NOTE_MAX_LENGTH = 2000;
+export const BILLING_PAYER_NOTE_HELP_TEXT =
+  "Notatka nie zmienia salda ani przypisań wpłat. Służy tylko do zapisania kontekstu rozmowy lub decyzji.";
 export const BILLING_CANONICAL_ROUTE = "/rozliczenia";
 export const BILLING_LEGACY_ROUTE = "/kasa";
 export const BILLING_PAYER_DETAIL_ROUTE = `${BILLING_CANONICAL_ROUTE}/platnicy`;
@@ -536,6 +599,36 @@ function normalizeText(value: unknown): string {
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
     : "";
+}
+
+const UNSAFE_BILLING_TEXT_PATTERNS = [
+  /^[a-z]:\\/i,
+  /^\\\\/,
+  /^\/users\//i,
+  /^\/home\//i,
+  /\\users\\/i,
+  /data[\\/]magazyn/i,
+  /storage_key/i,
+  /connection\s*string/i,
+  /database_url/i,
+  /postgres(ql)?:\/\//i,
+  /secret/i,
+  /token/i,
+  /password/i,
+  /api[_-]?key/i,
+  /^\s*[{[]/,
+];
+
+function isUnsafeBillingText(value: string): boolean {
+  return UNSAFE_BILLING_TEXT_PATTERNS.some((pattern) => pattern.test(value.trim()));
+}
+
+function safeBillingText(value: unknown, fallback = "-"): string {
+  const nextValue = readOptionalString(value);
+  if (!nextValue || isUnsafeBillingText(nextValue)) {
+    return fallback;
+  }
+  return nextValue;
 }
 
 export function formatMoney(value: number | null | undefined, currency = DEFAULT_CURRENCY): string {
@@ -710,6 +803,40 @@ export function readBillingPayers(payload: unknown): BillingPayerRecord[] {
       latest_payment_amount: readNumber(item.latest_payment_amount) ?? null,
       latest_payment_currency: readOptionalString(item.latest_payment_currency) ?? null,
       latest_payment_title: readOptionalString(item.latest_payment_title) ?? null,
+    };
+  });
+}
+
+export function billingPayerNoteEndpoint(payerId: number | string): string {
+  return `${BILLING_PAYERS_ENDPOINT}/${payerId}${BILLING_PAYER_NOTE_ENDPOINT_SUFFIX}`;
+}
+
+export function readBillingPayerNotes(payload: unknown): BillingPayerNoteRecord[] {
+  if (!Array.isArray(payload)) {
+    throw new ApiContractError(`${BILLING_PAYERS_ENDPOINT}/{id}${BILLING_PAYER_NOTE_ENDPOINT_SUFFIX}`, payload);
+  }
+
+  return payload.map((item) => {
+    if (!isRecord(item)) {
+      throw new ApiContractError(`${BILLING_PAYERS_ENDPOINT}/{id}${BILLING_PAYER_NOTE_ENDPOINT_SUFFIX}`, payload);
+    }
+
+    const noteId = readNumber(item.billing_note_id);
+    const payerId = readNumber(item.billing_payer_id);
+    if (!noteId || !payerId) {
+      throw new ApiContractError(`${BILLING_PAYERS_ENDPOINT}/{id}${BILLING_PAYER_NOTE_ENDPOINT_SUFFIX}`, payload);
+    }
+
+    return {
+      billing_note_id: noteId,
+      organization_id: readNumber(item.organization_id),
+      billing_payer_id: payerId,
+      author_user_id: readNumber(item.author_user_id),
+      author_user_name: safeBillingText(item.author_user_name, "") || null,
+      author_user_role: safeBillingText(item.author_user_role, "") || null,
+      note_type: safeBillingText(item.note_type, "") || null,
+      note_text: safeBillingText(item.note_text, "Ukryto techniczną lub wrażliwą treść notatki."),
+      created_at: readOptionalString(item.created_at) ?? null,
     };
   });
 }
@@ -2052,6 +2179,20 @@ function buildPayerPaymentRows(
   ];
 }
 
+function buildPayerNoteRows(notes: BillingPayerNoteRecord[], payerId: number): BillingPayerNoteRow[] {
+  return notes
+    .filter((note) => note.billing_payer_id === payerId)
+    .slice()
+    .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")) || b.billing_note_id - a.billing_note_id)
+    .map((note) => ({
+      id: String(note.billing_note_id),
+      authorLabel: safeBillingText(note.author_user_name, note.author_user_id ? `Użytkownik #${note.author_user_id}` : "Operator"),
+      dateLabel: formatDateLabel(note.created_at, "Brak daty"),
+      typeLabel: note.note_type === "operator_note" || !note.note_type ? "Notatka operatora" : safeBillingText(note.note_type, "Notatka"),
+      noteText: safeBillingText(note.note_text, "Ukryto techniczną lub wrażliwą treść notatki."),
+    }));
+}
+
 function buildPayerRelatedInvoiceRows(
   payer: BillingPayerRecord,
   students: BillingStudentRecord[],
@@ -2165,6 +2306,7 @@ export function buildBillingPayerDetailView(snapshot: BillingCenterSnapshot, pay
     balanceExplanationRows: buildBillingBalanceExplanationRows([balanceRecord], [payer], payerStudents, payerCharges, 1),
     chargeRows: buildPayerChargeRows(payerCharges),
     paymentRows: buildPayerPaymentRows(payer, payerBalance),
+    noteRows: buildPayerNoteRows(snapshot.payerNotes ?? [], payer.billing_payer_id),
     invoiceRows: buildPayerRelatedInvoiceRows(payer, payerStudents, snapshot.invoices),
     workItemRows: buildPayerRelatedWorkItemRows(payer, payerStudents, snapshot.workItems),
     contextItems: [
@@ -2239,6 +2381,136 @@ export function hasBillingCenterData(status: BillingStatus, snapshot: BillingCen
           snapshot.workItems.length),
     )
   );
+}
+
+export function buildBillingPayerNoteRequest(
+  noteText: string,
+  organizationId: string | number | null | undefined,
+): BillingPayerNoteValidationResult {
+  if (!canUseBillingOrganizationScope(organizationId)) {
+    return {
+      ok: false,
+      message: BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_TITLE,
+    };
+  }
+
+  const trimmedNote = noteText.trim();
+  if (!trimmedNote) {
+    return {
+      ok: false,
+      message: "Notatka rozliczeniowa nie może być pusta.",
+    };
+  }
+
+  if (trimmedNote.length > BILLING_PAYER_NOTE_MAX_LENGTH) {
+    return {
+      ok: false,
+      message: `Notatka rozliczeniowa może mieć maksymalnie ${BILLING_PAYER_NOTE_MAX_LENGTH} znaków.`,
+    };
+  }
+
+  return {
+    ok: true,
+    payload: {
+      note_text: trimmedNote,
+    },
+  };
+}
+
+export function getBillingPayerNoteErrorState(error: unknown): BillingPayerNoteErrorState {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return {
+        status: "unauthenticated",
+        title: "Sesja wygasła",
+        description: "Zaloguj się ponownie, aby dodać notatkę rozliczeniową.",
+      };
+    }
+    if (error.status === 403) {
+      return {
+        status: "forbidden",
+        title: "Brak uprawnień do notatki",
+        description: "Twoje konto nie ma uprawnień do dodawania notatek rozliczeniowych.",
+      };
+    }
+    if (error.status === 404) {
+      return {
+        status: "error",
+        title: "Nie znaleziono płatnika",
+        description: "Notatka nie została zapisana, bo backend nie znalazł płatnika w wybranej organizacji.",
+      };
+    }
+    if (error.status >= 500) {
+      return {
+        status: "server-error",
+        title: "Backend nie zapisał notatki",
+        description: "Wystąpił błąd serwera. Notatka nie jest traktowana jako zapisana bez potwierdzenia backendu.",
+      };
+    }
+    return {
+      status: "error",
+      title: `Błąd API (${error.status})`,
+      description: error.message,
+    };
+  }
+
+  if (error instanceof ApiContractError) {
+    return {
+      status: "error",
+      title: "Niepoprawny format notatki",
+      description: "Backend odpowiedział, ale zapisana notatka nie pasuje do oczekiwanego kontraktu.",
+    };
+  }
+
+  if (error instanceof TypeError) {
+    return {
+      status: "error",
+      title: "Problem z połączeniem z API",
+      description: "Nie udało się połączyć z backendem. Notatka nie została potwierdzona.",
+    };
+  }
+
+  return {
+    status: "error",
+    title: "Nie udało się dodać notatki",
+    description: error instanceof Error ? error.message : "Wystąpił nieznany błąd dodawania notatki rozliczeniowej.",
+  };
+}
+
+export function createBillingPayerNoteSubmitter(deps: BillingPayerNoteSubmitterDeps) {
+  let inFlight = false;
+
+  return async function submitBillingPayerNote(
+    validation: BillingPayerNoteValidationResult,
+  ): Promise<BillingPayerNoteSubmitResult> {
+    if (!validation.ok) {
+      return {
+        status: "blocked",
+        message: validation.message,
+      };
+    }
+
+    if (inFlight) {
+      return { status: "ignored" };
+    }
+
+    inFlight = true;
+    deps.setSubmitting(true);
+
+    try {
+      await deps.submitNote(validation.payload);
+      await deps.refreshDetail();
+      return { status: "success" };
+    } catch (error) {
+      return {
+        status: "error",
+        errorState: getBillingPayerNoteErrorState(error),
+      };
+    } finally {
+      inFlight = false;
+      deps.setSubmitting(false);
+    }
+  };
 }
 
 export function isBillingEmpty(status: BillingStatus, items: BillingBalanceRecord[] | null): boolean {

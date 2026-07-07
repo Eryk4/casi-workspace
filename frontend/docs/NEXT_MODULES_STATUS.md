@@ -32,7 +32,7 @@ This document tracks the active Next.js frontend in `frontend/`. The legacy UI i
 | Faktury | `/faktury`, `/faktury/[invoiceId]` | Real invoice inbox and product v1 invoice center | Yes, invoice inbox/detail/comment endpoints plus existing Work Items list for related open matters | Yes | Yes | Mostly read-only; one additive comment form | Yes: add operator comment only | `test-invoices.js` | Keep comments stable; do not expose workflow decisions until state-specific UX and permissions are reviewed. |
 | Work Items | `/work-items`, `/work-items/[workItemId]` | Real operational work queue and read-only case card | Yes, list/detail/action endpoints | Yes | Yes | List has write actions; case card is read-only | Yes on list only: assign to self, snooze, close | `test-work-items.js`, `test-work-item-detail.js` | Keep the case card stable; local sandbox seed now includes realistic Work Items for positive validation. Consider a read-only context endpoint only if existing detail payload is too thin. |
 | Dokumenty / Knowledge | `/dokumenty`, `/dokumenty/[documentId]` | Real document list and product v1 document center | Yes, document list/detail endpoints plus existing Work Items list for context | Yes | Yes | Yes | No | `test-documents.js`, `test-document-detail.js` | Keep read-only; add a dedicated read-only context endpoint only if frontend-side relationship assembly becomes too thin or too request-heavy. |
-| Rozliczenia | `/rozliczenia`, `/rozliczenia/okresy`, `/rozliczenia/wplaty`, `/rozliczenia/platnicy/[payerId]` | Product v1 billing center for money, payments, receivables, contractors, invoices, and related matters; includes read-only payer/family/student foundation, balance explanations, payer detail, services/enrollments, billing-period view, and payments/allocation foundation inferred from existing data | Yes, billing ledger balances, billing transactions, billing ledger matches, billing payers/students/charges, invoices, contractors, and Work Items | Yes | Yes for all current sources | Yes | No | `test-billing.js` | Use `docs/FULL_CLIENT_BILLING_DOMAIN_PLAN.md` for the target module direction. Next safe step: live-verify `/rozliczenia/wplaty` before designing any payment write path. |
+| Rozliczenia | `/rozliczenia`, `/rozliczenia/okresy`, `/rozliczenia/wplaty`, `/rozliczenia/platnicy/[payerId]` | Product v1 billing center for money, payments, receivables, contractors, invoices, and related matters; includes payer/family/student foundation, balance explanations, payer detail, services/enrollments, billing-period view, payments/allocation foundation, and additive payer notes | Yes, billing ledger balances, billing transactions, billing ledger matches, billing payers/students/charges/notes, invoices, contractors, and Work Items | Yes | Yes for all current sources | Financial state is read-only; payer detail has one additive note form | Yes: add billing payer note only | `test-billing.js` | Keep payer notes stable; do not expose payment imports, allocations, reminders, charge generation, or accounting exports until endpoint-specific UX, permissions, payload hardening, and live verification are complete. |
 | Asystent Szefa | `/asystent-szefa` | Real read-only focus snapshot | Yes, `GET /api/tasks/focus` | Yes | Yes | Yes | No | `test-boss-assistant.js` | Keep read-only; live-verify org-scoped focus data with a global user. |
 | Asystent Firmowy | `/asystent-firmowy` | Real read-only company context foundation | Yes, dashboard/documents/work-items/invoice inbox | Yes | Yes | Yes | No | `test-company-assistant.js` | Live-verify org-scoped empty/data states; do not add chat before agent contract exists. |
 | CRM | `/crm`, `/crm/[contractorId]` | Real contractor catalog and product v1 contractor center | Yes, contractor list/detail/note endpoints plus existing Work Items list for related open matters | Yes | Yes | Contractor master data is read-only | Yes: add contractor note only | `test-crm.js`, `test-contractor-detail.js` | Live-verify the contractor center for two organizations; improve relationship data before adding new CRM actions. |
@@ -81,6 +81,7 @@ Screens with real write actions:
 - Work Items list.
 - Faktury, only the additive operator comment on invoice detail.
 - CRM, only the additive contractor note on contractor detail.
+- Rozliczenia, only the additive billing payer note on payer detail.
 
 Current Work Items write actions:
 
@@ -97,6 +98,12 @@ Current invoice write action:
 Current CRM write action:
 
 - `POST /api/contractors/{id}/notes?organization_id=...`
+
+Current billing write action:
+
+- `POST /api/billing/payers/{payerId}/notes?organization_id=...`
+
+Billing payer notes accept only `{ note_text }`, require active organization scope, do not change balances, charges, payments, allocations, reminders, imports, or accounting state, and system events store only note metadata.
 
 Invoice decision helpers still exist in the frontend model/API layer and are covered by tests for `preview-ready` semantics. The product v1 invoice center does not render workflow decision buttons; only the additive operator comment form is visible.
 
@@ -145,5 +152,5 @@ python run_quality_checks.py --profile frontend-smoke
 ## Recommended Next Small Steps
 
 1. Keep `/pulpit-dnia` stable as product v1 and use it as the first morning overview during local sandbox verification.
-2. For `Rozliczenia`, keep the read-only family/payer/student, balance, services, payer-detail, period, and payments/allocation views stable; live-verify `/rozliczenia/wplaty` before any payment imports, allocation writes, reminders, period closing, or exports.
+2. For `Rozliczenia`, keep the family/payer/student, balance, services, payer-detail, period, payments/allocation views, and additive payer notes stable; do not add payment imports, allocation writes, reminders, period closing, charge generation, or exports before a separate endpoint-specific design.
 3. Keep invoice comments as the only invoice write until workflow decision UX, permissions, and state-specific confirmations are reviewed.

@@ -1001,6 +1001,24 @@ CREATE INDEX IF NOT EXISTS idx_billing_payer_ledger_entries_payer
 CREATE INDEX IF NOT EXISTS idx_billing_payer_ledger_entries_created_at
     ON billing_payer_ledger_entries(created_at DESC);
 
+CREATE TABLE IF NOT EXISTS billing_notes (
+    billing_note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    billing_payer_id INTEGER NOT NULL,
+    author_user_id INTEGER NOT NULL,
+    note_type TEXT NOT NULL DEFAULT 'operator_note',
+    note_text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    FOREIGN KEY (billing_payer_id) REFERENCES billing_payers(billing_payer_id) ON DELETE CASCADE,
+    FOREIGN KEY (author_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_billing_notes_payer
+    ON billing_notes(billing_payer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_notes_org
+    ON billing_notes(organization_id);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_id INTEGER NOT NULL,
@@ -2330,6 +2348,27 @@ CREATE INDEX IF NOT EXISTS idx_billing_payer_ledger_entries_payer
 CREATE INDEX IF NOT EXISTS idx_billing_payer_ledger_entries_created_at
     ON billing_payer_ledger_entries(created_at DESC);
 
+CREATE TABLE IF NOT EXISTS billing_notes (
+    billing_note_id BIGSERIAL PRIMARY KEY,
+    organization_id BIGINT NOT NULL,
+    billing_payer_id BIGINT NOT NULL,
+    author_user_id BIGINT NOT NULL,
+    note_type TEXT NOT NULL DEFAULT 'operator_note',
+    note_text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    CONSTRAINT fk_billing_notes_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    CONSTRAINT fk_billing_notes_payer
+        FOREIGN KEY (billing_payer_id) REFERENCES billing_payers(billing_payer_id) ON DELETE CASCADE,
+    CONSTRAINT fk_billing_notes_author
+        FOREIGN KEY (author_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_billing_notes_payer
+    ON billing_notes(billing_payer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_notes_org
+    ON billing_notes(organization_id);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id BIGSERIAL PRIMARY KEY,
     invoice_id BIGINT NOT NULL,
@@ -2636,7 +2675,8 @@ PRAGMA foreign_keys = OFF;
   DROP TABLE IF EXISTS user_module_inbox_state;
   DROP TABLE IF EXISTS billing_payer_charge_state;
 DROP TABLE IF EXISTS billing_payer_ledger_entries;
-DROP TABLE IF EXISTS billing_payment_matches;
+  DROP TABLE IF EXISTS billing_payment_matches;
+DROP TABLE IF EXISTS billing_notes;
 DROP TABLE IF EXISTS billing_student_charge_state;
 DROP TABLE IF EXISTS billing_charges;
 DROP TABLE IF EXISTS billing_charge_batches;
@@ -2692,7 +2732,8 @@ POSTGRES_RESET_SCRIPT = """
   DROP TABLE IF EXISTS user_module_inbox_state CASCADE;
   DROP TABLE IF EXISTS billing_payer_charge_state CASCADE;
 DROP TABLE IF EXISTS billing_payer_ledger_entries CASCADE;
-DROP TABLE IF EXISTS billing_payment_matches CASCADE;
+  DROP TABLE IF EXISTS billing_payment_matches CASCADE;
+DROP TABLE IF EXISTS billing_notes CASCADE;
 DROP TABLE IF EXISTS billing_student_charge_state CASCADE;
 DROP TABLE IF EXISTS billing_charges CASCADE;
 DROP TABLE IF EXISTS billing_charge_batches CASCADE;

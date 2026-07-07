@@ -1,9 +1,10 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CreditCard, FileText, ListChecks, RefreshCw, UsersRound, WalletCards } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { ArrowLeft, CreditCard, FileText, ListChecks, MessageSquareText, RefreshCw, UsersRound, WalletCards } from "lucide-react";
 
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -19,15 +20,20 @@ import { readContractors } from "../crm/crmModel";
 import { readWorkItems } from "../work-items/workItemsModel";
 import {
   BILLING_CANONICAL_ROUTE,
+  BILLING_PAYER_NOTE_HELP_TEXT,
+  BILLING_PAYER_NOTE_MAX_LENGTH,
   BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_TITLE,
   BILLING_READ_ONLY,
+  buildBillingPayerNoteRequest,
   buildBillingPayerDetailView,
   canUseBillingOrganizationScope,
+  createBillingPayerNoteSubmitter,
   getBillingErrorState,
   readBillingBalances,
   readBillingCharges,
   readBillingInvoices,
+  readBillingPayerNotes,
   readBillingPayers,
   readBillingStudents,
   type BillingBalanceExplanationRow,
@@ -35,6 +41,8 @@ import {
   type BillingErrorState,
   type BillingPayerChargeRow,
   type BillingPayerDetailView,
+  type BillingPayerNoteErrorState,
+  type BillingPayerNoteRow,
   type BillingPayerPaymentRow,
   type BillingPayerPersonRow,
   type BillingPayerRelatedInvoiceRow,
@@ -147,6 +155,10 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
   const [snapshot, setSnapshot] = useState<BillingCenterSnapshot | null>(null);
   const [status, setStatus] = useState<BillingStatus>("idle");
   const [errorState, setErrorState] = useState<BillingErrorState | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [noteSubmitting, setNoteSubmitting] = useState(false);
+  const [noteErrorState, setNoteErrorState] = useState<BillingPayerNoteErrorState | null>(null);
+  const [noteSuccessMessage, setNoteSuccessMessage] = useState<string | null>(null);
 
   const loadPayer = useCallback(async () => {
     if (organizationStatus === "loading") {
@@ -167,11 +179,21 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
 
     try {
       const query = withActiveOrganizationQuery(selectedOrganizationId);
-      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+      const [
+        balancesPayload,
+        payersPayload,
+        studentsPayload,
+        chargesPayload,
+        payerNotesPayload,
+        invoicesPayload,
+        contractorsPayload,
+        workItemsPayload,
+      ] = await Promise.all([
         api.ledgerBalances(query),
         api.billingPayers(query),
         api.billingStudents(query),
         api.billingCharges(withActiveOrganizationQuery(selectedOrganizationId, { limit: 200 })),
+        api.billingPayerNotes(payerId, withActiveOrganizationQuery(selectedOrganizationId, { limit: 100 })),
         api.invoices(query),
         api.contractors(query),
         api.workItems(withActiveOrganizationQuery(selectedOrganizationId, { limit: 100, only_open: 1 })),
@@ -182,6 +204,7 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
         payers: readBillingPayers(payersPayload),
         students: readBillingStudents(studentsPayload),
         charges: readBillingCharges(chargesPayload),
+        payerNotes: readBillingPayerNotes(payerNotesPayload),
         invoices: readBillingInvoices(invoicesPayload),
         contractors: readContractors(contractorsPayload),
         workItems: readWorkItems(workItemsPayload),
@@ -193,16 +216,56 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
       setErrorState(nextErrorState);
       setStatus(nextErrorState.status);
     }
-  }, [organizationStatus, selectedOrganizationId]);
+  }, [organizationStatus, payerId, selectedOrganizationId]);
 
   useEffect(() => {
     void loadPayer();
   }, [loadPayer]);
 
   const detail = useMemo<BillingPayerDetailView | null>(() => (snapshot ? buildBillingPayerDetailView(snapshot, payerId) : null), [payerId, snapshot]);
+  const noteSubmitter = useMemo(
+    () =>
+      createBillingPayerNoteSubmitter({
+        refreshDetail: loadPayer,
+        setSubmitting: setNoteSubmitting,
+        submitNote: (payload) => api.addBillingPayerNote(payerId, payload.note_text, selectedOrganizationId),
+      }),
+    [loadPayer, payerId, selectedOrganizationId],
+  );
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
   const notFound = status === "ready" && snapshot && !detail;
   const headerBadgeTone = detail?.statusTone === "ok" ? "success" : detail?.statusTone ?? (status === "error" ? "warning" : "info");
+
+  const handleNoteSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setNoteErrorState(null);
+      setNoteSuccessMessage(null);
+
+      const validation = buildBillingPayerNoteRequest(noteText, selectedOrganizationId);
+      const result = await noteSubmitter(validation);
+
+      if (result.status === "blocked") {
+        setNoteErrorState({
+          status: "error",
+          title: "Nie można dodać notatki",
+          description: result.message,
+        });
+        return;
+      }
+
+      if (result.status === "error") {
+        setNoteErrorState(result.errorState);
+        return;
+      }
+
+      if (result.status === "success") {
+        setNoteText("");
+        setNoteSuccessMessage("Notatka rozliczeniowa została dodana.");
+      }
+    },
+    [noteSubmitter, noteText, selectedOrganizationId],
+  );
 
   return (
     <div className="module-page billing-page billing-payer-detail-page">
@@ -306,6 +369,77 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
 
               <Card description="Wpłaty widoczne w obecnym read-only modelu. Jeśli brak listy transakcji, pokazujemy ostatnią znaną wpłatę." title="Widoczne wpłaty">
                 <Table columns={paymentColumns} data={detail.paymentRows} emptyMessage="Brak widocznych wpłat dla tego płatnika." getRowKey={(row) => row.id} />
+              </Card>
+
+              <Card
+                action={<Badge tone="success">Addytywne</Badge>}
+                description="Notatka rozliczeniowa zapisuje kontekst rozmowy lub ustalenia. Nie zmienia salda, naliczeń ani przypisań wpłat."
+                title="Notatki rozliczeniowe"
+              >
+                <form className="invoice-comment-form" onSubmit={handleNoteSubmit}>
+                  <label className="invoice-comment-form__label" htmlFor="billing-payer-note-text">
+                    Treść notatki
+                  </label>
+                  <textarea
+                    className="invoice-comment-form__textarea"
+                    disabled={noteSubmitting}
+                    id="billing-payer-note-text"
+                    maxLength={BILLING_PAYER_NOTE_MAX_LENGTH}
+                    onChange={(event) => {
+                      setNoteText(event.target.value);
+                      if (noteErrorState) {
+                        setNoteErrorState(null);
+                      }
+                      if (noteSuccessMessage) {
+                        setNoteSuccessMessage(null);
+                      }
+                    }}
+                    placeholder="Np. Płatnik potwierdził, że prześle potwierdzenie wpłaty do piątku."
+                    rows={4}
+                    value={noteText}
+                  />
+                  <div className="invoice-comment-form__meta">
+                    <span>{BILLING_PAYER_NOTE_HELP_TEXT}</span>
+                    <span>{noteText.trim().length}/{BILLING_PAYER_NOTE_MAX_LENGTH}</span>
+                  </div>
+                  {noteErrorState ? (
+                    <div className="invoice-comment-form__message invoice-comment-form__message--error" role="alert">
+                      <strong>{noteErrorState.title}</strong>
+                      <span>{noteErrorState.description}</span>
+                    </div>
+                  ) : null}
+                  {noteSuccessMessage ? (
+                    <div className="invoice-comment-form__message invoice-comment-form__message--success" role="status">
+                      {noteSuccessMessage}
+                    </div>
+                  ) : null}
+                  <Button disabled={noteSubmitting || !noteText.trim()} size="sm" type="submit">
+                    {noteSubmitting ? "Dodawanie..." : "Dodaj notatkę"}
+                  </Button>
+                </form>
+
+                <div className="module-readiness" aria-label="Notatki rozliczeniowe płatnika">
+                  {detail.noteRows.length ? (
+                    detail.noteRows.map((note: BillingPayerNoteRow) => (
+                      <div className="module-readiness__item" key={note.id}>
+                        <MessageSquareText aria-hidden="true" size={17} />
+                        <div>
+                          <strong>{note.authorLabel}</strong>
+                          <span>{note.dateLabel} · {note.typeLabel}</span>
+                          <p>{note.noteText}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="module-readiness__item">
+                      <MessageSquareText aria-hidden="true" size={17} />
+                      <div>
+                        <strong>Brak notatek rozliczeniowych</strong>
+                        <span>Możesz dodać pierwszą notatkę operatora dla tego płatnika.</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </Card>
 
               <Card description="Faktury powiązane z płatnikiem, jeśli obecne dane pozwalają je bezpiecznie połączyć." title="Powiązane faktury">

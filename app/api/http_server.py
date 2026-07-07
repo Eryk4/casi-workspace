@@ -1236,6 +1236,23 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 if organization_id is ...:
                     return
                 return self._send_json(self.billing_service.list_models(organization_id=organization_id))
+            if path.startswith("/api/billing/payers/") and path.endswith("/notes"):
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                payer_id = self._extract_id(path, "/api/billing/payers/", suffix="/notes")
+                if payer_id is None:
+                    return self._not_found()
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 100
+                try:
+                    notes = self.billing_service.list_payer_notes(
+                        payer_id,
+                        organization_id=organization_id,
+                        limit=min(max(limit, 1), 200),
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=404)
+                return self._send_json(notes)
             if path == "/api/billing/payers":
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:
@@ -3328,6 +3345,30 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(created, status=201)
+
+            if path.startswith("/api/billing/payers/") and path.endswith("/notes"):
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                payer_id = self._extract_id(path, "/api/billing/payers/", suffix="/notes")
+                if payer_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                if any(key != "note_text" for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole note_text."}, status=400)
+                try:
+                    note = self.billing_service.add_payer_note(
+                        payer_id,
+                        str(payload.get("note_text") or ""),
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    if "Nie znaleziono platnika" in str(error):
+                        return self._send_json({"error": str(error)}, status=404)
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(note, status=201)
 
             if path == "/api/billing/students":
                 organization_id = self._resolve_write_scope(user, query)

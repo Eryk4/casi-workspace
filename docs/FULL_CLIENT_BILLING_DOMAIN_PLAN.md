@@ -30,17 +30,18 @@ The module must not become a small `kasa` table. It should be a domain model for
 - Canonical route: `/rozliczenia`.
 - Legacy route: `/kasa`, redirect only.
 - Active screen: `Centrum rozliczen v1`, with read-only payer detail under `/rozliczenia/platnicy/{payerId}`.
-- Current screen mode: read-only.
+- Current screen mode: financial state is read-only. The only active billing write path is an additive payer note.
 - Current frontend sources:
   - `GET /api/billing/ledger/balances?organization_id=...`,
   - `GET /api/billing/payers?organization_id=...`,
+  - `GET /api/billing/payers/{payerId}/notes?organization_id=...`,
   - `GET /api/billing/students?organization_id=...`,
   - `GET /api/billing/charges?organization_id=...`,
   - `GET /api/invoices?organization_id=...`,
   - `GET /api/contractors?organization_id=...`,
   - `GET /api/work-items?organization_id=...&only_open=1&limit=100`.
 
-The current screen answers a narrow question: what is the visible money/payment/receivable situation for the selected organization, and who currently appears as family/payer/student in the existing billing data. It does not yet manage enrollments, full charge lifecycle, payment imports, allocations, reminders, or accounting exports in the active Next UI.
+The current screen answers a narrow question: what is the visible money/payment/receivable situation for the selected organization, and who currently appears as family/payer/student in the existing billing data. It also allows a narrow additive payer note for human context. It does not yet manage enrollments, full charge lifecycle, payment imports, allocations, reminders, or accounting exports in the active Next UI.
 
 ### Current Frontend Model
 
@@ -103,6 +104,7 @@ Current billing-related tables found in `app/db.py` and migration coverage:
 | `billing_transactions` | Imported bank transactions with raw data and match status. | No safe product workflow for unknown payments, partial matches, split allocations, refunds. |
 | `billing_payment_matches` | Match transaction to payer and optionally charge. | Needs allocation model that can split one payment across multiple charges/invoices/services. |
 | `billing_payer_ledger_entries` | Ledger entries for charges and payment matches. | Needs richer audit/event model, snapshots, explanations, and corrections. |
+| `billing_notes` | Additive operator notes attached to a payer. | Good first low-risk write path; later needs edit/delete policy, retention policy, richer audit UI, and possible links to charges/periods. |
 
 These tables are already included in the SQLite to configured DB migration tests. The existing backend is more advanced than the current Next read-only surface, but it is still not the full target domain.
 
@@ -120,6 +122,7 @@ Read endpoints:
 - `GET /api/billing/schools`,
 - `GET /api/billing/models`,
 - `GET /api/billing/payers`,
+- `GET /api/billing/payers/{payerId}/notes`,
 - `GET /api/billing/students`,
 - `GET /api/billing/charges`.
 
@@ -129,12 +132,13 @@ Write endpoints exist in the backend but are not exposed as active Next write ac
 - `POST /api/billing/schools`,
 - `POST /api/billing/models`,
 - `POST /api/billing/payers`,
+- `POST /api/billing/payers/{payerId}/notes`,
 - `POST /api/billing/students`,
 - `POST /api/billing/charges/generate`,
 - `POST /api/billing/statements/import-csv`,
 - `POST /api/billing/ledger/matches`.
 
-These write endpoints should not be promoted into the active frontend until separate endpoint-specific UX, permissions, payload allowlist, tenant-isolation, audit, and live verification work is complete.
+`POST /api/billing/payers/{payerId}/notes` is the first promoted billing write path. It is intentionally additive, accepts only `{ note_text }`, requires `organization_id`, and must not change balances, charges, payments, matches, reminders, or accounting state. Other write endpoints should not be promoted into the active frontend until separate endpoint-specific UX, permissions, payload allowlist, tenant-isolation, audit, and live verification work is complete.
 
 ### Current Services And Repositories
 
@@ -858,7 +862,7 @@ Recommended next implementation step:
 
 A safe next step should:
 
-- keep `/rozliczenia` read-only,
+- keep financial state in `/rozliczenia` read-only; payer notes are the only narrow additive billing write,
 - expose a clearer charge list or payer-context view only if current endpoints are sufficient,
 - keep explaining balance in business language: payer, student, service/model, period, charge, payment match,
 - avoid payment writes, allocation writes, imports, reminders, and exports,

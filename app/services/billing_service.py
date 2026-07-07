@@ -80,6 +80,92 @@ class BillingService:
                     payer["billing_matched_payment_count"] = 0
         return payers
 
+    def list_payer_notes(
+        self,
+        billing_payer_id: int,
+        *,
+        organization_id: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        payer = self.billing_repository.get_payer_by_id(billing_payer_id, organization_id=organization_id)
+        if not payer:
+            raise ValueError("Nie znaleziono platnika w wybranej organizacji.")
+        return self.billing_repository.list_payer_notes(
+            billing_payer_id,
+            organization_id=organization_id,
+            limit=limit,
+        )
+
+    def add_payer_note(
+        self,
+        billing_payer_id: int,
+        note_text: str,
+        *,
+        actor_user: dict[str, Any] | None,
+        actor: str,
+        organization_id: int | None = None,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed dodaniem notatki rozliczeniowej.")
+
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+
+        payer = self.billing_repository.get_payer_by_id(billing_payer_id, organization_id=organization_id)
+        if not payer:
+            raise ValueError("Nie znaleziono platnika w wybranej organizacji.")
+
+        normalized_text = str(note_text or "").strip()
+        if not normalized_text:
+            raise ValueError("Notatka rozliczeniowa nie moze byc pusta.")
+        if len(normalized_text) > 2000:
+            raise ValueError("Notatka rozliczeniowa moze miec maksymalnie 2000 znakow.")
+        if not actor_user or not actor_user.get("user_id"):
+            raise ValueError("Nie mozna dodac notatki bez zalogowanego uzytkownika.")
+
+        created_note_id = self.billing_repository.add_payer_note(
+            {
+                "organization_id": organization_id,
+                "billing_payer_id": billing_payer_id,
+                "author_user_id": int(actor_user["user_id"]),
+                "note_type": "operator_note",
+                "note_text": normalized_text,
+            }
+        )
+        self.event_repository.log(
+            event_type="billing_payer_note_added",
+            invoice_id=None,
+            organization_id=organization_id,
+            source="BILLING",
+            status_before=None,
+            status_after=None,
+            decision_reason="Dodano notatke rozliczeniowa do platnika.",
+            actor=actor,
+            details={
+                "billing_note_id": created_note_id,
+                "billing_payer_id": billing_payer_id,
+                "note_length": len(normalized_text),
+            },
+        )
+        notes = self.billing_repository.list_payer_notes(
+            billing_payer_id,
+            organization_id=organization_id,
+            limit=100,
+        )
+        return next(
+            (item for item in notes if int(item.get("billing_note_id") or 0) == int(created_note_id)),
+            {
+                "billing_note_id": created_note_id,
+                "organization_id": organization_id,
+                "billing_payer_id": billing_payer_id,
+                "author_user_id": int(actor_user["user_id"]),
+                "author_user_name": actor_user.get("display_name") or actor_user.get("login"),
+                "note_type": "operator_note",
+                "note_text": normalized_text,
+            },
+        )
+
     def list_students(self, organization_id: int | None = None) -> list[dict[str, Any]]:
         students = self.billing_repository.list_students(organization_id=organization_id)
         if not students:

@@ -56,6 +56,7 @@ BILLING_CORE_TABLES = (
     "billing_transactions",
     "billing_payment_matches",
     "billing_payer_ledger_entries",
+    "billing_notes",
 )
 KNOWLEDGE_CORE_TABLES = (
     "knowledge_documents",
@@ -151,6 +152,7 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
             "billing_transactions": "billing_transaction_id",
             "billing_payment_matches": "billing_payment_match_id",
             "billing_payer_ledger_entries": "billing_payer_ledger_entry_id",
+            "billing_notes": "billing_note_id",
             "knowledge_documents": "knowledge_document_id",
             "knowledge_document_versions": "knowledge_document_version_id",
             "knowledge_processing_jobs": "knowledge_processing_job_id",
@@ -239,6 +241,8 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
         self.assertLess(table_order.index("billing_payers"), table_order.index("billing_payer_ledger_entries"))
         self.assertLess(table_order.index("billing_charges"), table_order.index("billing_payer_ledger_entries"))
         self.assertLess(table_order.index("billing_transactions"), table_order.index("billing_payer_ledger_entries"))
+        self.assertLess(table_order.index("users"), table_order.index("billing_notes"))
+        self.assertLess(table_order.index("billing_payers"), table_order.index("billing_notes"))
 
     def test_knowledge_core_tables_are_included_after_dependencies(self):
         table_order = list(migrator.TABLE_ORDER)
@@ -318,7 +322,7 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
 
         for table_name in ACCESS_CORE_TABLES:
             self.assertNotIn(table_name, report["tables_missing_from_migrator"])
-        self.assertEqual(len(report["migrator_tables"]), 58)
+        self.assertEqual(len(report["migrator_tables"]), 59)
         self.assertEqual(len(report["tables_missing_from_migrator"]), 10)
         self.assertEqual(report["blocker_count"], 0)
 
