@@ -62,3 +62,9 @@ Nie ma akcji:
 ## Następny bezpieczny krok
 
 Po live-weryfikacji `/rozliczenia/wplaty` najbezpieczniejszy kolejny krok to nadal read-only: dopracowanie listy naliczeń albo osobny projekt modelu alokacji płatności. Importy, automatyczne dopasowanie, ręczne przypisywanie i księgowanie wymagają osobnego audytu kontraktu, uprawnień, izolacji organizacyjnej i UX.
+
+## Szczegół wpłaty
+
+Etap `Szczegół wpłaty — read-only v1` dodaje trasę `/rozliczenia/wplaty/{paymentId}`. Lista `/rozliczenia/wplaty` linkuje do szczegółu tylko wtedy, gdy istnieje stabilny identyfikator transakcji. W obecnym modelu `paymentId` oznacza `billing_transaction_id`, ale UI nie pokazuje technicznego ID użytkownikowi.
+
+Szczegół wpłaty nie dopasowuje przelewów, nie księguje i nie zmienia salda. Pokazuje tylko widoczną wpłatę oraz jej obecne przypisanie: do naliczenia, tylko do płatnika albo do późniejszego wyjaśnienia.

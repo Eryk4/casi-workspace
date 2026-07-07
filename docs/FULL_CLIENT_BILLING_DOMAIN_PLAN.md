@@ -870,3 +870,13 @@ A safe next step should:
 - keep the compatibility family/payer/student model stable until a dedicated schema migration is explicitly planned.
 
 Before any schema change, decide whether current `billing_payers` and `billing_students` can continue as a compatibility layer for another read-only stage, or whether introducing target tables (`family`, `billing_party`, `payer_account`, `student`) is worth the migration cost.
+
+### Stage 2e: Payment detail read-only view
+
+Status: implemented as a read-only payment detail view under `/rozliczenia/wplaty/{paymentId}`.
+
+The implemented stage treats `paymentId` as the current `billing_transactions.billing_transaction_id` and composes the detail from existing read-only sources: transactions, payment matches, charges, payers, and students. The UI does not expose this technical ID as a business payment number.
+
+The view explains whether a visible payment is linked to a concrete charge, only visible at payer level, or still requires clarification. It does not import bank statements, create payments, allocate payments, edit matches, post accounting entries, change balances, send reminders, or add notes.
+
+This remains a foundation before a future first-class `payment_allocation` model and before any manual or automatic payment matching workflow.

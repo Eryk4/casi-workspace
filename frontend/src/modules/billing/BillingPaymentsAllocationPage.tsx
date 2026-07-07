@@ -65,6 +65,18 @@ const paymentColumns: Array<TableColumn<BillingPaymentAssignmentRow>> = [
       ),
   },
   { key: "status", header: "Status", render: (row) => <StatusBadge status={row.statusTone}>{row.statusLabel}</StatusBadge> },
+  {
+    key: "details",
+    header: "Szczegóły",
+    render: (row) =>
+      row.paymentHref ? (
+        <Link className="module-link" href={row.paymentHref}>
+          Zobacz szczegóły
+        </Link>
+      ) : (
+        "-"
+      ),
+  },
 ];
 
 export function BillingPaymentsAllocationPage() {

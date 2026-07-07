@@ -129,3 +129,5 @@ Przed traktowaniem widoku jako źródła decyzji finansowych potrzebne są:
 - decyzja, czy kolejny krok ma być osobnym read-only widokiem naliczeń, czy dedykowanym agregatem backendowym dla rozliczeń,
 - decyzja, czy centrum rozliczeń potrzebuje dedykowanego read-only endpointu,
 - osobny audyt przed jakąkolwiek akcją zapisu w rozliczeniach.
+
+Etap `Szczegół wpłaty — read-only v1` dodaje trasę `/rozliczenia/wplaty/{paymentId}`. Widok korzysta z istniejących transakcji, matchy, naliczeń, płatników i uczniów. Nie dodaje backendu, nie wykonuje dopasowania, nie księguje i nie zmienia salda. Pełne przypisywanie wpłat pozostaje osobnym etapem przed importami i automatyzacją.

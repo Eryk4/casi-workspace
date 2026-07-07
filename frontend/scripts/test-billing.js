@@ -49,6 +49,8 @@ const {
   BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_TITLE,
   BILLING_PAYER_DETAIL_ROUTE,
+  BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
+  BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE,
   BILLING_CHARGES_ENDPOINT,
   BILLING_PAYERS_ENDPOINT,
   BILLING_PAYMENT_MATCHES_ENDPOINT,
@@ -58,6 +60,7 @@ const {
   BILLING_STUDENTS_ENDPOINT,
   BILLING_TRANSACTIONS_ENDPOINT,
   billingBalanceTone,
+  billingPaymentDetailPath,
   billingPayerDetailPath,
   billingPayerNoteEndpoint,
   billingScreenHasForbiddenTechnicalText,
@@ -72,6 +75,7 @@ const {
   buildBillingMoneySummary,
   buildBillingPayerDetailView,
   buildBillingPayerNoteRequest,
+  buildBillingPaymentDetailView,
   buildBillingPaymentsAllocationView,
   buildBillingPeriodView,
   buildBillingRecentPaymentRows,
@@ -563,22 +567,61 @@ assert.equal(paymentsAllocationView.summary.chargeAssignedAmountLabel, "539,00 P
 assert.equal(paymentsAllocationView.summary.needsExplanationAmountLabel, "1076,00 PLN");
 const paymentChargeRow = paymentsAllocationView.chargeAssignedRows.find((row) => row.payerLabel === "Rodzina Kowalskich");
 assert.ok(paymentChargeRow);
+assert.equal(paymentChargeRow.paymentHref, "/rozliczenia/wplaty/61");
 assert.equal(paymentChargeRow.payerHref, "/rozliczenia/platnicy/1");
 assert.equal(paymentChargeRow.periodHref, "/rozliczenia/okresy");
 assert.match(paymentChargeRow.assignmentLabel, /Robotyka junior/);
 assert.match(paymentChargeRow.contextLabel, /bezpiecznie pokazać w okresie/);
 const payerOnlyPaymentRow = paymentsAllocationView.payerOnlyRows[0];
 assert.ok(payerOnlyPaymentRow);
+assert.equal(payerOnlyPaymentRow.paymentHref, "/rozliczenia/wplaty/64");
 assert.equal(payerOnlyPaymentRow.periodLabel, "Nie przypisano do okresu");
 assert.match(payerOnlyPaymentRow.contextLabel, /nie jest jeszcze przypisana do konkretnego naliczenia/i);
 const unexplainedPaymentRow = paymentsAllocationView.unexplainedRows[0];
 assert.ok(unexplainedPaymentRow);
+assert.equal(unexplainedPaymentRow.paymentHref, "/rozliczenia/wplaty/65");
 assert.equal(unexplainedPaymentRow.payerLabel, "Nieustalony płatnik");
 assert.equal(unexplainedPaymentRow.statusLabel, "Do wyjaśnienia");
 const paymentsContextText = paymentsAllocationView.contextItems.map((item) => item.value).join(" ");
 assert.match(paymentsContextText, /nie dodaje wpłat/i);
 assert.match(paymentsContextText, /Wpłata trafia do okresu tylko wtedy/i);
 assert.doesNotMatch(paymentsContextText, /endpoint|payload|debug|demo/i);
+
+const chargeAssignedPaymentDetail = buildBillingPaymentDetailView(snapshot, 61);
+assert.ok(chargeAssignedPaymentDetail);
+assert.equal(chargeAssignedPaymentDetail.title, "Szczegół wpłaty");
+assert.equal(chargeAssignedPaymentDetail.amountLabel, "228,00 PLN");
+assert.equal(chargeAssignedPaymentDetail.dateLabel, "2026-03-08");
+assert.equal(chargeAssignedPaymentDetail.payerLabel, "Rodzina Kowalskich");
+assert.equal(chargeAssignedPaymentDetail.payerHref, "/rozliczenia/platnicy/1");
+assert.equal(chargeAssignedPaymentDetail.statusLabel, "Przypisana do naliczenia");
+assert.equal(chargeAssignedPaymentDetail.assignmentRows[0].periodLabel, "Marzec 2026");
+assert.equal(chargeAssignedPaymentDetail.assignmentRows[0].periodHref, "/rozliczenia/okresy");
+assert.equal(chargeAssignedPaymentDetail.assignmentRows[0].personLabel, "Lena Kowalska");
+assert.equal(chargeAssignedPaymentDetail.chargeRows[0].serviceLabel, "Robotyka junior");
+assert.match(chargeAssignedPaymentDetail.assignmentSummaryLabel, /powiązanie z konkretnym naliczeniem/i);
+
+const payerOnlyPaymentDetail = buildBillingPaymentDetailView(snapshot, 64);
+assert.ok(payerOnlyPaymentDetail);
+assert.equal(payerOnlyPaymentDetail.statusLabel, "Przypisana tylko do płatnika");
+assert.equal(payerOnlyPaymentDetail.payerHref, "/rozliczenia/platnicy/1");
+assert.equal(payerOnlyPaymentDetail.assignmentRows[0].periodLabel, "Nie przypisano do okresu");
+assert.equal(payerOnlyPaymentDetail.assignmentRows[0].serviceLabel, "Nie przypisano do usługi");
+assert.equal(payerOnlyPaymentDetail.chargeRows.length, 0);
+assert.match(payerOnlyPaymentDetail.assignmentSummaryLabel, /nie jest jeszcze przypisana do konkretnego naliczenia/i);
+
+const unexplainedPaymentDetail = buildBillingPaymentDetailView(snapshot, 65);
+assert.ok(unexplainedPaymentDetail);
+assert.equal(unexplainedPaymentDetail.statusLabel, "Do wyjaśnienia");
+assert.equal(unexplainedPaymentDetail.payerLabel, "Nieustalony płatnik");
+assert.equal(unexplainedPaymentDetail.payerHref, undefined);
+assert.equal(unexplainedPaymentDetail.assignmentRows[0].periodLabel, "Nie przypisano do okresu");
+assert.equal(unexplainedPaymentDetail.chargeRows.length, 0);
+assert.match(unexplainedPaymentDetail.assignmentSummaryLabel, /nie zgaduje płatnika ani okresu/i);
+assert.equal(buildBillingPaymentDetailView(snapshot, 999), null);
+assert.equal(billingPaymentDetailPath(61), "/rozliczenia/wplaty/61");
+assert.match(chargeAssignedPaymentDetail.contextItems.map((item) => item.value).join(" "), /nie zmienia salda/i);
+assert.doesNotMatch(chargeAssignedPaymentDetail.contextItems.map((item) => item.value).join(" "), /endpoint|payload|debug|demo/i);
 
 const relatedWorkItems = buildBillingRelatedWorkItemRows(snapshot.workItems, snapshot.invoices, snapshot.contractors);
 assert.equal(relatedWorkItems[0].href, "/work-items/44");
@@ -630,6 +673,8 @@ assert.equal(BILLING_LEGACY_ROUTE, "/kasa");
 assert.equal(BILLING_PAYER_DETAIL_ROUTE, "/rozliczenia/platnicy");
 assert.equal(BILLING_PERIODS_ROUTE, "/rozliczenia/okresy");
 assert.equal(BILLING_PAYMENTS_ROUTE, "/rozliczenia/wplaty");
+assert.equal(BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć wpłatę");
+assert.doesNotMatch(BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id|endpoint|payload|debug/i);
 assert.equal(BILLING_READ_ONLY, true);
 assert.equal(BILLING_PAYER_NOTE_CREATE_ENABLED, true);
 assert.equal(BILLING_PAYER_NOTE_MAX_LENGTH, 2000);
@@ -769,6 +814,44 @@ const screenStrings = [
     row.contextLabel,
   ]),
   ...paymentsAllocationView.contextItems.flatMap((item) => [item.label, item.value]),
+  ...(chargeAssignedPaymentDetail
+    ? [
+        chargeAssignedPaymentDetail.title,
+        chargeAssignedPaymentDetail.amountLabel,
+        chargeAssignedPaymentDetail.dateLabel,
+        chargeAssignedPaymentDetail.descriptionLabel,
+        chargeAssignedPaymentDetail.payerLabel,
+        chargeAssignedPaymentDetail.statusLabel,
+        chargeAssignedPaymentDetail.assignmentSummaryLabel,
+        ...chargeAssignedPaymentDetail.assignmentRows.flatMap((row) => [
+          row.payerLabel,
+          row.personLabel,
+          row.serviceLabel,
+          row.periodLabel,
+          row.amountLabel,
+          row.statusLabel,
+          row.contextLabel,
+          row.payerHref,
+          row.periodHref,
+        ]),
+        ...chargeAssignedPaymentDetail.chargeRows.flatMap((row) => [row.periodLabel, row.personLabel, row.serviceLabel, row.amountLabel, row.statusLabel]),
+        ...chargeAssignedPaymentDetail.contextItems.flatMap((item) => [item.label, item.value]),
+      ]
+    : []),
+  ...(payerOnlyPaymentDetail
+    ? [
+        payerOnlyPaymentDetail.statusLabel,
+        payerOnlyPaymentDetail.assignmentSummaryLabel,
+        ...payerOnlyPaymentDetail.assignmentRows.flatMap((row) => [row.payerLabel, row.serviceLabel, row.periodLabel, row.contextLabel, row.payerHref]),
+      ]
+    : []),
+  ...(unexplainedPaymentDetail
+    ? [
+        unexplainedPaymentDetail.statusLabel,
+        unexplainedPaymentDetail.assignmentSummaryLabel,
+        ...unexplainedPaymentDetail.assignmentRows.flatMap((row) => [row.payerLabel, row.serviceLabel, row.periodLabel, row.contextLabel]),
+      ]
+    : []),
   ...(payerDetail
     ? [
         payerDetail.title,
