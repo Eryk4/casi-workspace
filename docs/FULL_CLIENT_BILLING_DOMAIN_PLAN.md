@@ -30,7 +30,7 @@ The module must not become a small `kasa` table. It should be a domain model for
 - Canonical route: `/rozliczenia`.
 - Legacy route: `/kasa`, redirect only.
 - Active screen: `Centrum rozliczen v1`, with read-only payer detail under `/rozliczenia/platnicy/{payerId}`.
-- Current screen mode: financial state is read-only. The only active billing write path is an additive payer note.
+- Current screen mode: financial state is read-only. Active billing write paths are narrow and additive: payer notes and payment operational review status.
 - Current frontend sources:
   - `GET /api/billing/ledger/balances?organization_id=...`,
   - `GET /api/billing/payers?organization_id=...`,
@@ -105,6 +105,7 @@ Current billing-related tables found in `app/db.py` and migration coverage:
 | `billing_payment_matches` | Match transaction to payer and optionally charge. | Needs allocation model that can split one payment across multiple charges/invoices/services. |
 | `billing_payer_ledger_entries` | Ledger entries for charges and payment matches. | Needs richer audit/event model, snapshots, explanations, and corrections. |
 | `billing_notes` | Additive operator notes attached to a payer. | Good first low-risk write path; later needs edit/delete policy, retention policy, richer audit UI, and possible links to charges/periods. |
+| `billing_payment_review_events` | Additive operational status history for visible payment transactions. | Good second low-risk billing write path; intentionally not an allocation, match, balance mutation, reminder, or accounting status. |
 
 These tables are already included in the SQLite to configured DB migration tests. The existing backend is more advanced than the current Next read-only surface, but it is still not the full target domain.
 
@@ -124,7 +125,8 @@ Read endpoints:
 - `GET /api/billing/payers`,
 - `GET /api/billing/payers/{payerId}/notes`,
 - `GET /api/billing/students`,
-- `GET /api/billing/charges`.
+- `GET /api/billing/charges`,
+- `GET /api/billing/payments/{paymentId}/review-status`.
 
 Write endpoints exist in the backend but are not exposed as active Next write actions:
 
@@ -136,9 +138,12 @@ Write endpoints exist in the backend but are not exposed as active Next write ac
 - `POST /api/billing/students`,
 - `POST /api/billing/charges/generate`,
 - `POST /api/billing/statements/import-csv`,
-- `POST /api/billing/ledger/matches`.
+- `POST /api/billing/ledger/matches`,
+- `POST /api/billing/payments/{paymentId}/review-status`.
 
 `POST /api/billing/payers/{payerId}/notes` is the first promoted billing write path. It is intentionally additive, accepts only `{ note_text }`, requires `organization_id`, and must not change balances, charges, payments, matches, reminders, or accounting state. Other write endpoints should not be promoted into the active frontend until separate endpoint-specific UX, permissions, payload allowlist, tenant-isolation, audit, and live verification work is complete.
+
+`POST /api/billing/payments/{paymentId}/review-status` is the second promoted billing write path. It accepts only `{ status, note_text? }`, requires `organization_id`, writes an append-only record to `billing_payment_review_events`, and must not change `billing_transactions`, `billing_charges`, `billing_payment_matches`, `billing_payer_ledger_entries`, balances, imports, reminders, or accounting state. It is an operational marker, not a payment allocation workflow.
 
 ### Current Services And Repositories
 
@@ -739,10 +744,12 @@ Scope:
 
 ### Stage 3: Manual payments and allocations
 
-Goal: safely add the first payment write path.
+Goal: safely add payment write paths without confusing operational review with financial allocation.
 
 Scope:
 
+- current first step: payment operational review status on `/rozliczenia/wplaty/{paymentId}`,
+- status is append-only and does not change balances, matches, charges, transactions, ledger entries, imports, reminders, or accounting state,
 - add manual payment only after endpoint audit,
 - allocation must be explicit,
 - success only after backend confirmation,

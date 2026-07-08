@@ -8,12 +8,12 @@ No new write action should be added until the existing paths below stay green in
 
 ## Summary
 
-- Current write surfaces: Work Items, invoice operator comments, CRM contractor notes, and billing payer notes.
+- Current write surfaces: Work Items, invoice operator comments, CRM contractor notes, billing payer notes, and billing payment operational review status.
 - Every active write path is organization-scoped.
 - The frontend blocks writes without an active organization before calling the API.
 - The backend resolves write scope server-side and rejects missing/invalid organization scope.
 - UI success is only shown after backend confirmation.
-- No current write path should send data to external systems, KSeF, email, AI, or S3. Billing payer notes are internal-only and do not change financial state.
+- No current write path should send data to external systems, KSeF, email, AI, or S3. Billing payer notes and payment operational status are internal-only and do not change financial state.
 - Active Next write paths listed below have explicit payload allowlists.
 - Broader backend mutating endpoints are tracked separately in `docs/PAYLOAD_ALLOWLIST_AUDIT.md` before any future hardening.
 - Backend-only additive comments/notes for support, intake, tasks, and knowledge documents now also reject extra JSON fields, but they are not promoted as active Next write actions by this document.
@@ -35,6 +35,7 @@ No new write action should be added until the existing paths below stay green in
 | Faktury | `POST /api/invoices/{id}/comments?organization_id=...` | `/faktury/{invoiceId}` | `{ "note_text": string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads invoice by `invoice_id` and `organization_id` | `test-invoices.js`, `tests/http_server_test_methods.py`, `tests/invoice_test_methods.py` |
 | CRM | `POST /api/contractors/{id}/notes?organization_id=...` | `/crm/{contractorId}` | `{ "note_text": string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads contractor by `contractor_id` and `organization_id` | `test-contractor-detail.js`, `tests/http_server_test_methods.py` |
 | Rozliczenia | `POST /api/billing/payers/{payerId}/notes?organization_id=...` | `/rozliczenia/platnicy/{payerId}` | `{ "note_text": string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads payer by `billing_payer_id` and `organization_id`; no balance/charge/payment/match mutation | `test-billing.js`, `tests/test_billing_notes_http.py` |
+| Rozliczenia | `POST /api/billing/payments/{paymentId}/review-status?organization_id=...` | `/rozliczenia/wplaty/{paymentId}` | `{ "status": string, "note_text"?: string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads incoming transaction by `billing_transaction_id` and `organization_id`; no transaction/charge/match/ledger/balance mutation | `test-billing.js`, `tests/test_billing_payment_review_status_http.py` |
 
 ## Tenant Isolation Status
 
@@ -77,6 +78,17 @@ No new write action should be added until the existing paths below stay green in
 - The note persists in `billing_notes` and appears in payer detail after refresh.
 - Event history records `billing_note_id`, `billing_payer_id`, and `note_length`, not the full `note_text`.
 - The endpoint must not change balances, charges, payment matches, transactions, ledger entries, imports, reminders, exports, or accounting state.
+
+### Billing Payment Operational Status
+
+- Frontend blocks status submit without active organization.
+- Backend requires write scope and accepts only `status` plus optional `note_text`.
+- Allowed statuses are `needs_review`, `checked`, `waiting_for_contact`, `waiting_for_payment`, and `do_not_auto_match`.
+- Service fetches the incoming payment transaction by `billing_transaction_id` and `organization_id`.
+- The status persists in `billing_payment_review_events` and appears on payment detail after refresh.
+- Event history records `billing_payment_review_event_id`, `billing_transaction_id`, `status`, and `note_length`, not the full `note_text`.
+- The endpoint must not change balances, charges, payment matches, transactions, ledger entries, imports, reminders, exports, or accounting state.
+- Wrong organization scope returns not found/forbidden style behavior without creating a review event.
 
 ### Backend-Only Additive Comments/Notes
 
@@ -159,7 +171,7 @@ Current frontend and backend hardening rules:
 - Do not log operator note/comment text as debug output.
 - Do not expose storage keys, local paths, `C:\Users\...`, `data/magazyn`, secrets, tokens, connection strings, or raw debug payloads in UI.
 - Keep payloads minimal and action-specific.
-- Keep invoice comments, CRM notes, and billing payer notes additive; they must not mutate invoice totals, invoice workflow, contractor master data, balances, charges, payment matches, KSeF, OCR, email, or AI flows.
+- Keep invoice comments, CRM notes, billing payer notes, and billing payment operational status additive; they must not mutate invoice totals, invoice workflow, contractor master data, balances, charges, payment matches, KSeF, OCR, email, or AI flows.
 
 ## Live Verification Notes
 
@@ -167,6 +179,7 @@ Current frontend and backend hardening rules:
 - CRM note live check: passed; note persisted and returned after reload.
 - CRM note tenant isolation live check: passed for `CASI` contractor `13` and `Misja Robotyka` contractor `9`.
 - Work Items live check: passed previously with active organization; backend regression tests now cover wrong-scope HTTP mutations.
+- Billing payment operational status backend regression: passed; tests cover payload allowlist, wrong organization scope, no financial side effects, and sanitized event metadata.
 
 ## Remaining Risks
 

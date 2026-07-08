@@ -132,6 +132,8 @@ Przed traktowaniem widoku jako źródła decyzji finansowych potrzebne są:
 
 Etap `Szczegół wpłaty — read-only v1` dodaje trasę `/rozliczenia/wplaty/{paymentId}`. Widok korzysta z istniejących transakcji, matchy, naliczeń, płatników i uczniów. Nie dodaje backendu, nie wykonuje dopasowania, nie księguje i nie zmienia salda. Pełne przypisywanie wpłat pozostaje osobnym etapem przed importami i automatyzacją.
 
+Etap `Status operacyjny wpłaty — write v1` dodaje na szczególe wpłaty jedną bezpieczną adnotację operatora. Status nie zmienia salda, naliczeń, dopasowań ani przypisania wpłaty. Służy wyłącznie do oznaczenia, czy wpłata jest sprawdzona, wymaga wyjaśnienia albo czeka na kontakt.
+
 ## Etap: Zaległości i nadpłaty — read-only centrum decyzyjne
 
 Trasa `/rozliczenia/zaleglosci` dodaje decyzyjny widok zaległości, nadpłat i spraw do wyjaśnienia. Widok agreguje obecny stan płatników z istniejących sald, naliczeń, wpłat, dopasowań i notatek rozliczeniowych.

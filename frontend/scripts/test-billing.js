@@ -52,6 +52,15 @@ const {
   BILLING_PAYER_DETAIL_ROUTE,
   BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE,
+  BILLING_PAYMENT_REVIEW_STATUS_ENDPOINT_SUFFIX,
+  BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT,
+  BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH,
+  BILLING_PAYMENT_REVIEW_STATUS_OPTIONS,
+  billingPaymentReviewStatusEndpoint,
+  buildBillingPaymentReviewStatusRequest,
+  createBillingPaymentReviewStatusSubmitter,
+  getBillingPaymentReviewStatusErrorState,
+  readBillingPaymentReviewStatus,
   BILLING_CHARGES_ENDPOINT,
   BILLING_PAYERS_ENDPOINT,
   BILLING_PAYMENT_MATCHES_ENDPOINT,
@@ -653,6 +662,60 @@ assert.equal(billingPaymentDetailPath(61), "/rozliczenia/wplaty/61");
 assert.match(chargeAssignedPaymentDetail.contextItems.map((item) => item.value).join(" "), /nie zmienia salda/i);
 assert.doesNotMatch(chargeAssignedPaymentDetail.contextItems.map((item) => item.value).join(" "), /endpoint|payload|debug|demo/i);
 
+const paymentReviewStatusPayload = {
+  billing_transaction_id: 61,
+  organization_id: 42,
+  current: {
+    billing_payment_review_event_id: 701,
+    organization_id: 42,
+    billing_transaction_id: 61,
+    status: "needs_review",
+    note_text: "Sprawdzic tytul wplaty.",
+    created_by_user_id: 1,
+    created_by_user_name: "Operator",
+    created_at: "2026-03-09T10:00:00",
+  },
+  history: [
+    {
+      billing_payment_review_event_id: 701,
+      organization_id: 42,
+      billing_transaction_id: 61,
+      status: "needs_review",
+      note_text: "Sprawdzic tytul wplaty.",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2026-03-09T10:00:00",
+    },
+  ],
+};
+const paymentReviewStatus = readBillingPaymentReviewStatus(paymentReviewStatusPayload, 61);
+assert.equal(paymentReviewStatus.current.status, "needs_review");
+assert.equal(paymentReviewStatus.current.note_text, "Sprawdzic tytul wplaty.");
+assert.equal(paymentReviewStatus.history.length, 1);
+assert.equal(billingPaymentReviewStatusEndpoint(61), "/billing/payments/61/review-status");
+assert.equal(BILLING_PAYMENT_REVIEW_STATUS_ENDPOINT_SUFFIX, "/review-status");
+assert.equal(BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH, 1000);
+assert.deepEqual(
+  BILLING_PAYMENT_REVIEW_STATUS_OPTIONS.map((item) => item.label),
+  ["Do wyja\u015bnienia", "Sprawdzone", "Czeka na kontakt", "Czeka na wp\u0142at\u0119", "Nie rusza\u0107 automatycznie"],
+);
+assert.match(BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT, /nie zmienia salda/i);
+assert.match(BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT, /przypisania wp/iu);
+assert.doesNotMatch(BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT, /payload|\braw\b|endpoint|debug|match id|ledger entry id|foreign key|mutation/i);
+assert.deepEqual(buildBillingPaymentReviewStatusRequest("needs_review", "  Sprawdzic tytul.  ", "42"), {
+  ok: true,
+  payload: { status: "needs_review", note_text: "Sprawdzic tytul." },
+});
+assert.deepEqual(buildBillingPaymentReviewStatusRequest("checked", "   ", "42"), {
+  ok: true,
+  payload: { status: "checked" },
+});
+assert.equal(buildBillingPaymentReviewStatusRequest("settled", "", "42").ok, false);
+assert.equal(buildBillingPaymentReviewStatusRequest("needs_review", "x".repeat(1001), "42").ok, false);
+assert.equal(buildBillingPaymentReviewStatusRequest("needs_review", "", null).ok, false);
+assert.throws(() => readBillingPaymentReviewStatus({ history: [] }, 61), ApiContractError);
+assert.throws(() => readBillingPaymentReviewStatus({ billing_transaction_id: 61, current: null }, 61), ApiContractError);
+
 const relatedWorkItems = buildBillingRelatedWorkItemRows(snapshot.workItems, snapshot.invoices, snapshot.contractors);
 assert.equal(relatedWorkItems[0].href, "/work-items/44");
 assert.match(relatedWorkItems[0].reasonLabel, /rozliczenie faktury/);
@@ -983,6 +1046,33 @@ async function main() {
     },
   );
 
+  await withMockedFetch(
+    async (url, options) => {
+      assert.equal(url, "/api/billing/payments/61/review-status?organization_id=42");
+      assert.equal(options.method, "GET");
+      assert.equal(options.body, undefined);
+      return jsonResponse(200, paymentReviewStatusPayload);
+    },
+    async () => {
+      const payload = await api.billingPaymentReviewStatus(61, withActiveOrganizationQuery("42"));
+      const status = readBillingPaymentReviewStatus(payload, 61);
+      assert.equal(status.current.status, "needs_review");
+    },
+  );
+
+  await withMockedFetch(
+    async (url, options) => {
+      assert.equal(url, "/api/billing/payments/61/review-status?organization_id=42");
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body), { status: "checked", note_text: "Zweryfikowano tytul." });
+      return jsonResponse(201, { ...paymentReviewStatusPayload.current, status: "checked", note_text: "Zweryfikowano tytul." });
+    },
+    async () => {
+      const payload = await api.updateBillingPaymentReviewStatus(61, { status: "checked", note_text: "Zweryfikowano tytul." }, "42");
+      assert.equal(payload.status, "checked");
+    },
+  );
+
   let refreshCount = 0;
   let submittingStates = [];
   let submittedPayload = null;
@@ -1015,6 +1105,39 @@ async function main() {
   const failingResult = await failingSubmitter(buildBillingPayerNoteRequest("Treść", "42"));
   assert.equal(failingResult.status, "error");
   assert.equal(failingResult.errorState.title, "Backend nie zapisał notatki");
+
+  refreshCount = 0;
+  submittingStates = [];
+  submittedPayload = null;
+  const reviewSubmitter = createBillingPaymentReviewStatusSubmitter({
+    refreshStatus: async () => {
+      refreshCount += 1;
+    },
+    setSubmitting: (isSubmitting) => {
+      submittingStates.push(isSubmitting);
+    },
+    submitStatus: async (payload) => {
+      submittedPayload = payload;
+    },
+  });
+  const reviewSubmitResult = await reviewSubmitter(buildBillingPaymentReviewStatusRequest("needs_review", "  Sprawdzic tytul.  ", "42"));
+  assert.equal(reviewSubmitResult.status, "success");
+  assert.deepEqual(submittedPayload, { status: "needs_review", note_text: "Sprawdzic tytul." });
+  assert.equal(refreshCount, 1);
+  assert.deepEqual(submittingStates, [true, false]);
+
+  const failingReviewSubmitter = createBillingPaymentReviewStatusSubmitter({
+    refreshStatus: async () => {
+      throw new Error("Refresh should not run after failed review status submit.");
+    },
+    setSubmitting: () => {},
+    submitStatus: async () => {
+      throw new ApiError("Backend odmówił", 500);
+    },
+  });
+  const failingReviewResult = await failingReviewSubmitter(buildBillingPaymentReviewStatusRequest("checked", "", "42"));
+  assert.equal(failingReviewResult.status, "error");
+  assert.equal(failingReviewResult.errorState.title, "Backend nie zapisał statusu");
 
   const requestedUrls = [];
   await withMockedFetch(

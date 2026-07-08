@@ -68,3 +68,5 @@ Po live-weryfikacji `/rozliczenia/wplaty` najbezpieczniejszy kolejny krok to nad
 Etap `Szczegół wpłaty — read-only v1` dodaje trasę `/rozliczenia/wplaty/{paymentId}`. Lista `/rozliczenia/wplaty` linkuje do szczegółu tylko wtedy, gdy istnieje stabilny identyfikator transakcji. W obecnym modelu `paymentId` oznacza `billing_transaction_id`, ale UI nie pokazuje technicznego ID użytkownikowi.
 
 Szczegół wpłaty nie dopasowuje przelewów, nie księguje i nie zmienia salda. Pokazuje tylko widoczną wpłatę oraz jej obecne przypisanie: do naliczenia, tylko do płatnika albo do późniejszego wyjaśnienia.
+
+Etap `Status operacyjny wpłaty — write v1` dodaje na szczególe wpłaty jedną addytywną adnotację operatora. Status operacyjny nie zmienia przypisania, salda, naliczeń ani historii finansowej; służy tylko do oznaczenia, co trzeba sprawdzić przy widocznej wpłacie.

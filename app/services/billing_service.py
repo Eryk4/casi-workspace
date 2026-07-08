@@ -14,6 +14,14 @@ from app.repositories.event_repository import EventRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.utils import extract_phone_identifiers, normalize_phone_identifier, now_iso
 
+PAYMENT_REVIEW_STATUSES = {
+    "needs_review": "Do wyjasnienia",
+    "checked": "Sprawdzone",
+    "waiting_for_contact": "Czeka na kontakt",
+    "waiting_for_payment": "Czeka na wplate",
+    "do_not_auto_match": "Nie ruszac automatycznie",
+}
+
 
 class BillingService:
     HEADER_ALIASES = {
@@ -311,6 +319,117 @@ class BillingService:
             billing_bank_account_id=billing_bank_account_id,
             matched_status=normalized_status or None,
             limit=limit,
+        )
+
+    def list_payment_review_events(
+        self,
+        billing_transaction_id: int,
+        *,
+        organization_id: int | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed sprawdzeniem statusu wplaty.")
+        transaction = self.billing_repository.get_transaction_by_id(
+            billing_transaction_id,
+            organization_id=organization_id,
+        )
+        if not transaction:
+            raise ValueError("Nie znaleziono wplaty w wybranej organizacji.")
+        events = self.billing_repository.list_payment_review_events(
+            billing_transaction_id,
+            organization_id=organization_id,
+            limit=limit,
+        )
+        return {
+            "billing_transaction_id": billing_transaction_id,
+            "organization_id": organization_id,
+            "current": events[0] if events else None,
+            "history": events,
+        }
+
+    def add_payment_review_event(
+        self,
+        billing_transaction_id: int,
+        status: str,
+        note_text: str | None = None,
+        *,
+        actor_user: dict[str, Any] | None,
+        actor: str,
+        organization_id: int | None = None,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed zapisaniem statusu wplaty.")
+
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+
+        transaction = self.billing_repository.get_transaction_by_id(
+            billing_transaction_id,
+            organization_id=organization_id,
+        )
+        if not transaction:
+            raise ValueError("Nie znaleziono wplaty w wybranej organizacji.")
+        direction = str(transaction.get("direction") or "").strip().lower()
+        if direction and direction not in {"uznanie", "inflow", "credit"}:
+            raise ValueError("Status operacyjny mozna ustawic tylko dla wplaty przychodzacej.")
+
+        normalized_status = str(status or "").strip()
+        if normalized_status not in PAYMENT_REVIEW_STATUSES:
+            raise ValueError("Nieprawidlowy status operacyjny wplaty.")
+
+        normalized_note = str(note_text or "").strip()
+        if len(normalized_note) > 1000:
+            raise ValueError("Notatka statusu moze miec maksymalnie 1000 znakow.")
+        if not actor_user or not actor_user.get("user_id"):
+            raise ValueError("Nie mozna zapisac statusu bez zalogowanego uzytkownika.")
+
+        review_event_id = self.billing_repository.add_payment_review_event(
+            {
+                "organization_id": organization_id,
+                "billing_transaction_id": billing_transaction_id,
+                "status": normalized_status,
+                "note_text": normalized_note or None,
+                "created_by_user_id": int(actor_user["user_id"]),
+            }
+        )
+        self.event_repository.log(
+            event_type="billing_payment_review_status_changed",
+            invoice_id=None,
+            organization_id=organization_id,
+            source="BILLING",
+            status_before=None,
+            status_after=normalized_status,
+            decision_reason="Zmieniono operacyjny status wplaty.",
+            actor=actor,
+            details={
+                "billing_payment_review_event_id": review_event_id,
+                "billing_transaction_id": billing_transaction_id,
+                "status": normalized_status,
+                "note_length": len(normalized_note),
+            },
+        )
+        events = self.billing_repository.list_payment_review_events(
+            billing_transaction_id,
+            organization_id=organization_id,
+            limit=20,
+        )
+        return next(
+            (
+                item
+                for item in events
+                if int(item.get("billing_payment_review_event_id") or 0) == int(review_event_id)
+            ),
+            {
+                "billing_payment_review_event_id": review_event_id,
+                "organization_id": organization_id,
+                "billing_transaction_id": billing_transaction_id,
+                "status": normalized_status,
+                "note_text": normalized_note or None,
+                "created_by_user_id": int(actor_user["user_id"]),
+                "created_by_user_name": actor_user.get("display_name") or actor_user.get("login"),
+            },
         )
 
     def generate_charges_for_model(

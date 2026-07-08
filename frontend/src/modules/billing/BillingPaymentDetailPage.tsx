@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowLeft, CalendarDays, CreditCard, RefreshCw, WalletCards } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
@@ -19,13 +19,19 @@ import {
   BILLING_CANONICAL_ROUTE,
   BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE,
+  BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT,
+  BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH,
+  BILLING_PAYMENT_REVIEW_STATUS_OPTIONS,
   BILLING_PAYMENTS_ROUTE,
   BILLING_PERIODS_ROUTE,
   buildBillingPaymentDetailView,
+  buildBillingPaymentReviewStatusRequest,
   canUseBillingOrganizationScope,
+  createBillingPaymentReviewStatusSubmitter,
   getBillingErrorState,
   readBillingCharges,
   readBillingPaymentMatches,
+  readBillingPaymentReviewStatus,
   readBillingPayers,
   readBillingStudents,
   readBillingTransactions,
@@ -34,6 +40,9 @@ import {
   type BillingPaymentDetailAssignmentRow,
   type BillingPaymentDetailChargeRow,
   type BillingPaymentDetailView,
+  type BillingPaymentReviewStatusCode,
+  type BillingPaymentReviewStatusErrorState,
+  type BillingPaymentReviewStatusResponse,
   type BillingStatus,
 } from "./billingModel";
 
@@ -80,8 +89,14 @@ const chargeColumns: Array<TableColumn<BillingPaymentDetailChargeRow>> = [
 export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
   const { selectedOrganizationId, selectedOrganization, status: organizationStatus } = useActiveOrganization();
   const [snapshot, setSnapshot] = useState<BillingCenterSnapshot | null>(null);
+  const [reviewStatus, setReviewStatus] = useState<BillingPaymentReviewStatusResponse | null>(null);
   const [status, setStatus] = useState<BillingStatus>("idle");
   const [errorState, setErrorState] = useState<BillingErrorState | null>(null);
+  const [reviewStatusValue, setReviewStatusValue] = useState<BillingPaymentReviewStatusCode>("needs_review");
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+  const [reviewErrorState, setReviewErrorState] = useState<BillingPaymentReviewStatusErrorState | null>(null);
 
   const loadPayment = useCallback(async () => {
     if (organizationStatus === "loading") {
@@ -92,6 +107,7 @@ export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
 
     if (!canUseBillingOrganizationScope(selectedOrganizationId)) {
       setSnapshot(null);
+      setReviewStatus(null);
       setErrorState(null);
       setStatus("ready");
       return;
@@ -101,12 +117,13 @@ export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
     setErrorState(null);
 
     try {
-      const [payersPayload, studentsPayload, chargesPayload, matchesPayload, transactionsPayload] = await Promise.all([
+      const [payersPayload, studentsPayload, chargesPayload, matchesPayload, transactionsPayload, reviewStatusPayload] = await Promise.all([
         api.billingPayers(withActiveOrganizationQuery(selectedOrganizationId)),
         api.billingStudents(withActiveOrganizationQuery(selectedOrganizationId)),
         api.billingCharges(withActiveOrganizationQuery(selectedOrganizationId, { limit: 1000 })),
         api.billingLedgerMatches(withActiveOrganizationQuery(selectedOrganizationId, { limit: 1000 })),
         api.billingTransactions(withActiveOrganizationQuery(selectedOrganizationId, { limit: 1000 })),
+        api.billingPaymentReviewStatus(paymentId, withActiveOrganizationQuery(selectedOrganizationId, { limit: 10 })),
       ]);
 
       setSnapshot({
@@ -120,14 +137,20 @@ export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
         contractors: [],
         workItems: [],
       });
+      const nextReviewStatus = readBillingPaymentReviewStatus(reviewStatusPayload, paymentId);
+      setReviewStatus(nextReviewStatus);
+      if (nextReviewStatus.current?.status) {
+        setReviewStatusValue(nextReviewStatus.current.status);
+      }
       setStatus("ready");
     } catch (error) {
       const nextErrorState = getBillingErrorState(error);
       setSnapshot(null);
+      setReviewStatus(null);
       setErrorState(nextErrorState);
       setStatus(nextErrorState.status);
     }
-  }, [organizationStatus, selectedOrganizationId]);
+  }, [organizationStatus, paymentId, selectedOrganizationId]);
 
   useEffect(() => {
     void loadPayment();
@@ -137,6 +160,41 @@ export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
   const notFound = status === "ready" && snapshot && !detail;
   const headerBadgeTone = detail?.statusTone === "ok" ? "success" : detail?.statusTone ?? (status === "error" ? "warning" : "info");
+  const currentReviewStatus = reviewStatus?.current ?? null;
+  const currentReviewStatusLabel =
+    BILLING_PAYMENT_REVIEW_STATUS_OPTIONS.find((option) => option.value === currentReviewStatus?.status)?.label ?? "Nie oznaczono";
+  const submitReviewStatus = useMemo(
+    () =>
+      createBillingPaymentReviewStatusSubmitter({
+        refreshStatus: loadPayment,
+        setSubmitting: setReviewSubmitting,
+        submitStatus: (payload) => api.updateBillingPaymentReviewStatus(paymentId, payload, selectedOrganizationId),
+      }),
+    [loadPayment, paymentId, selectedOrganizationId],
+  );
+
+  const handleReviewStatusSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setReviewMessage(null);
+      setReviewErrorState(null);
+      const validation = buildBillingPaymentReviewStatusRequest(reviewStatusValue, reviewNote, selectedOrganizationId);
+      const result = await submitReviewStatus(validation);
+      if (result.status === "blocked") {
+        setReviewErrorState({ status: "error", title: "Nie zapisano statusu", description: result.message });
+        return;
+      }
+      if (result.status === "error") {
+        setReviewErrorState(result.errorState);
+        return;
+      }
+      if (result.status === "success") {
+        setReviewNote("");
+        setReviewMessage("Status operacyjny został zapisany.");
+      }
+    },
+    [reviewNote, reviewStatusValue, selectedOrganizationId, submitReviewStatus],
+  );
 
   return (
     <div className="module-page billing-page billing-payment-detail-page">
@@ -237,6 +295,70 @@ export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
             </div>
 
             <aside className="module-stack">
+              <Card
+                description={BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT}
+                title="Status operacyjny"
+              >
+                <div className="billing-context-list">
+                  <article>
+                    <span>Aktualny status</span>
+                    <strong>{currentReviewStatusLabel}</strong>
+                  </article>
+                  <article>
+                    <span>Ostatnie oznaczenie</span>
+                    <strong>{currentReviewStatus?.created_at ? currentReviewStatus.created_at.split("T")[0] : "Brak oznaczenia"}</strong>
+                  </article>
+                </div>
+                {currentReviewStatus?.note_text ? (
+                  <p className="module-note">{currentReviewStatus.note_text}</p>
+                ) : (
+                  <p className="module-note">Brak notatki statusu.</p>
+                )}
+                <form className="module-form" onSubmit={handleReviewStatusSubmit}>
+                  <label className="module-field">
+                    <span>Status</span>
+                    <select
+                      disabled={reviewSubmitting}
+                      onChange={(event) => setReviewStatusValue(event.target.value as BillingPaymentReviewStatusCode)}
+                      value={reviewStatusValue}
+                    >
+                      {BILLING_PAYMENT_REVIEW_STATUS_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="module-field">
+                    <span>Krótka notatka</span>
+                    <textarea
+                      disabled={reviewSubmitting}
+                      maxLength={BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH}
+                      onChange={(event) => setReviewNote(event.target.value)}
+                      placeholder="Opcjonalnie: co trzeba sprawdzić przy tej wpłacie?"
+                      rows={3}
+                      value={reviewNote}
+                    />
+                  </label>
+                  <p className="module-note">Ten status nie zmienia salda ani przypisania wpłaty.</p>
+                  {reviewErrorState ? <ErrorState description={reviewErrorState.description} title={reviewErrorState.title} /> : null}
+                  {reviewMessage ? <p className="module-success">{reviewMessage}</p> : null}
+                  <Button disabled={reviewSubmitting} size="sm" type="submit" variant="primary">
+                    {reviewSubmitting ? "Zapisywanie..." : "Zapisz status"}
+                  </Button>
+                </form>
+                {reviewStatus?.history.length ? (
+                  <div className="billing-context-list" aria-label="Historia statusów operacyjnych">
+                    {reviewStatus.history.slice(0, 3).map((item) => (
+                      <article key={item.billing_payment_review_event_id}>
+                        <span>{item.created_at ? item.created_at.split("T")[0] : "Brak daty"}</span>
+                        <strong>{BILLING_PAYMENT_REVIEW_STATUS_OPTIONS.find((option) => option.value === item.status)?.label ?? item.status}</strong>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </Card>
+
               <Card title="Kontekst biznesowy">
                 <div className="billing-context-list">
                   {detail.contextItems.map((item) => (

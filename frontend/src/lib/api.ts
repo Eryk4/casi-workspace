@@ -237,6 +237,18 @@ export const api = {
   billingPayers: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/payers", { query }),
   billingPayerNotes: (payerId: number | string, query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>(`/billing/payers/${payerId}/notes`, { query }),
+  billingPaymentReviewStatus: (paymentId: number | string, query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>(`/billing/payments/${paymentId}/review-status`, { query }),
+  updateBillingPaymentReviewStatus: (
+    paymentId: number | string,
+    payload: { status: string; note_text?: string },
+    organizationId?: string | null,
+  ) =>
+    apiRequest<Record<string, unknown>>(`/billing/payments/${paymentId}/review-status`, {
+      method: "POST",
+      body: payload,
+      query: withOrganizationQuery(organizationId),
+    }),
   addBillingPayerNote: (
     payerId: number | string,
     noteText: string,

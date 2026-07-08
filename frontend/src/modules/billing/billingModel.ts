@@ -624,6 +624,69 @@ export type BillingPayerNoteSubmitterDeps = {
   submitNote: (payload: { note_text: string }) => Promise<unknown>;
 };
 
+export type BillingPaymentReviewStatusCode =
+  | "needs_review"
+  | "checked"
+  | "waiting_for_contact"
+  | "waiting_for_payment"
+  | "do_not_auto_match";
+
+export type BillingPaymentReviewStatusRecord = {
+  billing_payment_review_event_id: number;
+  organization_id?: number;
+  billing_transaction_id: number;
+  status: BillingPaymentReviewStatusCode;
+  note_text?: string | null;
+  created_by_user_id?: number;
+  created_by_user_name?: string | null;
+  created_by_user_role?: string | null;
+  created_at?: string | null;
+};
+
+export type BillingPaymentReviewStatusResponse = {
+  billing_transaction_id: number;
+  organization_id?: number;
+  current: BillingPaymentReviewStatusRecord | null;
+  history: BillingPaymentReviewStatusRecord[];
+};
+
+export type BillingPaymentReviewStatusValidationResult =
+  | {
+      ok: true;
+      payload: {
+        status: BillingPaymentReviewStatusCode;
+        note_text?: string;
+      };
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
+export type BillingPaymentReviewStatusErrorState = BillingErrorState;
+
+export type BillingPaymentReviewStatusSubmitResult =
+  | {
+      status: "success";
+    }
+  | {
+      status: "blocked";
+      message: string;
+    }
+  | {
+      status: "ignored";
+    }
+  | {
+      status: "error";
+      errorState: BillingPaymentReviewStatusErrorState;
+    };
+
+export type BillingPaymentReviewStatusSubmitterDeps = {
+  refreshStatus: () => Promise<void>;
+  setSubmitting: (isSubmitting: boolean) => void;
+  submitStatus: (payload: { status: BillingPaymentReviewStatusCode; note_text?: string }) => Promise<unknown>;
+};
+
 export const BILLING_BALANCES_ENDPOINT = "/billing/ledger/balances";
 export const BILLING_PAYMENT_MATCHES_ENDPOINT = "/billing/ledger/matches";
 export const BILLING_TRANSACTIONS_ENDPOINT = "/billing/transactions";
@@ -636,6 +699,18 @@ export const BILLING_PAYER_NOTE_CREATE_ENABLED = true;
 export const BILLING_PAYER_NOTE_MAX_LENGTH = 2000;
 export const BILLING_PAYER_NOTE_HELP_TEXT =
   "Notatka nie zmienia salda ani przypisań wpłat. Służy tylko do zapisania kontekstu rozmowy lub decyzji.";
+
+export const BILLING_PAYMENT_REVIEW_STATUS_ENDPOINT_SUFFIX = "/review-status";
+export const BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH = 1000;
+export const BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT =
+  "Status operacyjny nie zmienia salda, naliczeń ani przypisania wpłaty. Służy tylko do oznaczenia, co trzeba sprawdzić.";
+export const BILLING_PAYMENT_REVIEW_STATUS_OPTIONS: Array<{ value: BillingPaymentReviewStatusCode; label: string }> = [
+  { value: "needs_review", label: "Do wyjaśnienia" },
+  { value: "checked", label: "Sprawdzone" },
+  { value: "waiting_for_contact", label: "Czeka na kontakt" },
+  { value: "waiting_for_payment", label: "Czeka na wpłatę" },
+  { value: "do_not_auto_match", label: "Nie ruszać automatycznie" },
+];
 export const BILLING_CANONICAL_ROUTE = "/rozliczenia";
 export const BILLING_LEGACY_ROUTE = "/kasa";
 export const BILLING_PAYER_DETAIL_ROUTE = `${BILLING_CANONICAL_ROUTE}/platnicy`;
@@ -675,6 +750,10 @@ export function billingPayerDetailPath(payerId: number | string): string {
 
 export function billingPaymentDetailPath(paymentId: number | string): string {
   return `${BILLING_PAYMENTS_ROUTE}/${paymentId}`;
+}
+
+export function billingPaymentReviewStatusEndpoint(paymentId: number | string): string {
+  return `/billing/payments/${paymentId}${BILLING_PAYMENT_REVIEW_STATUS_ENDPOINT_SUFFIX}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -966,6 +1045,60 @@ export function readBillingPayerNotes(payload: unknown): BillingPayerNoteRecord[
       created_at: readOptionalString(item.created_at) ?? null,
     };
   });
+}
+
+
+function isBillingPaymentReviewStatusCode(value: unknown): value is BillingPaymentReviewStatusCode {
+  return BILLING_PAYMENT_REVIEW_STATUS_OPTIONS.some((option) => option.value === value);
+}
+
+function readBillingPaymentReviewStatusRecord(payload: unknown, endpoint: string): BillingPaymentReviewStatusRecord {
+  if (!isRecord(payload)) {
+    throw new ApiContractError(endpoint, payload);
+  }
+  const eventId = readNumber(payload.billing_payment_review_event_id);
+  const transactionId = readNumber(payload.billing_transaction_id);
+  const status = readOptionalString(payload.status);
+  if (!eventId || !transactionId || !isBillingPaymentReviewStatusCode(status)) {
+    throw new ApiContractError(endpoint, payload);
+  }
+  return {
+    billing_payment_review_event_id: eventId,
+    organization_id: readNumber(payload.organization_id),
+    billing_transaction_id: transactionId,
+    status,
+    note_text: payload.note_text === null || payload.note_text === undefined
+      ? null
+      : safeBillingText(payload.note_text, "Ukryto techniczna lub wrazliwa tresc notatki."),
+    created_by_user_id: readNumber(payload.created_by_user_id),
+    created_by_user_name: safeBillingText(payload.created_by_user_name, "") || null,
+    created_by_user_role: safeBillingText(payload.created_by_user_role, "") || null,
+    created_at: readOptionalString(payload.created_at) ?? null,
+  };
+}
+
+export function readBillingPaymentReviewStatus(payload: unknown, paymentId: number | string = "{id}"): BillingPaymentReviewStatusResponse {
+  const endpoint = billingPaymentReviewStatusEndpoint(paymentId);
+  if (!isRecord(payload)) {
+    throw new ApiContractError(endpoint, payload);
+  }
+  const transactionId = readNumber(payload.billing_transaction_id);
+  if (!transactionId) {
+    throw new ApiContractError(endpoint, payload);
+  }
+  if (!Array.isArray(payload.history)) {
+    throw new ApiContractError(endpoint, payload);
+  }
+  const history = payload.history.map((item) => readBillingPaymentReviewStatusRecord(item, endpoint));
+  const current = payload.current === null || payload.current === undefined
+    ? null
+    : readBillingPaymentReviewStatusRecord(payload.current, endpoint);
+  return {
+    billing_transaction_id: transactionId,
+    organization_id: readNumber(payload.organization_id),
+    current,
+    history,
+  };
 }
 
 export function readBillingStudents(payload: unknown): BillingStudentRecord[] {
@@ -1520,7 +1653,7 @@ export function buildBillingBalanceExplanationRows(
       topItemsLabel,
       explanationLabel:
         payerCharges.length > 0
-          ? `Saldo wynika z naliczonych kwot pomniejszonych o wpłaty widoczne w ledgerze. To wyjaśnienie read-only, bez księgowania i bez dopasowywania przelewów.`
+          ? `Saldo wynika z naliczonych kwot pomniejszonych o wplaty widoczne w ledgerze. To wyjasnienie read-only, bez operacji finansowych i bez dopasowywania przelewow.`
           : `Brakuje danych, żeby szczegółowo wyjaśnić saldo. Widoczna jest tylko suma naliczeń, wpłat i różnica.`,
       statusTone: balanceDue > 0 ? "warning" : balanceDue < 0 ? "info" : "ok",
     };
@@ -2099,7 +2232,7 @@ export function buildBillingPeriodView(snapshot: BillingCenterSnapshot, selected
       },
       {
         label: "Czego nie robi",
-        value: "Widok nie nalicza opłat, nie zamyka okresu, nie importuje płatności i nie wykonuje księgowania.",
+        value: "Widok nie dodaje wpłat i nie wykonuje operacji finansowych.",
       },
       {
         label: "Źródło",
@@ -2269,7 +2402,7 @@ export function buildBillingPaymentsAllocationView(snapshot: BillingCenterSnapsh
       },
       {
         label: "Czego nie robi",
-        value: "Widok nie dodaje wpłat, nie importuje przelewów, nie zmienia przypisań i nie wykonuje księgowania.",
+        value: "Widok nie dodaje wpłat i nie wykonuje operacji finansowych.",
       },
       {
         label: "Okresy",
@@ -2387,7 +2520,7 @@ export function buildBillingPaymentDetailView(snapshot: BillingCenterSnapshot, p
       },
       {
         label: "Czego nie robi",
-        value: "Nie dopasowuje wpłat, nie księguje, nie zmienia salda i nie zmienia przypisania.",
+        value: "Nie dopasowuje wplat, nie zmienia salda i nie zmienia przypisania.",
       },
       {
         label: "Zakres",
@@ -2932,7 +3065,7 @@ export function buildBillingPayerDetailView(snapshot: BillingCenterSnapshot, pay
       },
       {
         label: "Tryb",
-        value: "Widok jest tylko do odczytu. Nie dodaje płatności, nie nalicza opłat i nie księguje sald.",
+        value: "Widok jest tylko do odczytu. Nie dodaje platnosci, nie nalicza oplat i nie zmienia sald.",
       },
       {
         label: "Płatnik a rodzina",
@@ -3033,6 +3166,100 @@ export function buildBillingPayerNoteRequest(
   };
 }
 
+export function buildBillingPaymentReviewStatusRequest(
+  status: string,
+  noteText: string,
+  organizationId: string | number | null | undefined,
+): BillingPaymentReviewStatusValidationResult {
+  if (!canUseBillingOrganizationScope(organizationId)) {
+    return {
+      ok: false,
+      message: BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE,
+    };
+  }
+
+  const normalizedStatus = status.trim();
+  if (!isBillingPaymentReviewStatusCode(normalizedStatus)) {
+    return {
+      ok: false,
+      message: "Wybierz poprawny status operacyjny wpłaty.",
+    };
+  }
+
+  const trimmedNote = noteText.trim();
+  if (trimmedNote.length > BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH) {
+    return {
+      ok: false,
+      message: `Notatka statusu może mieć maksymalnie ${BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH} znaków.`,
+    };
+  }
+
+  return {
+    ok: true,
+    payload: trimmedNote ? { status: normalizedStatus, note_text: trimmedNote } : { status: normalizedStatus },
+  };
+}
+
+export function getBillingPaymentReviewStatusErrorState(error: unknown): BillingPaymentReviewStatusErrorState {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return {
+        status: "unauthenticated",
+        title: "Sesja wygasła",
+        description: "Zaloguj się ponownie, aby zapisać status operacyjny wpłaty.",
+      };
+    }
+    if (error.status === 403) {
+      return {
+        status: "forbidden",
+        title: "Brak uprawnień do statusu",
+        description: "Twoje konto nie ma uprawnień do oznaczania wpłat w tej organizacji.",
+      };
+    }
+    if (error.status === 404) {
+      return {
+        status: "error",
+        title: "Nie znaleziono wpłaty",
+        description: "Status nie został zapisany, bo backend nie znalazł wpłaty w wybranej organizacji.",
+      };
+    }
+    if (error.status >= 500) {
+      return {
+        status: "server-error",
+        title: "Backend nie zapisał statusu",
+        description: "Wystąpił błąd serwera. Status nie jest traktowany jako zapisany bez potwierdzenia backendu.",
+      };
+    }
+    return {
+      status: "error",
+      title: `Błąd API (${error.status})`,
+      description: error.message,
+    };
+  }
+
+  if (error instanceof ApiContractError) {
+    return {
+      status: "error",
+      title: "Niepoprawny format statusu",
+      description: "Backend odpowiedział, ale status operacyjny nie pasuje do oczekiwanego kontraktu.",
+    };
+  }
+
+  if (error instanceof TypeError) {
+    return {
+      status: "error",
+      title: "Problem z połączeniem z API",
+      description: "Nie udało się połączyć z backendem. Status nie został potwierdzony.",
+    };
+  }
+
+  return {
+    status: "error",
+    title: "Nie udało się zapisać statusu",
+    description: error instanceof Error ? error.message : "Wystąpił nieznany błąd zapisu statusu operacyjnego.",
+  };
+}
+
 export function getBillingPayerNoteErrorState(error: unknown): BillingPayerNoteErrorState {
   if (error instanceof ApiError) {
     if (error.status === 401) {
@@ -3121,6 +3348,42 @@ export function createBillingPayerNoteSubmitter(deps: BillingPayerNoteSubmitterD
       return {
         status: "error",
         errorState: getBillingPayerNoteErrorState(error),
+      };
+    } finally {
+      inFlight = false;
+      deps.setSubmitting(false);
+    }
+  };
+}
+
+export function createBillingPaymentReviewStatusSubmitter(deps: BillingPaymentReviewStatusSubmitterDeps) {
+  let inFlight = false;
+
+  return async function submitBillingPaymentReviewStatus(
+    validation: BillingPaymentReviewStatusValidationResult,
+  ): Promise<BillingPaymentReviewStatusSubmitResult> {
+    if (!validation.ok) {
+      return {
+        status: "blocked",
+        message: validation.message,
+      };
+    }
+
+    if (inFlight) {
+      return { status: "ignored" };
+    }
+
+    inFlight = true;
+    deps.setSubmitting(true);
+
+    try {
+      await deps.submitStatus(validation.payload);
+      await deps.refreshStatus();
+      return { status: "success" };
+    } catch (error) {
+      return {
+        status: "error",
+        errorState: getBillingPaymentReviewStatusErrorState(error),
       };
     } finally {
       inFlight = false;

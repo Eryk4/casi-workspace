@@ -1019,6 +1019,24 @@ CREATE INDEX IF NOT EXISTS idx_billing_notes_payer
 CREATE INDEX IF NOT EXISTS idx_billing_notes_org
     ON billing_notes(organization_id);
 
+CREATE TABLE IF NOT EXISTS billing_payment_review_events (
+    billing_payment_review_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    billing_transaction_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    note_text TEXT,
+    created_by_user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    FOREIGN KEY (billing_transaction_id) REFERENCES billing_transactions(billing_transaction_id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_billing_payment_review_events_transaction
+    ON billing_payment_review_events(billing_transaction_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_payment_review_events_org
+    ON billing_payment_review_events(organization_id);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_id INTEGER NOT NULL,
@@ -2369,6 +2387,27 @@ CREATE INDEX IF NOT EXISTS idx_billing_notes_payer
 CREATE INDEX IF NOT EXISTS idx_billing_notes_org
     ON billing_notes(organization_id);
 
+CREATE TABLE IF NOT EXISTS billing_payment_review_events (
+    billing_payment_review_event_id BIGSERIAL PRIMARY KEY,
+    organization_id BIGINT NOT NULL,
+    billing_transaction_id BIGINT NOT NULL,
+    status TEXT NOT NULL,
+    note_text TEXT,
+    created_by_user_id BIGINT NOT NULL,
+    created_at TEXT NOT NULL,
+    CONSTRAINT fk_billing_payment_review_events_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    CONSTRAINT fk_billing_payment_review_events_transaction
+        FOREIGN KEY (billing_transaction_id) REFERENCES billing_transactions(billing_transaction_id) ON DELETE CASCADE,
+    CONSTRAINT fk_billing_payment_review_events_user
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_billing_payment_review_events_transaction
+    ON billing_payment_review_events(billing_transaction_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_payment_review_events_org
+    ON billing_payment_review_events(organization_id);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id BIGSERIAL PRIMARY KEY,
     invoice_id BIGINT NOT NULL,
@@ -2675,6 +2714,7 @@ PRAGMA foreign_keys = OFF;
   DROP TABLE IF EXISTS user_module_inbox_state;
   DROP TABLE IF EXISTS billing_payer_charge_state;
 DROP TABLE IF EXISTS billing_payer_ledger_entries;
+DROP TABLE IF EXISTS billing_payment_review_events;
   DROP TABLE IF EXISTS billing_payment_matches;
 DROP TABLE IF EXISTS billing_notes;
 DROP TABLE IF EXISTS billing_student_charge_state;
@@ -2732,6 +2772,7 @@ POSTGRES_RESET_SCRIPT = """
   DROP TABLE IF EXISTS user_module_inbox_state CASCADE;
   DROP TABLE IF EXISTS billing_payer_charge_state CASCADE;
 DROP TABLE IF EXISTS billing_payer_ledger_entries CASCADE;
+DROP TABLE IF EXISTS billing_payment_review_events CASCADE;
   DROP TABLE IF EXISTS billing_payment_matches CASCADE;
 DROP TABLE IF EXISTS billing_notes CASCADE;
 DROP TABLE IF EXISTS billing_student_charge_state CASCADE;

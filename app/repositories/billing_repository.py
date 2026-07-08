@@ -227,6 +227,52 @@ class BillingRepository:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def add_payment_review_event(self, payload: dict[str, Any]) -> int:
+        with get_connection() as connection:
+            return execute_insert_returning_id(
+                connection,
+                """
+                INSERT INTO billing_payment_review_events (
+                    organization_id, billing_transaction_id, status, note_text, created_by_user_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["organization_id"],
+                    payload["billing_transaction_id"],
+                    payload["status"],
+                    payload.get("note_text"),
+                    payload["created_by_user_id"],
+                    now_iso(),
+                ),
+                "billing_payment_review_event_id",
+            )
+
+    def list_payment_review_events(
+        self,
+        billing_transaction_id: int,
+        *,
+        organization_id: int | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        params: list[Any] = [billing_transaction_id]
+        query = """
+            SELECT
+                e.*,
+                COALESCE(u.display_name, u.login) AS created_by_user_name,
+                u.role AS created_by_user_role
+            FROM billing_payment_review_events e
+            LEFT JOIN users u ON u.user_id = e.created_by_user_id
+            WHERE e.billing_transaction_id = ?
+        """
+        if organization_id is not None:
+            query += " AND e.organization_id = ?"
+            params.append(organization_id)
+        query += " ORDER BY e.created_at DESC, e.billing_payment_review_event_id DESC LIMIT ?"
+        params.append(max(1, int(limit)))
+        with get_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
     def create_payer(self, payload: dict[str, Any]) -> int:
         timestamp = now_iso()
         with get_connection() as connection:

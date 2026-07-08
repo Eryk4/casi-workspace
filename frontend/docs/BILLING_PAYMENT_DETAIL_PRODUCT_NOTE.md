@@ -1,6 +1,6 @@
 ﻿# Szczegół wpłaty v1
 
-`/rozliczenia/wplaty/{paymentId}` jest read-only ekranem pojedynczej widocznej wpłaty w module `Rozliczenia`.
+`/rozliczenia/wplaty/{paymentId}` jest ekranem pojedynczej widocznej wpłaty w module `Rozliczenia`.
 
 W obecnym modelu `paymentId` oznacza `billing_transaction_id`. To jest techniczny identyfikator transakcji używany wyłącznie do routingu; UI nie pokazuje go użytkownikowi jako biznesowego numeru wpłaty.
 
@@ -35,6 +35,14 @@ Jeśli wpłata ma match tylko z płatnikiem, ekran pokazuje płatnika i jasno m�
 
 Jeśli wpłata nie ma jasnego przypisania, ekran pokazuje neutralny stan `Do wyjaśnienia` i nie zgaduje płatnika, naliczenia ani okresu.
 
+## Status operacyjny wpłaty
+
+Etap `Status operacyjny wpłaty — write v1` dodaje jeden wąski zapis: addytywny status operacyjny przy wpłacie. Status pomaga oznaczyć, czy wpłata jest sprawdzona, wymaga wyjaśnienia, czeka na kontakt, czeka na wpłatę albo nie powinna być ruszana automatycznie.
+
+Ten status nie zmienia kwoty, salda, naliczeń, dopasowań ani przypisania wpłaty. Sukces w UI pojawia się dopiero po odpowiedzi backendu i odświeżeniu szczegółu.
+
+Szczegół statusu jest opisany w `frontend/docs/BILLING_PAYMENT_REVIEW_STATUS_PRODUCT_NOTE.md`.
+
 ## Czego ekran nie robi
 
 Ekran nie:
@@ -46,10 +54,9 @@ Ekran nie:
 - rozlicza naliczeń,
 - księguje,
 - zmienia salda,
-- dodaje notatek,
 - wysyła przypomnień.
 
-To jest mapa obecnych danych, a nie workflow płatności.
+To jest mapa obecnych danych z jedną bezpieczną adnotacją operacyjną, a nie workflow płatności.
 
 ## Ograniczenia
 

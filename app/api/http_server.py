@@ -1253,6 +1253,23 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=404)
                 return self._send_json(notes)
+            if path.startswith("/api/billing/payments/") and path.endswith("/review-status"):
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                payment_id = self._extract_id(path, "/api/billing/payments/", suffix="/review-status")
+                if payment_id is None:
+                    return self._not_found()
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 20
+                try:
+                    review_status = self.billing_service.list_payment_review_events(
+                        payment_id,
+                        organization_id=organization_id,
+                        limit=min(max(limit, 1), 50),
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=404)
+                return self._send_json(review_status)
             if path == "/api/billing/payers":
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:
@@ -3369,6 +3386,32 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         return self._send_json({"error": str(error)}, status=404)
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(note, status=201)
+
+            if path.startswith("/api/billing/payments/") and path.endswith("/review-status"):
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                payment_id = self._extract_id(path, "/api/billing/payments/", suffix="/review-status")
+                if payment_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                allowed_fields = {"status", "note_text"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pola status i note_text."}, status=400)
+                try:
+                    review_event = self.billing_service.add_payment_review_event(
+                        payment_id,
+                        str(payload.get("status") or ""),
+                        payload.get("note_text"),
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    if "Nie znaleziono wplaty" in str(error):
+                        return self._send_json({"error": str(error)}, status=404)
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(review_event, status=201)
 
             if path == "/api/billing/students":
                 organization_id = self._resolve_write_scope(user, query)
