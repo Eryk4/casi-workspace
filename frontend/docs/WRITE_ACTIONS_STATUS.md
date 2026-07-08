@@ -8,12 +8,12 @@ No new write action should be added until the existing paths below stay green in
 
 ## Summary
 
-- Current write surfaces: Work Items, invoice operator comments, CRM contractor notes, billing payer notes, and billing payment operational review status.
+- Current write surfaces: Work Items, invoice operator comments, CRM contractor notes, billing payer notes, billing payment operational review status, and billing work queue decisions.
 - Every active write path is organization-scoped.
 - The frontend blocks writes without an active organization before calling the API.
 - The backend resolves write scope server-side and rejects missing/invalid organization scope.
 - UI success is only shown after backend confirmation.
-- No current write path should send data to external systems, KSeF, email, AI, or S3. Billing payer notes and payment operational status are internal-only and do not change financial state.
+- No current write path should send data to external systems, KSeF, email, AI, or S3. Billing payer notes, payment operational status, and work queue decisions are internal-only and do not change financial state.
 - Active Next write paths listed below have explicit payload allowlists.
 - Broader backend mutating endpoints are tracked separately in `docs/PAYLOAD_ALLOWLIST_AUDIT.md` before any future hardening.
 - Backend-only additive comments/notes for support, intake, tasks, and knowledge documents now also reject extra JSON fields, but they are not promoted as active Next write actions by this document.
@@ -36,6 +36,7 @@ No new write action should be added until the existing paths below stay green in
 | CRM | `POST /api/contractors/{id}/notes?organization_id=...` | `/crm/{contractorId}` | `{ "note_text": string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads contractor by `contractor_id` and `organization_id` | `test-contractor-detail.js`, `tests/http_server_test_methods.py` |
 | Rozliczenia | `POST /api/billing/payers/{payerId}/notes?organization_id=...` | `/rozliczenia/platnicy/{payerId}` | `{ "note_text": string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads payer by `billing_payer_id` and `organization_id`; no balance/charge/payment/match mutation | `test-billing.js`, `tests/test_billing_notes_http.py` |
 | Rozliczenia | `POST /api/billing/payments/{paymentId}/review-status?organization_id=...` | `/rozliczenia/wplaty/{paymentId}` | `{ "status": string, "note_text"?: string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads incoming transaction by `billing_transaction_id` and `organization_id`; no transaction/charge/match/ledger/balance mutation | `test-billing.js`, `tests/test_billing_payment_review_status_http.py` |
+| Rozliczenia | `POST /api/billing/work-queue/events?organization_id=...` | `/rozliczenia/sprawy` | `{ "issue_key": string, "issue_type": string, "target_type": string, "target_id"?: number, "action": "handled" | "snoozed", "note_text"?: string }` | Required by active organization context | Form loading; queue refreshes after backend response | `_resolve_write_scope`; service validates `payment` and `payer` targets by organization; no transaction/charge/match/ledger/balance mutation | `test-billing.js`, `tests/test_billing_work_queue_events_http.py` |
 
 ## Tenant Isolation Status
 
@@ -89,6 +90,18 @@ No new write action should be added until the existing paths below stay green in
 - Event history records `billing_payment_review_event_id`, `billing_transaction_id`, `status`, and `note_length`, not the full `note_text`.
 - The endpoint must not change balances, charges, payment matches, transactions, ledger entries, imports, reminders, exports, or accounting state.
 - Wrong organization scope returns not found/forbidden style behavior without creating a review event.
+
+### Billing Work Queue Decisions
+
+- Frontend blocks decision submit without active organization.
+- Backend requires write scope and accepts only `issue_key`, `issue_type`, `target_type`, `target_id`, `action`, and optional `note_text`.
+- Allowed actions are `handled` and `snoozed`.
+- For `target_type=payment`, service fetches the transaction by `billing_transaction_id` and `organization_id`.
+- For `target_type=payer`, service fetches the payer by `billing_payer_id` and `organization_id`.
+- The decision persists in `billing_work_queue_events` and is used only to move the issue out of `Najpierw zr?b` into `Od?o?one sprawy` or `Ostatnio obs?u?one`.
+- Event history records `billing_work_queue_event_id`, issue metadata, action, target metadata, and `note_length`, not the full `note_text`.
+- The endpoint must not change balances, charges, payment matches, transactions, ledger entries, imports, reminders, task manager items, exports, or accounting state.
+- `Obs?u?ona` does not mean settled. `Od?o?ona` does not create a reminder.
 
 ### Backend-Only Additive Comments/Notes
 

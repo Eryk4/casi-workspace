@@ -22,7 +22,9 @@ import {
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_PAYMENTS_ROUTE,
   BILLING_PERIODS_ROUTE,
+  BILLING_WORK_QUEUE_DECISION_HELP_TEXT,
   buildBillingWorkQueueView,
+  buildBillingWorkQueueDecisionRequest,
   canUseBillingOrganizationScope,
   getBillingErrorState,
   readBillingBalances,
@@ -30,16 +32,21 @@ import {
   readBillingPayerNotes,
   readBillingPaymentMatches,
   readBillingPaymentReviewStatuses,
+  readBillingWorkQueueEvents,
   readBillingPayers,
   readBillingStudents,
   readBillingTransactions,
   type BillingCenterSnapshot,
   type BillingErrorState,
   type BillingStatus,
+  type BillingWorkQueueEventAction,
   type BillingWorkQueueIssue,
 } from "./billingModel";
 
-const issueColumns: Array<TableColumn<BillingWorkQueueIssue>> = [
+function buildIssueColumns(
+  onDecision?: (issue: BillingWorkQueueIssue, action: BillingWorkQueueEventAction) => void,
+): Array<TableColumn<BillingWorkQueueIssue>> {
+  return [
   { key: "priority", header: "Priorytet", render: (row) => <StatusBadge status={row.tone}>{`${row.priority} priorytet`}</StatusBadge> },
   { key: "type", header: "Typ sprawy", render: (row) => row.type },
   {
@@ -66,7 +73,26 @@ const issueColumns: Array<TableColumn<BillingWorkQueueIssue>> = [
       </span>
     ),
   },
-];
+  ...(onDecision
+    ? [
+        {
+          key: "decision",
+          header: "Decyzja",
+          render: (row: BillingWorkQueueIssue) => (
+            <span className="billing-inline-links">
+              <Button onClick={() => onDecision(row, "handled")} size="sm" variant="secondary">
+                Oznacz jako obsłużoną
+              </Button>
+              <Button onClick={() => onDecision(row, "snoozed")} size="sm" variant="secondary">
+                Odłóż
+              </Button>
+            </span>
+          ),
+        } satisfies TableColumn<BillingWorkQueueIssue>,
+      ]
+    : []),
+  ];
+}
 
 function WorkQueueSection({
   title,
@@ -74,17 +100,20 @@ function WorkQueueSection({
   rows,
   emptyTitle,
   emptyDescription,
+  onDecision,
 }: {
   title: string;
   description: string;
   rows: BillingWorkQueueIssue[];
   emptyTitle: string;
   emptyDescription: string;
+  onDecision?: (issue: BillingWorkQueueIssue, action: BillingWorkQueueEventAction) => void;
 }) {
+  const columns = useMemo(() => buildIssueColumns(onDecision), [onDecision]);
   return (
     <Card description={description} title={title}>
       {rows.length ? (
-        <Table<BillingWorkQueueIssue> columns={issueColumns} data={rows} getRowKey={(row) => row.id} />
+        <Table<BillingWorkQueueIssue> columns={columns} data={rows} getRowKey={(row) => row.id} />
       ) : (
         <EmptyState title={emptyTitle} description={emptyDescription} />
       )}
@@ -98,6 +127,12 @@ export function BillingWorkQueuePage() {
   const [loadedOrganizationId, setLoadedOrganizationId] = useState<string | null>(null);
   const [status, setStatus] = useState<BillingStatus>("idle");
   const [errorState, setErrorState] = useState<BillingErrorState | null>(null);
+  const [decisionIssue, setDecisionIssue] = useState<BillingWorkQueueIssue | null>(null);
+  const [decisionAction, setDecisionAction] = useState<BillingWorkQueueEventAction | null>(null);
+  const [decisionNote, setDecisionNote] = useState("");
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [decisionSuccess, setDecisionSuccess] = useState<string | null>(null);
+  const [isDecisionSubmitting, setDecisionSubmitting] = useState(false);
 
   const loadWorkQueue = useCallback(async () => {
     if (organizationStatus === "loading") {
@@ -122,7 +157,7 @@ export function BillingWorkQueuePage() {
 
     try {
       const query = withActiveOrganizationQuery(organizationId);
-      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, matchesPayload, transactionsPayload, statusesPayload] = await Promise.all([
+      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, matchesPayload, transactionsPayload, statusesPayload, workQueueEventsPayload] = await Promise.all([
         api.ledgerBalances(query),
         api.billingPayers(query),
         api.billingStudents(query),
@@ -130,6 +165,7 @@ export function BillingWorkQueuePage() {
         api.billingLedgerMatches(withActiveOrganizationQuery(organizationId, { limit: 1000 })),
         api.billingTransactions(withActiveOrganizationQuery(organizationId, { limit: 1000 })),
         api.billingPaymentReviewStatuses(withActiveOrganizationQuery(organizationId, { limit: 1000 })),
+        api.billingWorkQueueEvents(withActiveOrganizationQuery(organizationId, { limit: 1000 })),
       ]);
 
       const payers = readBillingPayers(payersPayload);
@@ -149,6 +185,7 @@ export function BillingWorkQueuePage() {
         paymentMatches: readBillingPaymentMatches(matchesPayload),
         transactions: readBillingTransactions(transactionsPayload),
         paymentReviewStatuses: readBillingPaymentReviewStatuses(statusesPayload).statuses,
+        workQueueEvents: readBillingWorkQueueEvents(workQueueEventsPayload).events,
         payerNotes: notesPayloads.flatMap((payload) => readBillingPayerNotes(payload)),
         invoices: [],
         contractors: [],
@@ -165,13 +202,54 @@ export function BillingWorkQueuePage() {
     }
   }, [organizationStatus, selectedOrganizationId]);
 
+  const activeOrganizationKey = canUseBillingOrganizationScope(selectedOrganizationId) ? String(selectedOrganizationId).trim() : null;
+
+  const startDecision = useCallback((issue: BillingWorkQueueIssue, action: BillingWorkQueueEventAction) => {
+    setDecisionIssue(issue);
+    setDecisionAction(action);
+    setDecisionNote("");
+    setDecisionError(null);
+    setDecisionSuccess(null);
+  }, []);
+
+  const submitDecision = useCallback(async () => {
+    if (!decisionIssue || !decisionAction || !activeOrganizationKey) {
+      return;
+    }
+    const validation = buildBillingWorkQueueDecisionRequest(
+      decisionIssue,
+      decisionAction,
+      decisionNote,
+      activeOrganizationKey,
+    );
+    if (!validation.ok) {
+      setDecisionError(validation.message);
+      return;
+    }
+    setDecisionSubmitting(true);
+    setDecisionError(null);
+    setDecisionSuccess(null);
+    try {
+      await api.addBillingWorkQueueEvent(validation.payload, activeOrganizationKey);
+      setDecisionNote("");
+      setDecisionIssue(null);
+      setDecisionAction(null);
+      setDecisionSuccess(decisionAction === "handled" ? "Sprawa została oznaczona jako obsłużona." : "Sprawa została odłożona.");
+      await loadWorkQueue();
+    } catch (error) {
+      const nextError = getBillingErrorState(error);
+      setDecisionError(nextError.description || nextError.title);
+    } finally {
+      setDecisionSubmitting(false);
+    }
+  }, [activeOrganizationKey, decisionAction, decisionIssue, decisionNote, loadWorkQueue]);
+
   useEffect(() => {
     setSnapshot(null);
     setLoadedOrganizationId(null);
     void loadWorkQueue();
   }, [loadWorkQueue]);
 
-  const activeOrganizationKey = canUseBillingOrganizationScope(selectedOrganizationId) ? String(selectedOrganizationId).trim() : null;
   const snapshotMatchesOrganization = Boolean(snapshot && activeOrganizationKey && loadedOrganizationId === activeOrganizationKey);
   const workQueueView = useMemo(() => (snapshotMatchesOrganization && snapshot ? buildBillingWorkQueueView(snapshot) : null), [snapshot, snapshotMatchesOrganization]);
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
@@ -183,7 +261,9 @@ export function BillingWorkQueuePage() {
     !workQueueView.paymentRows.length &&
     !workQueueView.contactRows.length &&
     !workQueueView.overpaymentRows.length &&
-    !workQueueView.checkedRows.length;
+    !workQueueView.checkedRows.length &&
+    !workQueueView.snoozedRows.length &&
+    !workQueueView.handledRows.length;
 
   return (
     <div className="module-page billing-page billing-work-queue-page">
@@ -236,7 +316,68 @@ export function BillingWorkQueuePage() {
             <Card title="Ostatnio sprawdzone" description="Wpłaty oznaczone jako sprawdzone.">
               <strong>{workQueueView.summary.checkedCount}</strong>
             </Card>
+            <Card title="Odłożone sprawy" description="Sprawy odłożone decyzją operatora.">
+              <strong>{workQueueView.summary.snoozedCount}</strong>
+            </Card>
+            <Card title="Ostatnio obsłużone" description="Sprawy oznaczone jako obsłużone.">
+              <strong>{workQueueView.summary.handledCount}</strong>
+            </Card>
           </div>
+
+          <Card
+            description="Decyzja porządkuje listę pracy. Nie oznacza rozliczenia płatności ani zamknięcia salda."
+            title="Decyzja operacyjna sprawy"
+          >
+            <p className="module-note">{BILLING_WORK_QUEUE_DECISION_HELP_TEXT}</p>
+            {decisionIssue && decisionAction ? (
+              <div className="module-form">
+                <div className="module-context-list">
+                  <article>
+                    <span>Sprawa</span>
+                    <p>{decisionIssue.type} · {decisionIssue.payerLabel} · {decisionIssue.amountLabel}</p>
+                  </article>
+                  <article>
+                    <span>Decyzja</span>
+                    <p>{decisionAction === "handled" ? "Obsłużona" : "Odłożona"}</p>
+                  </article>
+                </div>
+                <label className="module-field">
+                  <span>Notatka opcjonalna</span>
+                  <textarea
+                    maxLength={1000}
+                    onChange={(event) => setDecisionNote(event.target.value)}
+                    placeholder="Krótko opisz, co ustalono. Notatka nie zmienia finansów."
+                    value={decisionNote}
+                  />
+                </label>
+                {decisionError ? <p className="module-error">{decisionError}</p> : null}
+                <div className="module-page-actions">
+                  <Button disabled={isDecisionSubmitting} onClick={submitDecision} size="sm">
+                    {isDecisionSubmitting ? "Zapisywanie..." : "Zapisz decyzję"}
+                  </Button>
+                  <Button
+                    disabled={isDecisionSubmitting}
+                    onClick={() => {
+                      setDecisionIssue(null);
+                      setDecisionAction(null);
+                      setDecisionNote("");
+                      setDecisionError(null);
+                    }}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    Anuluj
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <EmptyState
+                title="Wybierz sprawę z listy"
+                description="Użyj przycisku Oznacz jako obsłużoną albo Odłóż przy sprawie, którą chcesz uporządkować."
+              />
+            )}
+            {decisionSuccess ? <p className="module-success">{decisionSuccess}</p> : null}
+          </Card>
 
           <WorkQueueSection
             title="Najpierw zrób"
@@ -244,6 +385,7 @@ export function BillingWorkQueuePage() {
             rows={workQueueView.firstRows}
             emptyTitle="Brak pilnych spraw"
             emptyDescription="Nie ma obecnie spraw z wysokim albo średnim priorytetem."
+            onDecision={startDecision}
           />
 
           <WorkQueueSection
@@ -252,6 +394,7 @@ export function BillingWorkQueuePage() {
             rows={workQueueView.paymentRows}
             emptyTitle="Brak wpłat do wyjaśnienia"
             emptyDescription="Nie ma wpłat oznaczonych jako problematyczne w obecnych danych."
+            onDecision={startDecision}
           />
 
           <WorkQueueSection
@@ -260,6 +403,7 @@ export function BillingWorkQueuePage() {
             rows={workQueueView.contactRows}
             emptyTitle="Brak płatników do kontaktu"
             emptyDescription="Nie ma obecnie płatników z sygnałem kontaktu w tym widoku."
+            onDecision={startDecision}
           />
 
           <WorkQueueSection
@@ -268,6 +412,23 @@ export function BillingWorkQueuePage() {
             rows={workQueueView.overpaymentRows}
             emptyTitle="Brak nadpłat do decyzji"
             emptyDescription="Nie ma widocznych nadpłat wymagających decyzji w tej organizacji."
+            onDecision={startDecision}
+          />
+
+          <WorkQueueSection
+            title="Odłożone sprawy"
+            description="Sprawy odłożone decyzją operatora. Nie trafiają do sekcji Najpierw zrób."
+            rows={workQueueView.snoozedRows}
+            emptyTitle="Brak odłożonych spraw"
+            emptyDescription="Nie ma jeszcze spraw odłożonych w tej organizacji."
+          />
+
+          <WorkQueueSection
+            title="Ostatnio obsłużone"
+            description="Sprawy oznaczone jako obsłużone. To nie znaczy, że saldo zostało rozliczone."
+            rows={workQueueView.handledRows}
+            emptyTitle="Brak obsłużonych spraw"
+            emptyDescription="Nie ma jeszcze spraw oznaczonych jako obsłużone."
           />
 
           <WorkQueueSection

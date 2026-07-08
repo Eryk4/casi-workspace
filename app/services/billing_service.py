@@ -22,6 +22,18 @@ PAYMENT_REVIEW_STATUSES = {
     "do_not_auto_match": "Nie ruszac automatycznie",
 }
 
+BILLING_WORK_QUEUE_ACTIONS = {"handled", "snoozed"}
+BILLING_WORK_QUEUE_TARGET_TYPES = {"payment", "payer", "debts_overpayments", "billing_summary"}
+BILLING_WORK_QUEUE_ISSUE_TYPES = {
+    "Wpłata do wyjaśnienia",
+    "Czeka na kontakt",
+    "Czeka na wpłatę",
+    "Nie ruszać automatycznie",
+    "Nadpłata do decyzji",
+    "Zaległość do sprawdzenia",
+    "Sprawdzone",
+}
+
 
 class BillingService:
     HEADER_ALIASES = {
@@ -367,6 +379,139 @@ class BillingService:
             "organization_id": organization_id,
             "statuses": statuses,
         }
+
+    def list_work_queue_events(
+        self,
+        *,
+        organization_id: int | None = None,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed sprawdzeniem decyzji spraw rozliczeniowych.")
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+        events = self.billing_repository.list_work_queue_events(
+            organization_id=organization_id,
+            limit=limit,
+        )
+        return {
+            "organization_id": organization_id,
+            "events": events,
+        }
+
+    def add_work_queue_event(
+        self,
+        payload: dict[str, Any],
+        *,
+        actor_user: dict[str, Any] | None,
+        actor: str,
+        organization_id: int | None = None,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed zapisaniem decyzji sprawy rozliczeniowej.")
+
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+        if not actor_user or not actor_user.get("user_id"):
+            raise ValueError("Nie mozna zapisac decyzji bez zalogowanego uzytkownika.")
+
+        issue_key = str(payload.get("issue_key") or "").strip()
+        issue_type = str(payload.get("issue_type") or "").strip()
+        target_type = str(payload.get("target_type") or "").strip()
+        action = str(payload.get("action") or "").strip()
+        target_id_raw = payload.get("target_id")
+
+        if not issue_key or len(issue_key) > 300:
+            raise ValueError("Klucz sprawy rozliczeniowej jest wymagany i musi byc krotki.")
+        if issue_type not in BILLING_WORK_QUEUE_ISSUE_TYPES:
+            raise ValueError("Nieprawidlowy typ sprawy rozliczeniowej.")
+        if target_type not in BILLING_WORK_QUEUE_TARGET_TYPES:
+            raise ValueError("Nieprawidlowy typ celu sprawy rozliczeniowej.")
+        if action not in BILLING_WORK_QUEUE_ACTIONS:
+            raise ValueError("Nieprawidlowa decyzja sprawy rozliczeniowej.")
+
+        target_id: int | None = None
+        if target_type in {"payment", "payer"}:
+            try:
+                target_id = int(target_id_raw)
+            except (TypeError, ValueError):
+                raise ValueError("Identyfikator celu sprawy rozliczeniowej jest wymagany.") from None
+            if target_id <= 0:
+                raise ValueError("Identyfikator celu sprawy rozliczeniowej jest wymagany.")
+        elif target_id_raw not in {None, ""}:
+            try:
+                target_id = int(target_id_raw)
+            except (TypeError, ValueError):
+                target_id = None
+
+        if target_type == "payment":
+            transaction = self.billing_repository.get_transaction_by_id(target_id or 0, organization_id=organization_id)
+            if not transaction:
+                raise ValueError("Nie znaleziono wplaty w wybranej organizacji.")
+        if target_type == "payer":
+            payer = self.billing_repository.get_payer_by_id(target_id or 0, organization_id=organization_id)
+            if not payer:
+                raise ValueError("Nie znaleziono platnika w wybranej organizacji.")
+
+        normalized_note = str(payload.get("note_text") or "").strip()
+        if len(normalized_note) > 1000:
+            raise ValueError("Notatka decyzji moze miec maksymalnie 1000 znakow.")
+
+        event_id = self.billing_repository.add_work_queue_event(
+            {
+                "organization_id": organization_id,
+                "issue_key": issue_key,
+                "issue_type": issue_type,
+                "target_type": target_type,
+                "target_id": target_id,
+                "action": action,
+                "note_text": normalized_note or None,
+                "created_by_user_id": int(actor_user["user_id"]),
+            }
+        )
+        self.event_repository.log(
+            event_type="billing_work_queue_event_added",
+            invoice_id=None,
+            organization_id=organization_id,
+            source="BILLING",
+            status_before=None,
+            status_after=action,
+            decision_reason="Dodano decyzje operacyjna sprawy rozliczeniowej.",
+            actor=actor,
+            details={
+                "billing_work_queue_event_id": event_id,
+                "issue_type": issue_type,
+                "target_type": target_type,
+                "target_id": target_id,
+                "action": action,
+                "note_length": len(normalized_note),
+            },
+        )
+        events = self.billing_repository.list_work_queue_events(
+            organization_id=organization_id,
+            limit=500,
+        )
+        return next(
+            (
+                item
+                for item in events
+                if int(item.get("billing_work_queue_event_id") or 0) == int(event_id)
+            ),
+            {
+                "billing_work_queue_event_id": event_id,
+                "organization_id": organization_id,
+                "issue_key": issue_key,
+                "issue_type": issue_type,
+                "target_type": target_type,
+                "target_id": target_id,
+                "action": action,
+                "note_text": normalized_note or None,
+                "created_by_user_id": int(actor_user["user_id"]),
+                "created_by_user_name": actor_user.get("display_name") or actor_user.get("login"),
+            },
+        )
 
     def add_payment_review_event(
         self,

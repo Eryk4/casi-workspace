@@ -30,7 +30,7 @@ The module must not become a small `kasa` table. It should be a domain model for
 - Canonical route: `/rozliczenia`.
 - Legacy route: `/kasa`, redirect only.
 - Active screen: `Centrum rozliczen v1`, with read-only payer detail under `/rozliczenia/platnicy/{payerId}`.
-- Current screen mode: financial state is read-only. Active billing write paths are narrow and additive: payer notes and payment operational review status.
+- Current screen mode: financial state is read-only. Active billing write paths are narrow and additive: payer notes, payment operational review status, and billing work queue decisions.
 - Current frontend sources:
   - `GET /api/billing/ledger/balances?organization_id=...`,
   - `GET /api/billing/payers?organization_id=...`,
@@ -106,6 +106,7 @@ Current billing-related tables found in `app/db.py` and migration coverage:
 | `billing_payer_ledger_entries` | Ledger entries for charges and payment matches. | Needs richer audit/event model, snapshots, explanations, and corrections. |
 | `billing_notes` | Additive operator notes attached to a payer. | Good first low-risk write path; later needs edit/delete policy, retention policy, richer audit UI, and possible links to charges/periods. |
 | `billing_payment_review_events` | Additive operational status history for visible payment transactions. | Good second low-risk billing write path; intentionally not an allocation, match, balance mutation, reminder, or accounting status. |
+| `billing_work_queue_events` | Append-only decisions for billing work queue issues. | Good low-risk operational write path; `handled` and `snoozed` organize work without changing payments, charges, balances, matches, reminders, or accounting state. |
 
 These tables are already included in the SQLite to configured DB migration tests. The existing backend is more advanced than the current Next read-only surface, but it is still not the full target domain.
 
@@ -144,6 +145,8 @@ Write endpoints exist in the backend but are not exposed as active Next write ac
 `POST /api/billing/payers/{payerId}/notes` is the first promoted billing write path. It is intentionally additive, accepts only `{ note_text }`, requires `organization_id`, and must not change balances, charges, payments, matches, reminders, or accounting state. Other write endpoints should not be promoted into the active frontend until separate endpoint-specific UX, permissions, payload allowlist, tenant-isolation, audit, and live verification work is complete.
 
 `POST /api/billing/payments/{paymentId}/review-status` is the second promoted billing write path. It accepts only `{ status, note_text? }`, requires `organization_id`, writes an append-only record to `billing_payment_review_events`, and must not change `billing_transactions`, `billing_charges`, `billing_payment_matches`, `billing_payer_ledger_entries`, balances, imports, reminders, or accounting state. It is an operational marker, not a payment allocation workflow.
+
+`POST /api/billing/work-queue/events` is the third promoted billing write path. It accepts only `{ issue_key, issue_type, target_type, target_id, action, note_text? }`, requires `organization_id`, writes an append-only record to `billing_work_queue_events`, and must not change payment, charge, match, ledger, balance, reminder, task manager, import, or accounting state. `Obs?u?ona` means work-list handled, not financially settled. `Od?o?ona` means postponed in the queue, not a reminder.
 
 ### Current Services And Repositories
 
@@ -905,3 +908,5 @@ The read-only route `/rozliczenia/sprawy` is the first practical operational bil
 A narrow read-only endpoint, `GET /api/billing/payment-review-statuses?organization_id=...`, exposes the latest operational payment review statuses for one organization. It exists to avoid a per-payment request pattern and must remain read-only. It must not change transactions, charges, payment matches, ledger entries, balances, reminders, or accounting state.
 
 This screen is not a reminder workflow, allocation workflow, payment import, accounting export, or task creation feature. Those remain separate future stages with their own permissions and tenant-isolation reviews.
+
+The write v1 extension adds `billing_work_queue_events` and two append-only decisions: `handled` and `snoozed`. These decisions only organize the human work queue. They do not change the payment review status, payment allocation, charge, balance, payer ledger, reminder state, or task manager.

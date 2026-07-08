@@ -2,7 +2,7 @@
 
 Trasa: `/rozliczenia/sprawy`
 
-`Sprawy rozliczeniowe` to operacyjny, read-only widok pracy w module `Rozliczenia`. Ma odpowiedzieć na pytanie: co warto dziś sprawdzić w rozliczeniach i gdzie kliknąć dalej.
+`Sprawy rozliczeniowe` to operacyjny widok pracy w module `Rozliczenia`. Dane finansowe pozostaj? read-only, ale ekran ma jedn? w?sk? akcj? zapisu: append-only decyzj? operatora `Obs?u?ona` albo `Od?o?ona`. Ma odpowiedzieć na pytanie: co warto dziś sprawdzić w rozliczeniach i gdzie kliknąć dalej.
 
 ## Cel
 

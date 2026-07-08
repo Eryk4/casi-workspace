@@ -583,6 +583,7 @@ export type BillingCenterSnapshot = {
   paymentMatches?: BillingPaymentMatchRecord[];
   transactions?: BillingTransactionRecord[];
   paymentReviewStatuses?: BillingPaymentReviewStatusRecord[];
+  workQueueEvents?: BillingWorkQueueEventRecord[];
   payerNotes?: BillingPayerNoteRecord[];
   invoices: InvoiceRecord[];
   contractors: ContractorRecord[];
@@ -669,7 +670,10 @@ export type BillingWorkQueueIssueType =
 
 export type BillingWorkQueueIssue = {
   id: string;
+  issueKey: string;
   type: BillingWorkQueueIssueType;
+  targetType: BillingWorkQueueTargetType;
+  targetId?: number;
   priority: BillingWorkQueuePriority;
   tone: "ok" | "warning" | "danger" | "info" | "neutral";
   payerLabel: string;
@@ -689,6 +693,8 @@ export type BillingWorkQueueSummary = {
   overpaymentCount: number;
   debtCount: number;
   checkedCount: number;
+  snoozedCount: number;
+  handledCount: number;
 };
 
 export type BillingWorkQueueView = {
@@ -698,8 +704,50 @@ export type BillingWorkQueueView = {
   contactRows: BillingWorkQueueIssue[];
   overpaymentRows: BillingWorkQueueIssue[];
   checkedRows: BillingWorkQueueIssue[];
+  snoozedRows: BillingWorkQueueIssue[];
+  handledRows: BillingWorkQueueIssue[];
   contextItems: Array<{ label: string; value: string }>;
 };
+
+export type BillingWorkQueueTargetType = "payment" | "payer" | "debts_overpayments" | "billing_summary";
+export type BillingWorkQueueEventAction = "handled" | "snoozed";
+
+export type BillingWorkQueueEventRecord = {
+  billing_work_queue_event_id: number;
+  organization_id?: number;
+  issue_key: string;
+  issue_type: BillingWorkQueueIssueType;
+  target_type: BillingWorkQueueTargetType;
+  target_id?: number | null;
+  action: BillingWorkQueueEventAction;
+  note_text?: string | null;
+  created_by_user_id?: number;
+  created_by_user_name?: string | null;
+  created_by_user_role?: string | null;
+  created_at?: string | null;
+};
+
+export type BillingWorkQueueEventsResponse = {
+  organization_id?: number;
+  events: BillingWorkQueueEventRecord[];
+};
+
+export type BillingWorkQueueDecisionValidationResult =
+  | {
+      ok: true;
+      payload: {
+        issue_key: string;
+        issue_type: BillingWorkQueueIssueType;
+        target_type: BillingWorkQueueTargetType;
+        target_id?: number;
+        action: BillingWorkQueueEventAction;
+        note_text?: string;
+      };
+    }
+  | {
+      ok: false;
+      message: string;
+    };
 
 export type BillingPaymentReviewStatusValidationResult =
   | {
@@ -763,6 +811,10 @@ export const BILLING_PAYMENT_REVIEW_STATUS_OPTIONS: Array<{ value: BillingPaymen
   { value: "waiting_for_payment", label: "Czeka na wpłatę" },
   { value: "do_not_auto_match", label: "Nie ruszać automatycznie" },
 ];
+export const BILLING_WORK_QUEUE_EVENTS_ENDPOINT = "/billing/work-queue/events";
+export const BILLING_WORK_QUEUE_DECISION_MAX_NOTE_LENGTH = 1000;
+export const BILLING_WORK_QUEUE_DECISION_HELP_TEXT =
+  "Ta decyzja nie zmienia salda, wpłat ani naliczeń. Służy tylko do uporządkowania pracy nad rozliczeniami.";
 export const BILLING_CANONICAL_ROUTE = "/rozliczenia";
 export const BILLING_LEGACY_ROUTE = "/kasa";
 export const BILLING_PAYER_DETAIL_ROUTE = `${BILLING_CANONICAL_ROUTE}/platnicy`;
@@ -1105,6 +1157,26 @@ function isBillingPaymentReviewStatusCode(value: unknown): value is BillingPayme
   return BILLING_PAYMENT_REVIEW_STATUS_OPTIONS.some((option) => option.value === value);
 }
 
+function isBillingWorkQueueAction(value: unknown): value is BillingWorkQueueEventAction {
+  return value === "handled" || value === "snoozed";
+}
+
+function isBillingWorkQueueTargetType(value: unknown): value is BillingWorkQueueTargetType {
+  return value === "payment" || value === "payer" || value === "debts_overpayments" || value === "billing_summary";
+}
+
+function isBillingWorkQueueIssueType(value: unknown): value is BillingWorkQueueIssueType {
+  return (
+    value === "Wpłata do wyjaśnienia" ||
+    value === "Czeka na kontakt" ||
+    value === "Czeka na wpłatę" ||
+    value === "Nie ruszać automatycznie" ||
+    value === "Nadpłata do decyzji" ||
+    value === "Zaległość do sprawdzenia" ||
+    value === "Sprawdzone"
+  );
+}
+
 function readBillingPaymentReviewStatusRecord(payload: unknown, endpoint: string): BillingPaymentReviewStatusRecord {
   if (!isRecord(payload)) {
     throw new ApiContractError(endpoint, payload);
@@ -1163,6 +1235,54 @@ export function readBillingPaymentReviewStatuses(payload: unknown): BillingPayme
   return {
     organization_id: payload.organization_id === undefined || payload.organization_id === null ? undefined : readNumber(payload.organization_id),
     statuses: payload.statuses.map((item) => readBillingPaymentReviewStatusRecord(item, endpoint)),
+  };
+}
+
+function readBillingWorkQueueEventRecord(payload: unknown): BillingWorkQueueEventRecord {
+  const endpoint = BILLING_WORK_QUEUE_EVENTS_ENDPOINT;
+  if (!isRecord(payload)) {
+    throw new ApiContractError(endpoint, payload);
+  }
+  const eventId = readNumber(payload.billing_work_queue_event_id);
+  const issueKey = readOptionalString(payload.issue_key);
+  const issueType = readOptionalString(payload.issue_type);
+  const targetType = readOptionalString(payload.target_type);
+  const action = readOptionalString(payload.action);
+  if (
+    !eventId ||
+    !issueKey ||
+    !isBillingWorkQueueIssueType(issueType) ||
+    !isBillingWorkQueueTargetType(targetType) ||
+    !isBillingWorkQueueAction(action)
+  ) {
+    throw new ApiContractError(endpoint, payload);
+  }
+  return {
+    billing_work_queue_event_id: eventId,
+    organization_id: readNumber(payload.organization_id),
+    issue_key: issueKey,
+    issue_type: issueType,
+    target_type: targetType,
+    target_id: readNumber(payload.target_id) ?? null,
+    action,
+    note_text: payload.note_text === null || payload.note_text === undefined
+      ? null
+      : safeBillingText(payload.note_text, "Ukryto techniczna lub wrazliwa tresc notatki."),
+    created_by_user_id: readNumber(payload.created_by_user_id),
+    created_by_user_name: safeBillingText(payload.created_by_user_name, "") || null,
+    created_by_user_role: safeBillingText(payload.created_by_user_role, "") || null,
+    created_at: readOptionalString(payload.created_at) ?? null,
+  };
+}
+
+export function readBillingWorkQueueEvents(payload: unknown): BillingWorkQueueEventsResponse {
+  const endpoint = BILLING_WORK_QUEUE_EVENTS_ENDPOINT;
+  if (!isRecord(payload) || !Array.isArray(payload.events)) {
+    throw new ApiContractError(endpoint, payload);
+  }
+  return {
+    organization_id: payload.organization_id === undefined || payload.organization_id === null ? undefined : readNumber(payload.organization_id),
+    events: payload.events.map((item) => readBillingWorkQueueEventRecord(item)),
   };
 }
 
@@ -2977,12 +3097,46 @@ function createWorkQueueIssue(input: Omit<BillingWorkQueueIssue, "id"> & { id: s
   return input;
 }
 
+function lastPathNumber(path: string | undefined): number | undefined {
+  if (!path) {
+    return undefined;
+  }
+  const match = path.match(/\/(\d+)(?:$|\?)/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function workQueueIssueKey(
+  issueType: BillingWorkQueueIssueType,
+  targetType: BillingWorkQueueTargetType,
+  targetId: number | undefined,
+  reasonCode: string,
+): string {
+  return `${targetType}:${targetId ?? "summary"}:${reasonCode}:${normalizeText(issueType).replace(/\s+/g, "-")}`;
+}
+
+function latestWorkQueueEventByIssueKey(events: BillingWorkQueueEventRecord[] | undefined): Map<string, BillingWorkQueueEventRecord> {
+  const latest = new Map<string, BillingWorkQueueEventRecord>();
+  (events ?? []).forEach((event) => {
+    const current = latest.get(event.issue_key);
+    if (
+      !current ||
+      String(event.created_at ?? "").localeCompare(String(current.created_at ?? "")) > 0 ||
+      ((event.created_at ?? "") === (current.created_at ?? "") &&
+        event.billing_work_queue_event_id > current.billing_work_queue_event_id)
+    ) {
+      latest.set(event.issue_key, event);
+    }
+  });
+  return latest;
+}
+
 export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): BillingWorkQueueView {
   const debtsView = buildBillingDebtsOverpaymentsView(snapshot);
   const paymentsView = buildBillingPaymentsAllocationView(snapshot);
   const payersById = new Map(snapshot.payers.map((payer) => [payer.billing_payer_id, payer]));
   const matchesByTransactionId = new Map<number, BillingPaymentMatchRecord[]>();
   const latestStatusByTransactionId = new Map<number, BillingPaymentReviewStatusRecord>();
+  const latestDecisionByIssueKey = latestWorkQueueEventByIssueKey(snapshot.workQueueEvents);
 
   (snapshot.paymentMatches ?? []).forEach((match) => {
     matchesByTransactionId.set(match.billing_transaction_id, [...(matchesByTransactionId.get(match.billing_transaction_id) ?? []), match]);
@@ -3002,10 +3156,15 @@ export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): Bill
   const issues: BillingWorkQueueIssue[] = [];
 
   paymentsView.payerOnlyRows.forEach((row) => {
+    const targetId = lastPathNumber(row.paymentHref);
+    const issueType = "Wpłata do wyjaśnienia" as const;
     issues.push(
       createWorkQueueIssue({
         id: `payer-only-${row.id}`,
-        type: "Wpłata do wyjaśnienia",
+        issueKey: workQueueIssueKey(issueType, "payment", targetId, "payer-only"),
+        type: issueType,
+        targetType: "payment",
+        targetId,
         priority: "Średni",
         tone: "warning",
         payerLabel: row.payerLabel,
@@ -3020,10 +3179,15 @@ export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): Bill
   });
 
   paymentsView.unexplainedRows.forEach((row) => {
+    const targetId = lastPathNumber(row.paymentHref);
+    const issueType = "Wpłata do wyjaśnienia" as const;
     issues.push(
       createWorkQueueIssue({
         id: `unexplained-${row.id}`,
-        type: "Wpłata do wyjaśnienia",
+        issueKey: workQueueIssueKey(issueType, "payment", targetId, "unexplained"),
+        type: issueType,
+        targetType: "payment",
+        targetId,
         priority: "Wysoki",
         tone: "danger",
         payerLabel: row.payerLabel,
@@ -3057,11 +3221,15 @@ export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): Bill
     };
 
     if (status.status === "needs_review") {
+      const issueType = "Wpłata do wyjaśnienia" as const;
       issues.push(
         createWorkQueueIssue({
           ...common,
           id: `status-needs-review-${status.billing_payment_review_event_id}`,
-          type: "Wpłata do wyjaśnienia",
+          issueKey: workQueueIssueKey(issueType, "payment", status.billing_transaction_id, "status-needs-review"),
+          type: issueType,
+          targetType: "payment",
+          targetId: status.billing_transaction_id,
           priority: "Wysoki",
           tone: "danger",
           reason: `Status operacyjny wpłaty: ${label}.`,
@@ -3070,11 +3238,15 @@ export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): Bill
       );
     }
     if (status.status === "waiting_for_contact") {
+      const issueType = "Czeka na kontakt" as const;
       issues.push(
         createWorkQueueIssue({
           ...common,
           id: `status-contact-${status.billing_payment_review_event_id}`,
-          type: "Czeka na kontakt",
+          issueKey: workQueueIssueKey(issueType, "payment", status.billing_transaction_id, "status-contact"),
+          type: issueType,
+          targetType: "payment",
+          targetId: status.billing_transaction_id,
           priority: "Wysoki",
           tone: "danger",
           reason: "Status operacyjny wskazuje, że trzeba skontaktować się z płatnikiem.",
@@ -3083,11 +3255,15 @@ export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): Bill
       );
     }
     if (status.status === "waiting_for_payment") {
+      const issueType = "Czeka na wpłatę" as const;
       issues.push(
         createWorkQueueIssue({
           ...common,
           id: `status-payment-${status.billing_payment_review_event_id}`,
-          type: "Czeka na wpłatę",
+          issueKey: workQueueIssueKey(issueType, "payment", status.billing_transaction_id, "status-payment"),
+          type: issueType,
+          targetType: "payment",
+          targetId: status.billing_transaction_id,
           priority: "Średni",
           tone: "warning",
           reason: "Status operacyjny wskazuje oczekiwanie na wpłatę.",
@@ -3096,11 +3272,15 @@ export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): Bill
       );
     }
     if (status.status === "do_not_auto_match") {
+      const issueType = "Nie ruszać automatycznie" as const;
       issues.push(
         createWorkQueueIssue({
           ...common,
           id: `status-do-not-auto-${status.billing_payment_review_event_id}`,
-          type: "Nie ruszać automatycznie",
+          issueKey: workQueueIssueKey(issueType, "payment", status.billing_transaction_id, "status-do-not-auto"),
+          type: issueType,
+          targetType: "payment",
+          targetId: status.billing_transaction_id,
           priority: "Wysoki",
           tone: "danger",
           reason: "Status operacyjny blokuje automatyczne ruszanie tej wpłaty.",
@@ -3112,10 +3292,15 @@ export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): Bill
 
   debtsView.debtRows.forEach((row) => {
     const high = row.amount >= 300 && row.lastPaymentLabel === "Brak ostatniej wpłaty";
+    const issueType = high ? ("Czeka na wpłatę" as const) : ("Zaległość do sprawdzenia" as const);
+    const targetId = lastPathNumber(row.payerHref);
     issues.push(
       createWorkQueueIssue({
         id: `debt-${row.id}`,
-        type: high ? "Czeka na wpłatę" : "Zaległość do sprawdzenia",
+        issueKey: workQueueIssueKey(issueType, "payer", targetId, high ? "debt-waiting-payment" : "debt-check"),
+        type: issueType,
+        targetType: "payer",
+        targetId,
         priority: high ? "Wysoki" : row.amount < 100 ? "Niski" : "Średni",
         tone: high ? "danger" : row.amount < 100 ? "info" : "warning",
         payerLabel: row.payerLabel,
@@ -3129,10 +3314,15 @@ export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): Bill
   });
 
   debtsView.overpaymentRows.forEach((row) => {
+    const issueType = "Nadpłata do decyzji" as const;
+    const targetId = lastPathNumber(row.payerHref);
     issues.push(
       createWorkQueueIssue({
         id: `overpayment-${row.id}`,
-        type: "Nadpłata do decyzji",
+        issueKey: workQueueIssueKey(issueType, "payer", targetId, "overpayment"),
+        type: issueType,
+        targetType: "payer",
+        targetId,
         priority: "Średni",
         tone: "info",
         payerLabel: row.payerLabel,
@@ -3161,7 +3351,10 @@ export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): Bill
       const payer = payerId ? payersById.get(payerId) : undefined;
       return createWorkQueueIssue({
         id: `checked-${status.billing_payment_review_event_id}`,
+        issueKey: workQueueIssueKey("Sprawdzone", "payment", status.billing_transaction_id, "status-checked"),
         type: "Sprawdzone",
+        targetType: "payment",
+        targetId: status.billing_transaction_id,
         priority: "Niski",
         tone: "ok",
         payerLabel: payer ? getPayerLabel(payer) : readString(transaction?.counterparty_name, "Nieustalony płatnik"),
@@ -3184,26 +3377,37 @@ export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): Bill
         a.payerLabel.localeCompare(b.payerLabel, "pl"),
     );
 
-  const paymentRows = actionableIssues.filter((issue) =>
+  const activeIssues = actionableIssues.filter((issue) => {
+    const decision = latestDecisionByIssueKey.get(issue.issueKey);
+    return decision?.action !== "handled" && decision?.action !== "snoozed";
+  });
+  const snoozedRows = actionableIssues.filter((issue) => latestDecisionByIssueKey.get(issue.issueKey)?.action === "snoozed").slice(0, 12);
+  const handledRows = actionableIssues.filter((issue) => latestDecisionByIssueKey.get(issue.issueKey)?.action === "handled").slice(0, 12);
+
+  const paymentRows = activeIssues.filter((issue) =>
     ["Wpłata do wyjaśnienia", "Nie ruszać automatycznie"].includes(issue.type),
   );
-  const contactRows = actionableIssues.filter((issue) => ["Czeka na kontakt", "Czeka na wpłatę", "Zaległość do sprawdzenia"].includes(issue.type));
-  const overpaymentRows = actionableIssues.filter((issue) => issue.type === "Nadpłata do decyzji");
+  const contactRows = activeIssues.filter((issue) => ["Czeka na kontakt", "Czeka na wpłatę", "Zaległość do sprawdzenia"].includes(issue.type));
+  const overpaymentRows = activeIssues.filter((issue) => issue.type === "Nadpłata do decyzji");
 
   return {
     summary: {
-      highPriorityCount: actionableIssues.filter((issue) => issue.priority === "Wysoki").length,
+      highPriorityCount: activeIssues.filter((issue) => issue.priority === "Wysoki").length,
       needsReviewCount: paymentRows.length,
       contactCount: contactRows.length,
       overpaymentCount: overpaymentRows.length,
-      debtCount: actionableIssues.filter((issue) => issue.type === "Zaległość do sprawdzenia" || issue.type === "Czeka na wpłatę").length,
+      debtCount: activeIssues.filter((issue) => issue.type === "Zaległość do sprawdzenia" || issue.type === "Czeka na wpłatę").length,
       checkedCount: checkedRows.length,
+      snoozedCount: snoozedRows.length,
+      handledCount: handledRows.length,
     },
-    firstRows: actionableIssues.slice(0, 8),
+    firstRows: activeIssues.slice(0, 8),
     paymentRows,
     contactRows,
     overpaymentRows,
     checkedRows,
+    snoozedRows,
+    handledRows,
     contextItems: [
       {
         label: "Co pokazuje",
@@ -3524,6 +3728,52 @@ export function buildBillingPaymentReviewStatusRequest(
   return {
     ok: true,
     payload: trimmedNote ? { status: normalizedStatus, note_text: trimmedNote } : { status: normalizedStatus },
+  };
+}
+
+export function buildBillingWorkQueueDecisionRequest(
+  issue: BillingWorkQueueIssue | null | undefined,
+  action: BillingWorkQueueEventAction,
+  noteText: string,
+  organizationId: string | number | null | undefined,
+): BillingWorkQueueDecisionValidationResult {
+  if (!canUseBillingOrganizationScope(organizationId)) {
+    return {
+      ok: false,
+      message: BILLING_ORGANIZATION_REQUIRED_TITLE,
+    };
+  }
+  if (!issue) {
+    return {
+      ok: false,
+      message: "Wybierz sprawę rozliczeniową przed zapisem decyzji.",
+    };
+  }
+  if (!isBillingWorkQueueAction(action)) {
+    return {
+      ok: false,
+      message: "Wybierz poprawną decyzję sprawy rozliczeniowej.",
+    };
+  }
+
+  const trimmedNote = noteText.trim();
+  if (trimmedNote.length > BILLING_WORK_QUEUE_DECISION_MAX_NOTE_LENGTH) {
+    return {
+      ok: false,
+      message: `Notatka decyzji może mieć maksymalnie ${BILLING_WORK_QUEUE_DECISION_MAX_NOTE_LENGTH} znaków.`,
+    };
+  }
+
+  return {
+    ok: true,
+    payload: {
+      issue_key: issue.issueKey,
+      issue_type: issue.type,
+      target_type: issue.targetType,
+      ...(issue.targetId ? { target_id: issue.targetId } : {}),
+      action,
+      ...(trimmedNote ? { note_text: trimmedNote } : {}),
+    },
   };
 }
 

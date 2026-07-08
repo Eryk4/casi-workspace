@@ -1239,6 +1239,19 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(review_statuses)
+            if path == "/api/billing/work-queue/events":
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 500
+                try:
+                    work_queue_events = self.billing_service.list_work_queue_events(
+                        organization_id=organization_id,
+                        limit=min(max(limit, 1), 1000),
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(work_queue_events)
             if path == "/api/billing/schools":
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:
@@ -3425,6 +3438,35 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         return self._send_json({"error": str(error)}, status=404)
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(review_event, status=201)
+
+            if path == "/api/billing/work-queue/events":
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                payload = self._read_json()
+                allowed_fields = {"issue_key", "issue_type", "target_type", "target_id", "action", "note_text"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {
+                            "error": (
+                                "Endpoint przyjmuje tylko pola issue_key, issue_type, target_type, "
+                                "target_id, action i note_text."
+                            )
+                        },
+                        status=400,
+                    )
+                try:
+                    work_queue_event = self.billing_service.add_work_queue_event(
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    if "Nie znaleziono wplaty" in str(error) or "Nie znaleziono platnika" in str(error):
+                        return self._send_json({"error": str(error)}, status=404)
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(work_queue_event, status=201)
 
             if path == "/api/billing/students":
                 organization_id = self._resolve_write_scope(user, query)

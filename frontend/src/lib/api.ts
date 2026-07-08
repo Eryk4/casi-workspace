@@ -236,6 +236,8 @@ export const api = {
   billingTransactions: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/transactions", { query }),
   billingPaymentReviewStatuses: (query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>("/billing/payment-review-statuses", { query }),
+  billingWorkQueueEvents: (query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>("/billing/work-queue/events", { query }),
   billingPayers: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/payers", { query }),
   billingPayerNotes: (payerId: number | string, query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>(`/billing/payers/${payerId}/notes`, { query }),
@@ -247,6 +249,22 @@ export const api = {
     organizationId?: string | null,
   ) =>
     apiRequest<Record<string, unknown>>(`/billing/payments/${paymentId}/review-status`, {
+      method: "POST",
+      body: payload,
+      query: withOrganizationQuery(organizationId),
+    }),
+  addBillingWorkQueueEvent: (
+    payload: {
+      issue_key: string;
+      issue_type: string;
+      target_type: string;
+      target_id?: number;
+      action: string;
+      note_text?: string;
+    },
+    organizationId?: string | null,
+  ) =>
+    apiRequest<Record<string, unknown>>("/billing/work-queue/events", {
       method: "POST",
       body: payload,
       query: withOrganizationQuery(organizationId),

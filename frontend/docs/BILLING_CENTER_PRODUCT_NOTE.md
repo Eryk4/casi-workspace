@@ -145,3 +145,10 @@ Ten etap nie dodaje backendu, endpointów, migracji ani write actions. Nie wysy�
 Trasa `/rozliczenia/sprawy` dodaje operacyjny widok spraw rozliczeniowych. Ekran pomaga ustalić kolejność pracy: wpłaty do wyjaśnienia, płatnicy do kontaktu, nadpłaty do decyzji, zaległości do sprawdzenia i ostatnio sprawdzone wpłaty.
 
 Widok używa statusów operacyjnych wpłat jako sygnałów, ale nie zmienia statusów bezpośrednio. Status nadal można zmienić tylko na szczególe wpłaty. Ekran nie zmienia sald, nie dodaje płatności, nie dopasowuje wpłat, nie wysyła przypomnień i nie tworzy zadań.
+
+
+## Etap: Decyzja operacyjna sprawy rozliczeniowej ? write v1
+
+Trasa `/rozliczenia/sprawy` ma jedn? w?sk? akcj? zapisu: append-only decyzj? `Obs?u?ona` albo `Od?o?ona` dla konkretnej sprawy z kolejki. Zapis trafia do `billing_work_queue_events` i s?u?y tylko do uporz?dkowania pracy cz?owieka.
+
+Ta decyzja nie zmienia salda, wp?at, nalicze?, dopasowa?, ledgeru, statusu operacyjnego wp?aty, okresu rozliczeniowego ani nadp?aty. `Obs?u?ona` nie znaczy `rozliczona`, a `Od?o?ona` nie tworzy przypomnienia ani zadania.

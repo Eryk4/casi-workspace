@@ -57,8 +57,12 @@ const {
   BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT,
   BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH,
   BILLING_PAYMENT_REVIEW_STATUS_OPTIONS,
+  BILLING_WORK_QUEUE_DECISION_HELP_TEXT,
+  BILLING_WORK_QUEUE_DECISION_MAX_NOTE_LENGTH,
+  BILLING_WORK_QUEUE_EVENTS_ENDPOINT,
   billingPaymentReviewStatusEndpoint,
   buildBillingPaymentReviewStatusRequest,
+  buildBillingWorkQueueDecisionRequest,
   createBillingPaymentReviewStatusSubmitter,
   getBillingPaymentReviewStatusErrorState,
   readBillingPaymentReviewStatus,
@@ -110,6 +114,7 @@ const {
   readBillingPayerNotes,
   readBillingPaymentMatches,
   readBillingPaymentReviewStatuses,
+  readBillingWorkQueueEvents,
   readBillingPayers,
   readBillingStudents,
   readBillingTransactions,
@@ -687,6 +692,48 @@ assert.equal(workQueueView.firstRows.some((row) => row.type === "Sprawdzone"), f
 assert.match(workQueueView.contextItems.map((item) => item.value).join(" "), /nie zmienia sald/i);
 assert.match(workQueueView.contextItems.map((item) => item.value).join(" "), /nie wysyła przypomnień/i);
 assert.doesNotMatch(workQueueView.contextItems.map((item) => item.value).join(" "), /endpoint|payload|debug|match id|ledger entry id|foreign key|mutation/i);
+const issueToHandle = workQueueView.firstRows.find((row) => row.paymentHref === "/rozliczenia/wplaty/65");
+const issueToSnooze = workQueueView.firstRows.find((row) => row.paymentHref === "/rozliczenia/wplaty/64");
+assert.ok(issueToHandle);
+assert.ok(issueToSnooze);
+assert.match(issueToHandle.issueKey, /^payment:65:/);
+assert.equal(issueToHandle.targetType, "payment");
+assert.equal(issueToHandle.targetId, 65);
+const actionedWorkQueueView = buildBillingWorkQueueView({
+  ...snapshot,
+  workQueueEvents: [
+    {
+      billing_work_queue_event_id: 901,
+      organization_id: 42,
+      issue_key: issueToHandle.issueKey,
+      issue_type: issueToHandle.type,
+      target_type: issueToHandle.targetType,
+      target_id: issueToHandle.targetId,
+      action: "handled",
+      note_text: "Sprawdzone w pracy operacyjnej.",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2026-03-13T10:00:00",
+    },
+    {
+      billing_work_queue_event_id: 902,
+      organization_id: 42,
+      issue_key: issueToSnooze.issueKey,
+      issue_type: issueToSnooze.type,
+      target_type: issueToSnooze.targetType,
+      target_id: issueToSnooze.targetId,
+      action: "snoozed",
+      note_text: null,
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2026-03-13T11:00:00",
+    },
+  ],
+});
+assert.equal(actionedWorkQueueView.firstRows.some((row) => row.issueKey === issueToHandle.issueKey), false);
+assert.equal(actionedWorkQueueView.firstRows.some((row) => row.issueKey === issueToSnooze.issueKey), false);
+assert.ok(actionedWorkQueueView.handledRows.some((row) => row.issueKey === issueToHandle.issueKey));
+assert.ok(actionedWorkQueueView.snoozedRows.some((row) => row.issueKey === issueToSnooze.issueKey));
 
 const chargeAssignedPaymentDetail = buildBillingPaymentDetailView(snapshot, 61);
 assert.ok(chargeAssignedPaymentDetail);
@@ -799,6 +846,56 @@ assert.equal(buildBillingPaymentReviewStatusRequest("needs_review", "", null).ok
 assert.throws(() => readBillingPaymentReviewStatus({ history: [] }, 61), ApiContractError);
 assert.throws(() => readBillingPaymentReviewStatus({ billing_transaction_id: 61, current: null }, 61), ApiContractError);
 assert.throws(() => readBillingPaymentReviewStatuses({ organization_id: 42 }), ApiContractError);
+const workQueueEventsPayload = {
+  organization_id: 42,
+  events: [
+    {
+      billing_work_queue_event_id: 901,
+      organization_id: 42,
+      issue_key: "payment:65:unexplained:wplata-do-wyjasnienia",
+      issue_type: "Wpłata do wyjaśnienia",
+      target_type: "payment",
+      target_id: 65,
+      action: "handled",
+      note_text: "Sprawdzone.",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2026-03-13T10:00:00",
+    },
+  ],
+};
+const workQueueEvents = readBillingWorkQueueEvents(workQueueEventsPayload);
+assert.equal(workQueueEvents.organization_id, 42);
+assert.equal(workQueueEvents.events[0].action, "handled");
+assert.equal(BILLING_WORK_QUEUE_EVENTS_ENDPOINT, "/billing/work-queue/events");
+assert.equal(BILLING_WORK_QUEUE_DECISION_MAX_NOTE_LENGTH, 1000);
+assert.match(BILLING_WORK_QUEUE_DECISION_HELP_TEXT, /nie zmienia salda/i);
+assert.match(BILLING_WORK_QUEUE_DECISION_HELP_TEXT, /wpłat ani naliczeń/i);
+assert.doesNotMatch(BILLING_WORK_QUEUE_DECISION_HELP_TEXT, /payload|\braw\b|endpoint|debug|match id|ledger entry id|foreign key|mutation/i);
+assert.deepEqual(buildBillingWorkQueueDecisionRequest(issueToHandle, "handled", "  Sprawdzone.  ", "42"), {
+  ok: true,
+  payload: {
+    issue_key: issueToHandle.issueKey,
+    issue_type: issueToHandle.type,
+    target_type: issueToHandle.targetType,
+    target_id: issueToHandle.targetId,
+    action: "handled",
+    note_text: "Sprawdzone.",
+  },
+});
+assert.deepEqual(buildBillingWorkQueueDecisionRequest(issueToSnooze, "snoozed", "   ", "42"), {
+  ok: true,
+  payload: {
+    issue_key: issueToSnooze.issueKey,
+    issue_type: issueToSnooze.type,
+    target_type: issueToSnooze.targetType,
+    target_id: issueToSnooze.targetId,
+    action: "snoozed",
+  },
+});
+assert.equal(buildBillingWorkQueueDecisionRequest(issueToHandle, "handled", "x".repeat(1001), "42").ok, false);
+assert.equal(buildBillingWorkQueueDecisionRequest(issueToHandle, "handled", "", null).ok, false);
+assert.throws(() => readBillingWorkQueueEvents({ organization_id: 42 }), ApiContractError);
 
 const relatedWorkItems = buildBillingRelatedWorkItemRows(snapshot.workItems, snapshot.invoices, snapshot.contractors);
 assert.equal(relatedWorkItems[0].href, "/work-items/44");
@@ -893,6 +990,11 @@ assert.match(fs.readFileSync(path.join(srcRoot, "app", "kasa", "page.tsx"), "utf
 assert.match(fs.readFileSync(path.join(srcRoot, "..", "next.config.js"), "utf8"), /source: "\/kasa"[\s\S]*destination: "\/rozliczenia"/);
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "zaleglosci", "page.tsx"), "utf8"), /BillingDebtsOverpaymentsPage/);
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "sprawy", "page.tsx"), "utf8"), /BillingWorkQueuePage/);
+const workQueuePageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingWorkQueuePage.tsx"), "utf8");
+assert.match(workQueuePageSource, /Oznacz jako obsłużoną/);
+assert.match(workQueuePageSource, /Odłóż/);
+assert.match(workQueuePageSource, /BILLING_WORK_QUEUE_DECISION_HELP_TEXT/);
+assert.doesNotMatch(workQueuePageSource, /zaksięguj|rozlicz nadpłatę|dopasuj|wyślij przypomnienie/i);
 assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8"), /Zaległości i nadpłaty/);
 assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8"), /Sprawy rozliczeniowe/);
 assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingDebtsOverpaymentsPage.tsx"), "utf8"), /Sprawy rozliczeniowe/);
@@ -1172,6 +1274,22 @@ async function main() {
 
   await withMockedFetch(
     async (url, options) => {
+      assert.ok(url.startsWith("/api/billing/work-queue/events?"));
+      assert.match(url, /organization_id=42/);
+      assert.match(url, /limit=1000/);
+      assert.equal(options.method, "GET");
+      assert.equal(options.body, undefined);
+      return jsonResponse(200, workQueueEventsPayload);
+    },
+    async () => {
+      const payload = await api.billingWorkQueueEvents(withActiveOrganizationQuery("42", { limit: 1000 }));
+      const events = readBillingWorkQueueEvents(payload);
+      assert.equal(events.events.length, 1);
+    },
+  );
+
+  await withMockedFetch(
+    async (url, options) => {
       assert.equal(url, "/api/billing/payments/61/review-status?organization_id=42");
       assert.equal(options.method, "POST");
       assert.deepEqual(JSON.parse(options.body), { status: "checked", note_text: "Zweryfikowano tytul." });
@@ -1180,6 +1298,28 @@ async function main() {
     async () => {
       const payload = await api.updateBillingPaymentReviewStatus(61, { status: "checked", note_text: "Zweryfikowano tytul." }, "42");
       assert.equal(payload.status, "checked");
+    },
+  );
+
+  await withMockedFetch(
+    async (url, options) => {
+      assert.equal(url, "/api/billing/work-queue/events?organization_id=42");
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body), {
+        issue_key: issueToHandle.issueKey,
+        issue_type: issueToHandle.type,
+        target_type: issueToHandle.targetType,
+        target_id: issueToHandle.targetId,
+        action: "handled",
+        note_text: "Sprawdzone.",
+      });
+      return jsonResponse(201, workQueueEventsPayload.events[0]);
+    },
+    async () => {
+      const validation = buildBillingWorkQueueDecisionRequest(issueToHandle, "handled", "Sprawdzone.", "42");
+      assert.equal(validation.ok, true);
+      const payload = await api.addBillingWorkQueueEvent(validation.payload, "42");
+      assert.equal(readBillingWorkQueueEvents({ organization_id: 42, events: [payload] }).events[0].action, "handled");
     },
   );
 
@@ -1278,6 +1418,9 @@ async function main() {
       if (url.startsWith(`/api${BILLING_PAYMENT_REVIEW_STATUSES_ENDPOINT}`)) {
         return jsonResponse(200, paymentReviewStatusesPayload);
       }
+      if (url.startsWith(`/api${BILLING_WORK_QUEUE_EVENTS_ENDPOINT}`)) {
+        return jsonResponse(200, workQueueEventsPayload);
+      }
       if (url.startsWith("/api/invoices")) {
         return jsonResponse(200, [makeInvoice()]);
       }
@@ -1301,6 +1444,7 @@ async function main() {
         matchesPayload,
         transactionsPayload,
         reviewStatusesPayload,
+        workQueueEventsListPayload,
         invoicesPayload,
         contractorsPayload,
         workItemsPayload,
@@ -1313,6 +1457,7 @@ async function main() {
         api.billingLedgerMatches(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.billingTransactions(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.billingPaymentReviewStatuses(withActiveOrganizationQuery("42", { limit: 1000 })),
+        api.billingWorkQueueEvents(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.invoices(query),
         api.contractors(query),
         api.workItems(workItemsQuery),
@@ -1325,6 +1470,7 @@ async function main() {
       assert.equal(readBillingPaymentMatches(matchesPayload).length, 1);
       assert.equal(readBillingTransactions(transactionsPayload).length, 1);
       assert.equal(readBillingPaymentReviewStatuses(reviewStatusesPayload).statuses.length, 2);
+      assert.equal(readBillingWorkQueueEvents(workQueueEventsListPayload).events.length, 1);
       assert.equal(readBillingInvoices(invoicesPayload).length, 1);
       assert.equal(Array.isArray(contractorsPayload), true);
       assert.equal(Array.isArray(workItemsPayload), true);
@@ -1337,6 +1483,7 @@ async function main() {
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/ledger/matches") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/transactions") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/payment-review-statuses") && url.includes("limit=1000")));
+  assert.ok(requestedUrls.some((url) => url.includes("/api/billing/work-queue/events") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/work-items") && url.includes("only_open=1") && url.includes("limit=100")));
 
   console.log("Billing regression tests passed.");

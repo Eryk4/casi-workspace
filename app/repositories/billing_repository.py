@@ -307,6 +307,53 @@ class BillingRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def add_work_queue_event(self, payload: dict[str, Any]) -> int:
+        with get_connection() as connection:
+            return execute_insert_returning_id(
+                connection,
+                """
+                INSERT INTO billing_work_queue_events (
+                    organization_id, issue_key, issue_type, target_type, target_id,
+                    action, note_text, created_by_user_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["organization_id"],
+                    payload["issue_key"],
+                    payload["issue_type"],
+                    payload["target_type"],
+                    payload.get("target_id"),
+                    payload["action"],
+                    payload.get("note_text"),
+                    payload["created_by_user_id"],
+                    now_iso(),
+                ),
+                "billing_work_queue_event_id",
+            )
+
+    def list_work_queue_events(
+        self,
+        *,
+        organization_id: int,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    e.*,
+                    COALESCE(u.display_name, u.login) AS created_by_user_name,
+                    u.role AS created_by_user_role
+                FROM billing_work_queue_events e
+                LEFT JOIN users u ON u.user_id = e.created_by_user_id
+                WHERE e.organization_id = ?
+                ORDER BY e.created_at DESC, e.billing_work_queue_event_id DESC
+                LIMIT ?
+                """,
+                (organization_id, max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def create_payer(self, payload: dict[str, Any]) -> int:
         timestamp = now_iso()
         with get_connection() as connection:
