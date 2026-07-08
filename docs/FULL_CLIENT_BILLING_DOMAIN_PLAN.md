@@ -880,3 +880,13 @@ The implemented stage treats `paymentId` as the current `billing_transactions.bi
 The view explains whether a visible payment is linked to a concrete charge, only visible at payer level, or still requires clarification. It does not import bank statements, create payments, allocate payments, edit matches, post accounting entries, change balances, send reminders, or add notes.
 
 This remains a foundation before a future first-class `payment_allocation` model and before any manual or automatic payment matching workflow.
+
+### Stage 2f: Debts and overpayments read-only decision center
+
+Status: implemented in Next under `/rozliczenia/zaleglosci`.
+
+This stage aggregates existing payer balances, charges, payment matches, transactions, students, and payer notes into a read-only decision screen. It separates payers with amount due, payers with overpayment, and cases requiring clarification.
+
+No backend endpoints, migrations, payment writes, allocation writes, reminder workflow, overpayment settlement, accounting export, or automation were added.
+
+Important limitation: this is not a debt collection workflow and not an overpayment settlement workflow. The view only shows current data and links to payer, payment, and period views. Payer-level payments without charge relation remain clarification signals rather than inferred period allocations.

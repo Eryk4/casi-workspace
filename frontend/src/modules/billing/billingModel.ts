@@ -427,6 +427,84 @@ export type BillingPaymentDetailView = {
   contextItems: Array<{ label: string; value: string }>;
 };
 
+export type BillingDebtsSummary = {
+  debtTotal: number;
+  debtTotalLabel: string;
+  debtPayerCount: number;
+  overpaymentTotal: number;
+  overpaymentTotalLabel: string;
+  overpaymentPayerCount: number;
+  settledPayerCount: number;
+  explanationCount: number;
+  payerOnlyPaymentCount: number;
+  limitationLabel: string;
+};
+
+export type BillingDebtDecisionRow = {
+  id: string;
+  payerLabel: string;
+  payerHref: string;
+  amount: number;
+  amountLabel: string;
+  peopleLabel: string;
+  chargesLabel: string;
+  periodsLabel: string;
+  servicesLabel: string;
+  lastPaymentLabel: string;
+  payerOnlyPaymentLabel: string;
+  latestNoteLabel: string;
+  attentionStatusLabel: "Do kontaktu" | "Do sprawdzenia wpłat" | "Do wyjaśnienia z płatnikiem" | "Niska zaległość" | "Brak pilnej akcji";
+  attentionTone: "ok" | "warning" | "danger" | "info" | "neutral";
+  reasonLabel: string;
+  nextStepLabel: string;
+  paymentsHref: string;
+  periodsHref?: string;
+};
+
+export type BillingOverpaymentDecisionRow = {
+  id: string;
+  payerLabel: string;
+  payerHref: string;
+  amount: number;
+  amountLabel: string;
+  peopleLabel: string;
+  lastPaymentLabel: string;
+  possibleSourceLabel: string;
+  statusLabel: string;
+  paymentsHref: string;
+};
+
+export type BillingExplanationDecisionRow = {
+  id: string;
+  payerLabel: string;
+  payerHref?: string;
+  problemLabel: string;
+  amountLabel: string;
+  reasonLabel: string;
+  nextHref: string;
+  tone: "ok" | "warning" | "danger" | "info" | "neutral";
+};
+
+export type BillingUrgentDecisionRow = {
+  id: string;
+  payerLabel: string;
+  amountLabel: string;
+  reasonLabel: string;
+  nextStepLabel: string;
+  payerHref: string;
+  paymentsHref?: string;
+  tone: "ok" | "warning" | "danger" | "info" | "neutral";
+};
+
+export type BillingDebtsOverpaymentsView = {
+  summary: BillingDebtsSummary;
+  urgentRows: BillingUrgentDecisionRow[];
+  debtRows: BillingDebtDecisionRow[];
+  overpaymentRows: BillingOverpaymentDecisionRow[];
+  explanationRows: BillingExplanationDecisionRow[];
+  contextItems: Array<{ label: string; value: string }>;
+};
+
 export type BillingPayerChargeRow = {
   id: string;
   periodLabel: string;
@@ -563,6 +641,7 @@ export const BILLING_LEGACY_ROUTE = "/kasa";
 export const BILLING_PAYER_DETAIL_ROUTE = `${BILLING_CANONICAL_ROUTE}/platnicy`;
 export const BILLING_PERIODS_ROUTE = `${BILLING_CANONICAL_ROUTE}/okresy`;
 export const BILLING_PAYMENTS_ROUTE = `${BILLING_CANONICAL_ROUTE}/wplaty`;
+export const BILLING_DEBTS_ROUTE = `${BILLING_CANONICAL_ROUTE}/zaleglosci`;
 export const BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć wpłatę";
 export const BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION =
   "Najpierw wskaż organizację w topbarze. Szczegół wpłaty pokazuje tylko dane z wybranej organizacji.";
@@ -2314,6 +2393,369 @@ export function buildBillingPaymentDetailView(snapshot: BillingCenterSnapshot, p
         label: "Zakres",
         value:
           "Okres i naliczenie są pokazywane tylko wtedy, gdy istnieje bezpieczne powiązanie z naliczeniem. Pełne przypisywanie wpłat będzie osobnym etapem.",
+      },
+    ],
+  };
+}
+
+function summarizeChargeItems(charges: BillingChargeRecord[], limit = 3): string {
+  if (!charges.length) {
+    return "Brak szczegółowych naliczeń w danych";
+  }
+  return charges
+    .slice()
+    .sort((a, b) => String(b.due_date ?? b.period_label ?? "").localeCompare(String(a.due_date ?? a.period_label ?? "")))
+    .slice(0, limit)
+    .map((charge) => {
+      const person = charge.billing_student_id ? readString(charge.student_full_name, "Osoba bez nazwy") : "Klient firmowy";
+      return `${getChargePeriodLabel(charge)} · ${readString(charge.model_name, "Usługa bez nazwy")} · ${person} · ${formatMoney(charge.total_amount, DEFAULT_CURRENCY)}`;
+    })
+    .join("; ");
+}
+
+function summarizeChargePeriods(charges: BillingChargeRecord[]): string {
+  const periods = new Set(charges.map((charge) => getChargePeriodLabel(charge)).filter(Boolean));
+  return periods.size ? summarizePeriods(periods) : "Brak okresu w danych";
+}
+
+function summarizeChargeServices(charges: BillingChargeRecord[]): string {
+  const services = new Set(charges.map((charge) => readString(charge.model_name, "")).filter(Boolean));
+  return services.size ? summarizePeriods(services) : "Brak usługi w danych";
+}
+
+function latestPayerNote(notes: BillingPayerNoteRecord[], payerId: number): string {
+  const note = notes
+    .filter((item) => item.billing_payer_id === payerId)
+    .slice()
+    .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")) || b.billing_note_id - a.billing_note_id)[0];
+  if (!note) {
+    return "Brak notatki rozliczeniowej";
+  }
+  const text = safeBillingText(note.note_text, "Ukryto techniczną lub wrażliwą treść notatki.");
+  return text.length > 120 ? `${text.slice(0, 117)}...` : text;
+}
+
+function noteSuggestsExplanation(notes: BillingPayerNoteRecord[], payerId: number): boolean {
+  const text = notes
+    .filter((item) => item.billing_payer_id === payerId)
+    .map((item) => normalizeText(item.note_text))
+    .join(" ");
+  return ["wyjasn", "sprawd", "kontakt", "saldo", "doplat", "nadplat", "przelew"].some((term) => text.includes(term));
+}
+
+function paymentLabelForPayer(values: ReturnType<typeof getPayerBalanceValues>): string {
+  if (!values.lastPaymentDate) {
+    return "Brak ostatniej wpłaty";
+  }
+  return `${formatDateLabel(values.lastPaymentDate)} · ${formatMoney(values.lastPaymentAmount, values.lastPaymentCurrency ?? DEFAULT_CURRENCY)}`;
+}
+
+function debtAttentionStatus(
+  amount: number,
+  payerOnlyPayments: number,
+  hasLastPayment: boolean,
+  hasNoteSignal: boolean,
+): Pick<BillingDebtDecisionRow, "attentionStatusLabel" | "attentionTone" | "reasonLabel" | "nextStepLabel"> {
+  if (payerOnlyPayments > 0) {
+    return {
+      attentionStatusLabel: "Do sprawdzenia wpłat",
+      attentionTone: "warning",
+      reasonLabel: "Zaległość istnieje mimo wpłat widocznych tylko przy płatniku.",
+      nextStepLabel: "Sprawdź wpłaty tego płatnika",
+    };
+  }
+  if (amount >= 300 && !hasLastPayment) {
+    return {
+      attentionStatusLabel: "Do kontaktu",
+      attentionTone: "danger",
+      reasonLabel: "Wysoka zaległość bez widocznej ostatniej wpłaty.",
+      nextStepLabel: "Wejdź w szczegół płatnika",
+    };
+  }
+  if (hasNoteSignal) {
+    return {
+      attentionStatusLabel: "Do wyjaśnienia z płatnikiem",
+      attentionTone: "warning",
+      reasonLabel: "Ostatnie notatki rozliczeniowe sugerują wyjaśnienie salda.",
+      nextStepLabel: "Wejdź w szczegół płatnika",
+    };
+  }
+  if (amount < 100) {
+    return {
+      attentionStatusLabel: "Niska zaległość",
+      attentionTone: "info",
+      reasonLabel: "Kwota zaległości jest niska w obecnych danych.",
+      nextStepLabel: "Zweryfikuj naliczenia z okresu",
+    };
+  }
+  return {
+    attentionStatusLabel: "Brak pilnej akcji",
+    attentionTone: "neutral",
+    reasonLabel: "Zaległość jest widoczna, ale dane nie wskazują dodatkowego sygnału pilności.",
+    nextStepLabel: "Wejdź w szczegół płatnika",
+  };
+}
+
+export function buildBillingDebtsOverpaymentsView(snapshot: BillingCenterSnapshot): BillingDebtsOverpaymentsView {
+  const balancesByPayerId = new Map(snapshot.balances.map((balance) => [balance.billing_payer_id, balance]));
+  const studentsByPayerId = new Map<number, BillingStudentRecord[]>();
+  const chargesByPayerId = new Map<number, BillingChargeRecord[]>();
+  const matchesByPayerId = new Map<number, BillingPaymentMatchRecord[]>();
+  const transactions = (snapshot.transactions ?? []).filter(isIncomingBillingTransaction);
+  const transactionById = new Map(transactions.map((transaction) => [transaction.billing_transaction_id, transaction]));
+  const matchedAmountByTransaction = new Map<number, number>();
+  const payerNotes = snapshot.payerNotes ?? [];
+
+  snapshot.students.forEach((student) => {
+    studentsByPayerId.set(student.billing_payer_id, [...(studentsByPayerId.get(student.billing_payer_id) ?? []), student]);
+  });
+  snapshot.charges.forEach((charge) => {
+    chargesByPayerId.set(charge.billing_payer_id, [...(chargesByPayerId.get(charge.billing_payer_id) ?? []), charge]);
+  });
+  (snapshot.paymentMatches ?? []).forEach((match) => {
+    matchesByPayerId.set(match.billing_payer_id, [...(matchesByPayerId.get(match.billing_payer_id) ?? []), match]);
+    matchedAmountByTransaction.set(
+      match.billing_transaction_id,
+      roundMoney((matchedAmountByTransaction.get(match.billing_transaction_id) ?? 0) + getMatchAmount(match, transactionById.get(match.billing_transaction_id))),
+    );
+  });
+
+  const debtRows: BillingDebtDecisionRow[] = [];
+  const overpaymentRows: BillingOverpaymentDecisionRow[] = [];
+  const explanationRows: BillingExplanationDecisionRow[] = [];
+
+  const payerIds = new Set<number>([
+    ...snapshot.payers.map((payer) => payer.billing_payer_id),
+    ...snapshot.balances.map((balance) => balance.billing_payer_id),
+  ]);
+  const payersById = new Map(snapshot.payers.map((payer) => [payer.billing_payer_id, payer]));
+
+  Array.from(payerIds).forEach((payerId) => {
+    const payerBalance = balancesByPayerId.get(payerId);
+    const payer =
+      payersById.get(payerId) ??
+      ({
+        billing_payer_id: payerId,
+        display_name: payerBalance?.display_name,
+        contact_phone: payerBalance?.contact_phone,
+        payment_identifier: payerBalance?.payment_identifier,
+        email: payerBalance?.email,
+        is_active: payerBalance?.is_active,
+        billing_total_charges: payerBalance?.total_charges,
+        billing_total_matches: payerBalance?.total_matches,
+        billing_balance_due: payerBalance?.balance_due,
+        billing_last_payment_at: payerBalance?.last_payment_at,
+        billing_last_payment_amount: payerBalance?.last_payment_amount,
+        billing_last_payment_currency: payerBalance?.last_payment_currency,
+        billing_last_payment_title: payerBalance?.last_payment_title,
+        billing_matched_payment_count: payerBalance?.matched_payment_count,
+      } satisfies BillingPayerRecord);
+    const values = getPayerBalanceValues(payer, payerBalance);
+    const balanceDue = roundMoney(values.balanceDue);
+    const payerStudents = studentsByPayerId.get(payer.billing_payer_id) ?? [];
+    const payerCharges = chargesByPayerId.get(payer.billing_payer_id) ?? [];
+    const payerMatches = matchesByPayerId.get(payer.billing_payer_id) ?? [];
+    const payerOnlyMatches = payerMatches.filter((match) => !match.billing_charge_id);
+    const hasChargeMatches = payerMatches.some((match) => Boolean(match.billing_charge_id));
+    const peopleLabel = summarizePeople(new Set(payerStudents.map((student) => readString(student.full_name, "")).filter(Boolean)));
+    const payerHref = billingPayerDetailPath(payer.billing_payer_id);
+    const periodsLabel = summarizeChargePeriods(payerCharges);
+    const servicesLabel = summarizeChargeServices(payerCharges);
+    const lastPaymentLabel = paymentLabelForPayer(values);
+    const latestNoteLabel = latestPayerNote(payerNotes, payer.billing_payer_id);
+    const hasNoteSignal = noteSuggestsExplanation(payerNotes, payer.billing_payer_id);
+
+    if (balanceDue > 0) {
+      const status = debtAttentionStatus(balanceDue, payerOnlyMatches.length, Boolean(values.lastPaymentDate), hasNoteSignal);
+      debtRows.push({
+        id: String(payer.billing_payer_id),
+        payerLabel: getPayerLabel(payer),
+        payerHref,
+        amount: balanceDue,
+        amountLabel: formatMoney(balanceDue, DEFAULT_CURRENCY),
+        peopleLabel,
+        chargesLabel: summarizeChargeItems(payerCharges),
+        periodsLabel,
+        servicesLabel,
+        lastPaymentLabel,
+        payerOnlyPaymentLabel: payerOnlyMatches.length
+          ? `${payerOnlyMatches.length} wpłat widocznych tylko przy płatniku`
+          : "Brak wpłat wyłącznie przy płatniku",
+        latestNoteLabel,
+        paymentsHref: BILLING_PAYMENTS_ROUTE,
+        periodsHref: payerCharges.length ? BILLING_PERIODS_ROUTE : undefined,
+        ...status,
+      });
+    }
+
+    if (balanceDue < 0) {
+      overpaymentRows.push({
+        id: String(payer.billing_payer_id),
+        payerLabel: getPayerLabel(payer),
+        payerHref,
+        amount: Math.abs(balanceDue),
+        amountLabel: formatMoney(Math.abs(balanceDue), DEFAULT_CURRENCY),
+        peopleLabel,
+        lastPaymentLabel,
+        possibleSourceLabel: payerOnlyMatches.length
+          ? "Część wpłat jest widoczna tylko przy płatniku, więc nadpłata wymaga decyzji poza tym widokiem."
+          : hasChargeMatches
+            ? "Nadpłata wynika z obecnego salda płatnika i widocznych przypisań."
+            : "Źródło nadpłaty nie wynika jednoznacznie z obecnych naliczeń.",
+        statusLabel: "Nadpłata nie została automatycznie rozliczona ani przeniesiona.",
+        paymentsHref: BILLING_PAYMENTS_ROUTE,
+      });
+    }
+
+    if (balanceDue > 0 && payerOnlyMatches.length) {
+      explanationRows.push({
+        id: `debt-payer-only-${payer.billing_payer_id}`,
+        payerLabel: getPayerLabel(payer),
+        payerHref,
+        problemLabel: "Wpłaty do sprawdzenia",
+        amountLabel: formatMoney(balanceDue, DEFAULT_CURRENCY),
+        reasonLabel: "Wpłata widoczna przy płatniku, ale bez przypisania do naliczenia.",
+        nextHref: BILLING_PAYMENTS_ROUTE,
+        tone: "warning",
+      });
+    }
+    if (balanceDue < 0) {
+      explanationRows.push({
+        id: `overpayment-${payer.billing_payer_id}`,
+        payerLabel: getPayerLabel(payer),
+        payerHref,
+        problemLabel: "Nadpłata wymaga decyzji",
+        amountLabel: formatMoney(Math.abs(balanceDue), DEFAULT_CURRENCY),
+        reasonLabel: "Nadpłata jest widoczna, ale ten widok jej nie rozlicza ani nie przenosi.",
+        nextHref: payerHref,
+        tone: "info",
+      });
+    }
+    if (balanceDue >= 300 && !values.lastPaymentDate) {
+      explanationRows.push({
+        id: `debt-no-payment-${payer.billing_payer_id}`,
+        payerLabel: getPayerLabel(payer),
+        payerHref,
+        problemLabel: "Brak ostatniej wpłaty",
+        amountLabel: formatMoney(balanceDue, DEFAULT_CURRENCY),
+        reasonLabel: "Brak wpłat przy aktywnych naliczeniach albo wysokiej zaległości.",
+        nextHref: payerHref,
+        tone: "danger",
+      });
+    }
+    if (payerCharges.length && !payerMatches.length) {
+      explanationRows.push({
+        id: `charges-no-payment-${payer.billing_payer_id}`,
+        payerLabel: getPayerLabel(payer),
+        payerHref,
+        problemLabel: "Naliczenia bez wpłat",
+        amountLabel: formatMoney(Math.max(balanceDue, 0), DEFAULT_CURRENCY),
+        reasonLabel: "Są naliczenia, ale brak widocznych wpłat przy tym płatniku.",
+        nextHref: payerHref,
+        tone: "warning",
+      });
+    }
+    if (hasNoteSignal) {
+      explanationRows.push({
+        id: `note-signal-${payer.billing_payer_id}`,
+        payerLabel: getPayerLabel(payer),
+        payerHref,
+        problemLabel: "Notatka rozliczeniowa",
+        amountLabel: balanceDue === 0 ? "Bez kwoty" : formatMoney(Math.abs(balanceDue), DEFAULT_CURRENCY),
+        reasonLabel: latestNoteLabel,
+        nextHref: payerHref,
+        tone: "info",
+      });
+    }
+  });
+
+  transactions.forEach((transaction) => {
+    const matchedAmount = matchedAmountByTransaction.get(transaction.billing_transaction_id) ?? 0;
+    const remainingAmount = roundMoney(getTransactionAmount(transaction) - matchedAmount);
+    if (remainingAmount > 0.009) {
+      explanationRows.push({
+        id: `unexplained-payment-${transaction.billing_transaction_id}`,
+        payerLabel: "Nieustalony płatnik",
+        problemLabel: "Wpłata bez jasnego przypisania",
+        amountLabel: formatMoney(remainingAmount, transaction.currency ?? DEFAULT_CURRENCY),
+        reasonLabel: "Są wpłaty, ale brak przypisania do naliczeń albo płatnika w obecnych danych.",
+        nextHref: BILLING_PAYMENTS_ROUTE,
+        tone: "warning",
+      });
+    }
+  });
+
+  debtRows.sort((a, b) => {
+    const aPayerOnly = a.payerOnlyPaymentLabel.startsWith("Brak") ? 0 : 1;
+    const bPayerOnly = b.payerOnlyPaymentLabel.startsWith("Brak") ? 0 : 1;
+    return b.amount - a.amount || bPayerOnly - aPayerOnly || a.payerLabel.localeCompare(b.payerLabel, "pl");
+  });
+  overpaymentRows.sort((a, b) => b.amount - a.amount || a.payerLabel.localeCompare(b.payerLabel, "pl"));
+
+  const uniqueExplanationRows = Array.from(new Map(explanationRows.map((row) => [row.id, row])).values()).slice(0, 12);
+  const urgentRows: BillingUrgentDecisionRow[] = [
+    ...debtRows.slice(0, 4).map((row) => ({
+      id: `urgent-debt-${row.id}`,
+      payerLabel: row.payerLabel,
+      amountLabel: row.amountLabel,
+      reasonLabel: row.reasonLabel,
+      nextStepLabel: row.nextStepLabel,
+      payerHref: row.payerHref,
+      paymentsHref: row.paymentsHref,
+      tone: row.attentionTone,
+    })),
+    ...overpaymentRows.slice(0, 2).map((row) => ({
+      id: `urgent-overpayment-${row.id}`,
+      payerLabel: row.payerLabel,
+      amountLabel: row.amountLabel,
+      reasonLabel: row.possibleSourceLabel,
+      nextStepLabel: "Wejdź w szczegół płatnika",
+      payerHref: row.payerHref,
+      paymentsHref: row.paymentsHref,
+      tone: "info" as const,
+    })),
+  ].slice(0, 6);
+
+  const debtTotal = roundMoney(debtRows.reduce((sum, row) => sum + row.amount, 0));
+  const overpaymentTotal = roundMoney(overpaymentRows.reduce((sum, row) => sum + row.amount, 0));
+  const settledPayerCount = snapshot.payers.filter((payer) => {
+    const values = getPayerBalanceValues(payer, balancesByPayerId.get(payer.billing_payer_id));
+    return Math.abs(roundMoney(values.balanceDue)) <= 0.009;
+  }).length;
+  const payerOnlyPaymentCount = (snapshot.paymentMatches ?? []).filter((match) => !match.billing_charge_id).length;
+
+  return {
+    summary: {
+      debtTotal,
+      debtTotalLabel: formatMoney(debtTotal, DEFAULT_CURRENCY),
+      debtPayerCount: debtRows.length,
+      overpaymentTotal,
+      overpaymentTotalLabel: formatMoney(overpaymentTotal, DEFAULT_CURRENCY),
+      overpaymentPayerCount: overpaymentRows.length,
+      settledPayerCount,
+      explanationCount: uniqueExplanationRows.length,
+      payerOnlyPaymentCount,
+      limitationLabel:
+        payerOnlyPaymentCount > 0
+          ? "Część wpłat jest widoczna tylko przy płatniku. Widok nie przypisuje ich automatycznie do naliczeń ani okresów."
+          : "Widok pokazuje wyłącznie stan wynikający z obecnych sald, naliczeń i widocznych przypisań.",
+    },
+    urgentRows,
+    debtRows,
+    overpaymentRows,
+    explanationRows: uniqueExplanationRows,
+    contextItems: [
+      {
+        label: "Co pokazuje",
+        value: "Agreguje płatników z zaległościami, nadpłatami i sygnałami do wyjaśnienia.",
+      },
+      {
+        label: "Czego nie robi",
+        value: "Nie wysyła przypomnień, nie zmienia sald, nie rozlicza nadpłat i nie dopasowuje wpłat.",
+      },
+      {
+        label: "Zakres danych",
+        value: "Okresy, osoby i usługi są pokazane tylko wtedy, gdy wynikają z naliczeń albo bezpiecznych przypisań.",
       },
     ],
   };

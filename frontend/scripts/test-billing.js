@@ -38,6 +38,7 @@ const { withActiveOrganizationQuery } = require("../src/context/organizationCont
 const {
   BILLING_BALANCES_ENDPOINT,
   BILLING_CANONICAL_ROUTE,
+  BILLING_DEBTS_ROUTE,
   BILLING_FORBIDDEN_WRITE_ACTIONS,
   BILLING_LEGACY_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
@@ -69,6 +70,7 @@ const {
   buildBillingBalanceExplanationRows,
   buildBillingCompanyClientRows,
   buildBillingContractorRows,
+  buildBillingDebtsOverpaymentsView,
   buildBillingFamilyFoundationRows,
   buildBillingInvoiceRows,
   buildBillingKpis,
@@ -587,6 +589,34 @@ assert.match(paymentsContextText, /nie dodaje wpłat/i);
 assert.match(paymentsContextText, /Wpłata trafia do okresu tylko wtedy/i);
 assert.doesNotMatch(paymentsContextText, /endpoint|payload|debug|demo/i);
 
+const debtsView = buildBillingDebtsOverpaymentsView(snapshot);
+assert.equal(debtsView.summary.debtTotalLabel, "220,00 PLN");
+assert.equal(debtsView.summary.debtPayerCount, 1);
+assert.equal(debtsView.summary.overpaymentTotalLabel, "40,00 PLN");
+assert.equal(debtsView.summary.overpaymentPayerCount, 1);
+assert.equal(debtsView.summary.settledPayerCount, 0);
+assert.equal(debtsView.summary.payerOnlyPaymentCount, 1);
+assert.ok(debtsView.summary.explanationCount >= 2);
+assert.match(debtsView.summary.limitationLabel, /widoczna tylko przy płatniku/i);
+assert.equal(debtsView.debtRows[0].payerLabel, "Rodzina Kowalskich");
+assert.equal(debtsView.debtRows[0].amountLabel, "220,00 PLN");
+assert.equal(debtsView.debtRows[0].attentionStatusLabel, "Do sprawdzenia wpłat");
+assert.equal(debtsView.debtRows[0].payerHref, "/rozliczenia/platnicy/1");
+assert.equal(debtsView.debtRows[0].paymentsHref, "/rozliczenia/wplaty");
+assert.equal(debtsView.debtRows[0].periodsHref, "/rozliczenia/okresy");
+assert.match(debtsView.debtRows[0].peopleLabel, /Lena Kowalska/);
+assert.match(debtsView.debtRows[0].chargesLabel, /Marzec 2026/);
+assert.match(debtsView.debtRows[0].servicesLabel, /Robotyka junior/);
+assert.match(debtsView.debtRows[0].latestNoteLabel, /Ustalono rozmowę/);
+assert.equal(debtsView.overpaymentRows[0].payerLabel, "Misja Robotyka");
+assert.equal(debtsView.overpaymentRows[0].amountLabel, "40,00 PLN");
+assert.match(debtsView.overpaymentRows[0].statusLabel, /nie została automatycznie rozliczona ani przeniesiona/i);
+assert.doesNotMatch(debtsView.overpaymentRows[0].statusLabel, /zwróć|przenieś/i);
+assert.ok(debtsView.explanationRows.some((row) => row.problemLabel === "Wpłaty do sprawdzenia" && row.nextHref === "/rozliczenia/wplaty"));
+assert.ok(debtsView.explanationRows.some((row) => row.problemLabel === "Nadpłata wymaga decyzji"));
+assert.ok(debtsView.urgentRows.some((row) => row.payerHref === "/rozliczenia/platnicy/1"));
+assert.match(debtsView.contextItems.map((item) => item.value).join(" "), /Nie wysyła przypomnień|nie zmienia sald/i);
+
 const chargeAssignedPaymentDetail = buildBillingPaymentDetailView(snapshot, 61);
 assert.ok(chargeAssignedPaymentDetail);
 assert.equal(chargeAssignedPaymentDetail.title, "Szczegół wpłaty");
@@ -673,6 +703,7 @@ assert.equal(BILLING_LEGACY_ROUTE, "/kasa");
 assert.equal(BILLING_PAYER_DETAIL_ROUTE, "/rozliczenia/platnicy");
 assert.equal(BILLING_PERIODS_ROUTE, "/rozliczenia/okresy");
 assert.equal(BILLING_PAYMENTS_ROUTE, "/rozliczenia/wplaty");
+assert.equal(BILLING_DEBTS_ROUTE, "/rozliczenia/zaleglosci");
 assert.equal(BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć wpłatę");
 assert.doesNotMatch(BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id|endpoint|payload|debug/i);
 assert.equal(BILLING_READ_ONLY, true);
@@ -712,6 +743,8 @@ assert.doesNotMatch(billingNavigationItem.description, /endpoint|payload|debug|d
 assert.equal(findNavigationItem("/kasa").id, "dashboard");
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "kasa", "page.tsx"), "utf8"), /redirect\("\/rozliczenia"\)/);
 assert.match(fs.readFileSync(path.join(srcRoot, "..", "next.config.js"), "utf8"), /source: "\/kasa"[\s\S]*destination: "\/rozliczenia"/);
+assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "zaleglosci", "page.tsx"), "utf8"), /BillingDebtsOverpaymentsPage/);
+assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8"), /Zaległości i nadpłaty/);
 assert.equal(canUseBillingOrganizationScope(null), false);
 assert.equal(canUseBillingOrganizationScope(""), false);
 assert.equal(canUseBillingOrganizationScope("   "), false);
@@ -814,6 +847,37 @@ const screenStrings = [
     row.contextLabel,
   ]),
   ...paymentsAllocationView.contextItems.flatMap((item) => [item.label, item.value]),
+  debtsView.summary.limitationLabel,
+  ...debtsView.urgentRows.flatMap((row) => [row.payerLabel, row.amountLabel, row.reasonLabel, row.nextStepLabel, row.payerHref, row.paymentsHref]),
+  ...debtsView.debtRows.flatMap((row) => [
+    row.payerLabel,
+    row.payerHref,
+    row.amountLabel,
+    row.peopleLabel,
+    row.chargesLabel,
+    row.periodsLabel,
+    row.servicesLabel,
+    row.lastPaymentLabel,
+    row.payerOnlyPaymentLabel,
+    row.latestNoteLabel,
+    row.attentionStatusLabel,
+    row.reasonLabel,
+    row.nextStepLabel,
+    row.paymentsHref,
+    row.periodsHref,
+  ]),
+  ...debtsView.overpaymentRows.flatMap((row) => [
+    row.payerLabel,
+    row.payerHref,
+    row.amountLabel,
+    row.peopleLabel,
+    row.lastPaymentLabel,
+    row.possibleSourceLabel,
+    row.statusLabel,
+    row.paymentsHref,
+  ]),
+  ...debtsView.explanationRows.flatMap((row) => [row.payerLabel, row.problemLabel, row.amountLabel, row.reasonLabel, row.nextHref]),
+  ...debtsView.contextItems.flatMap((item) => [item.label, item.value]),
   ...(chargeAssignedPaymentDetail
     ? [
         chargeAssignedPaymentDetail.title,

@@ -19,6 +19,7 @@ import { readContractors } from "../crm/crmModel";
 import { readWorkItems } from "../work-items/workItemsModel";
 import {
   BILLING_CANONICAL_ROUTE,
+  BILLING_DEBTS_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_READ_ONLY,
@@ -692,6 +693,10 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
                 <Link className="module-quick-action" href="/rozliczenia/wplaty">
                   <span>Wpłaty i przypisania</span>
                   <WalletCards aria-hidden="true" size={15} />
+                </Link>
+                <Link className="module-quick-action" href={BILLING_DEBTS_ROUTE}>
+                  <span>Zaległości i nadpłaty</span>
+                  <CreditCard aria-hidden="true" size={15} />
                 </Link>
                 <Link className="module-quick-action" href="/pulpit-dnia">
                   <span>Pulpit dnia</span>
