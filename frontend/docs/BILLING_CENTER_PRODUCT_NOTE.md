@@ -139,3 +139,9 @@ Etap `Status operacyjny wpłaty — write v1` dodaje na szczególe wpłaty jedn�
 Trasa `/rozliczenia/zaleglosci` dodaje decyzyjny widok zaległości, nadpłat i spraw do wyjaśnienia. Widok agreguje obecny stan płatników z istniejących sald, naliczeń, wpłat, dopasowań i notatek rozliczeniowych.
 
 Ten etap nie dodaje backendu, endpointów, migracji ani write actions. Nie wysyła przypomnień, nie rozlicza nadpłat, nie dopasowuje wpłat i nie zmienia sald. Służy do wskazania, gdzie właściciel firmy powinien kliknąć dalej: płatnik, wpłaty albo okresy.
+
+## Etap: Sprawy rozliczeniowe — read-only kolejka pracy
+
+Trasa `/rozliczenia/sprawy` dodaje operacyjny widok spraw rozliczeniowych. Ekran pomaga ustalić kolejność pracy: wpłaty do wyjaśnienia, płatnicy do kontaktu, nadpłaty do decyzji, zaległości do sprawdzenia i ostatnio sprawdzone wpłaty.
+
+Widok używa statusów operacyjnych wpłat jako sygnałów, ale nie zmienia statusów bezpośrednio. Status nadal można zmienić tylko na szczególe wpłaty. Ekran nie zmienia sald, nie dodaje płatności, nie dopasowuje wpłat, nie wysyła przypomnień i nie tworzy zadań.

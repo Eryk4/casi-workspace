@@ -234,6 +234,8 @@ export const api = {
   ledgerBalances: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/ledger/balances", { query }),
   billingLedgerMatches: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/ledger/matches", { query }),
   billingTransactions: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/transactions", { query }),
+  billingPaymentReviewStatuses: (query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>("/billing/payment-review-statuses", { query }),
   billingPayers: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/payers", { query }),
   billingPayerNotes: (payerId: number | string, query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>(`/billing/payers/${payerId}/notes`, { query }),

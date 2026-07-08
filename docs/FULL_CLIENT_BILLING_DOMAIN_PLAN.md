@@ -897,3 +897,11 @@ This stage aggregates existing payer balances, charges, payment matches, transac
 No backend endpoints, migrations, payment writes, allocation writes, reminder workflow, overpayment settlement, accounting export, or automation were added.
 
 Important limitation: this is not a debt collection workflow and not an overpayment settlement workflow. The view only shows current data and links to payer, payment, and period views. Payer-level payments without charge relation remain clarification signals rather than inferred period allocations.
+
+### Operational billing work queue
+
+The read-only route `/rozliczenia/sprawy` is the first practical operational billing queue. It combines arrears, overpayments, payer-only payments, unexplained payments, payer notes, and payment review statuses into a human work list.
+
+A narrow read-only endpoint, `GET /api/billing/payment-review-statuses?organization_id=...`, exposes the latest operational payment review statuses for one organization. It exists to avoid a per-payment request pattern and must remain read-only. It must not change transactions, charges, payment matches, ledger entries, balances, reminders, or accounting state.
+
+This screen is not a reminder workflow, allocation workflow, payment import, accounting export, or task creation feature. Those remain separate future stages with their own permissions and tenant-isolation reviews.

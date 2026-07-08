@@ -582,6 +582,7 @@ export type BillingCenterSnapshot = {
   charges: BillingChargeRecord[];
   paymentMatches?: BillingPaymentMatchRecord[];
   transactions?: BillingTransactionRecord[];
+  paymentReviewStatuses?: BillingPaymentReviewStatusRecord[];
   payerNotes?: BillingPayerNoteRecord[];
   invoices: InvoiceRecord[];
   contractors: ContractorRecord[];
@@ -650,6 +651,56 @@ export type BillingPaymentReviewStatusResponse = {
   history: BillingPaymentReviewStatusRecord[];
 };
 
+export type BillingPaymentReviewStatusesResponse = {
+  organization_id?: number;
+  statuses: BillingPaymentReviewStatusRecord[];
+};
+
+export type BillingWorkQueuePriority = "Wysoki" | "Średni" | "Niski";
+
+export type BillingWorkQueueIssueType =
+  | "Wpłata do wyjaśnienia"
+  | "Czeka na kontakt"
+  | "Czeka na wpłatę"
+  | "Nie ruszać automatycznie"
+  | "Nadpłata do decyzji"
+  | "Zaległość do sprawdzenia"
+  | "Sprawdzone";
+
+export type BillingWorkQueueIssue = {
+  id: string;
+  type: BillingWorkQueueIssueType;
+  priority: BillingWorkQueuePriority;
+  tone: "ok" | "warning" | "danger" | "info" | "neutral";
+  payerLabel: string;
+  payerHref?: string;
+  paymentHref?: string;
+  amountLabel: string;
+  reason: string;
+  nextStep: string;
+  href: string;
+  createdAt?: string | null;
+};
+
+export type BillingWorkQueueSummary = {
+  highPriorityCount: number;
+  needsReviewCount: number;
+  contactCount: number;
+  overpaymentCount: number;
+  debtCount: number;
+  checkedCount: number;
+};
+
+export type BillingWorkQueueView = {
+  summary: BillingWorkQueueSummary;
+  firstRows: BillingWorkQueueIssue[];
+  paymentRows: BillingWorkQueueIssue[];
+  contactRows: BillingWorkQueueIssue[];
+  overpaymentRows: BillingWorkQueueIssue[];
+  checkedRows: BillingWorkQueueIssue[];
+  contextItems: Array<{ label: string; value: string }>;
+};
+
 export type BillingPaymentReviewStatusValidationResult =
   | {
       ok: true;
@@ -701,6 +752,7 @@ export const BILLING_PAYER_NOTE_HELP_TEXT =
   "Notatka nie zmienia salda ani przypisań wpłat. Służy tylko do zapisania kontekstu rozmowy lub decyzji.";
 
 export const BILLING_PAYMENT_REVIEW_STATUS_ENDPOINT_SUFFIX = "/review-status";
+export const BILLING_PAYMENT_REVIEW_STATUSES_ENDPOINT = "/billing/payment-review-statuses";
 export const BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH = 1000;
 export const BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT =
   "Status operacyjny nie zmienia salda, naliczeń ani przypisania wpłaty. Służy tylko do oznaczenia, co trzeba sprawdzić.";
@@ -717,6 +769,7 @@ export const BILLING_PAYER_DETAIL_ROUTE = `${BILLING_CANONICAL_ROUTE}/platnicy`;
 export const BILLING_PERIODS_ROUTE = `${BILLING_CANONICAL_ROUTE}/okresy`;
 export const BILLING_PAYMENTS_ROUTE = `${BILLING_CANONICAL_ROUTE}/wplaty`;
 export const BILLING_DEBTS_ROUTE = `${BILLING_CANONICAL_ROUTE}/zaleglosci`;
+export const BILLING_WORK_QUEUE_ROUTE = `${BILLING_CANONICAL_ROUTE}/sprawy`;
 export const BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć wpłatę";
 export const BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION =
   "Najpierw wskaż organizację w topbarze. Szczegół wpłaty pokazuje tylko dane z wybranej organizacji.";
@@ -1098,6 +1151,18 @@ export function readBillingPaymentReviewStatus(payload: unknown, paymentId: numb
     organization_id: readNumber(payload.organization_id),
     current,
     history,
+  };
+}
+
+export function readBillingPaymentReviewStatuses(payload: unknown): BillingPaymentReviewStatusesResponse {
+  const endpoint = BILLING_PAYMENT_REVIEW_STATUSES_ENDPOINT;
+  if (!isRecord(payload) || !Array.isArray(payload.statuses)) {
+    throw new ApiContractError(endpoint, payload);
+  }
+
+  return {
+    organization_id: payload.organization_id === undefined || payload.organization_id === null ? undefined : readNumber(payload.organization_id),
+    statuses: payload.statuses.map((item) => readBillingPaymentReviewStatusRecord(item, endpoint)),
   };
 }
 
@@ -2889,6 +2954,268 @@ export function buildBillingDebtsOverpaymentsView(snapshot: BillingCenterSnapsho
       {
         label: "Zakres danych",
         value: "Okresy, osoby i usługi są pokazane tylko wtedy, gdy wynikają z naliczeń albo bezpiecznych przypisań.",
+      },
+    ],
+  };
+}
+
+function paymentReviewStatusLabel(status: BillingPaymentReviewStatusCode): string {
+  return BILLING_PAYMENT_REVIEW_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status;
+}
+
+function workQueuePriorityRank(priority: BillingWorkQueuePriority): number {
+  if (priority === "Wysoki") {
+    return 3;
+  }
+  if (priority === "Średni") {
+    return 2;
+  }
+  return 1;
+}
+
+function createWorkQueueIssue(input: Omit<BillingWorkQueueIssue, "id"> & { id: string }): BillingWorkQueueIssue {
+  return input;
+}
+
+export function buildBillingWorkQueueView(snapshot: BillingCenterSnapshot): BillingWorkQueueView {
+  const debtsView = buildBillingDebtsOverpaymentsView(snapshot);
+  const paymentsView = buildBillingPaymentsAllocationView(snapshot);
+  const payersById = new Map(snapshot.payers.map((payer) => [payer.billing_payer_id, payer]));
+  const matchesByTransactionId = new Map<number, BillingPaymentMatchRecord[]>();
+  const latestStatusByTransactionId = new Map<number, BillingPaymentReviewStatusRecord>();
+
+  (snapshot.paymentMatches ?? []).forEach((match) => {
+    matchesByTransactionId.set(match.billing_transaction_id, [...(matchesByTransactionId.get(match.billing_transaction_id) ?? []), match]);
+  });
+  (snapshot.paymentReviewStatuses ?? []).forEach((status) => {
+    const current = latestStatusByTransactionId.get(status.billing_transaction_id);
+    if (
+      !current ||
+      String(status.created_at ?? "").localeCompare(String(current.created_at ?? "")) > 0 ||
+      ((status.created_at ?? "") === (current.created_at ?? "") &&
+        status.billing_payment_review_event_id > current.billing_payment_review_event_id)
+    ) {
+      latestStatusByTransactionId.set(status.billing_transaction_id, status);
+    }
+  });
+
+  const issues: BillingWorkQueueIssue[] = [];
+
+  paymentsView.payerOnlyRows.forEach((row) => {
+    issues.push(
+      createWorkQueueIssue({
+        id: `payer-only-${row.id}`,
+        type: "Wpłata do wyjaśnienia",
+        priority: "Średni",
+        tone: "warning",
+        payerLabel: row.payerLabel,
+        payerHref: row.payerHref,
+        paymentHref: row.paymentHref,
+        amountLabel: row.amountLabel,
+        reason: "Wpłata jest widoczna przy płatniku, ale nie ma przypisania do konkretnego naliczenia.",
+        nextStep: "Otwórz szczegół wpłaty i sprawdź opis.",
+        href: row.paymentHref ?? row.payerHref ?? BILLING_PAYMENTS_ROUTE,
+      }),
+    );
+  });
+
+  paymentsView.unexplainedRows.forEach((row) => {
+    issues.push(
+      createWorkQueueIssue({
+        id: `unexplained-${row.id}`,
+        type: "Wpłata do wyjaśnienia",
+        priority: "Wysoki",
+        tone: "danger",
+        payerLabel: row.payerLabel,
+        payerHref: row.payerHref,
+        paymentHref: row.paymentHref,
+        amountLabel: row.amountLabel,
+        reason: "Wpłata nie ma jasnego płatnika ani powiązania z naliczeniem.",
+        nextStep: "Otwórz szczegół wpłaty i sprawdź opis.",
+        href: row.paymentHref ?? BILLING_PAYMENTS_ROUTE,
+      }),
+    );
+  });
+
+  (snapshot.paymentReviewStatuses ?? []).forEach((status) => {
+    const transaction = (snapshot.transactions ?? []).find((item) => item.billing_transaction_id === status.billing_transaction_id);
+    const matches = matchesByTransactionId.get(status.billing_transaction_id) ?? [];
+    const payerId = matches[0]?.billing_payer_id;
+    const payer = payerId ? payersById.get(payerId) : undefined;
+    const payerLabel = payer ? getPayerLabel(payer) : readString(transaction?.counterparty_name, "Nieustalony płatnik");
+    const payerHref = payerId ? billingPayerDetailPath(payerId) : undefined;
+    const paymentHref = billingPaymentDetailPath(status.billing_transaction_id);
+    const amountLabel = formatMoney(transaction?.amount, transaction?.currency ?? DEFAULT_CURRENCY);
+    const label = paymentReviewStatusLabel(status.status);
+    const common = {
+      payerLabel,
+      payerHref,
+      paymentHref,
+      amountLabel,
+      href: paymentHref,
+      createdAt: status.created_at,
+    };
+
+    if (status.status === "needs_review") {
+      issues.push(
+        createWorkQueueIssue({
+          ...common,
+          id: `status-needs-review-${status.billing_payment_review_event_id}`,
+          type: "Wpłata do wyjaśnienia",
+          priority: "Wysoki",
+          tone: "danger",
+          reason: `Status operacyjny wpłaty: ${label}.`,
+          nextStep: "Otwórz szczegół wpłaty i sprawdź opis.",
+        }),
+      );
+    }
+    if (status.status === "waiting_for_contact") {
+      issues.push(
+        createWorkQueueIssue({
+          ...common,
+          id: `status-contact-${status.billing_payment_review_event_id}`,
+          type: "Czeka na kontakt",
+          priority: "Wysoki",
+          tone: "danger",
+          reason: "Status operacyjny wskazuje, że trzeba skontaktować się z płatnikiem.",
+          nextStep: payerHref ? "Wejdź w płatnika i sprawdź notatki." : "Otwórz szczegół wpłaty i sprawdź opis.",
+        }),
+      );
+    }
+    if (status.status === "waiting_for_payment") {
+      issues.push(
+        createWorkQueueIssue({
+          ...common,
+          id: `status-payment-${status.billing_payment_review_event_id}`,
+          type: "Czeka na wpłatę",
+          priority: "Średni",
+          tone: "warning",
+          reason: "Status operacyjny wskazuje oczekiwanie na wpłatę.",
+          nextStep: payerHref ? "Sprawdź zaległość i ostatnią wpłatę." : "Otwórz szczegół wpłaty.",
+        }),
+      );
+    }
+    if (status.status === "do_not_auto_match") {
+      issues.push(
+        createWorkQueueIssue({
+          ...common,
+          id: `status-do-not-auto-${status.billing_payment_review_event_id}`,
+          type: "Nie ruszać automatycznie",
+          priority: "Wysoki",
+          tone: "danger",
+          reason: "Status operacyjny blokuje automatyczne ruszanie tej wpłaty.",
+          nextStep: "Otwórz szczegół wpłaty i sprawdź kontekst.",
+        }),
+      );
+    }
+  });
+
+  debtsView.debtRows.forEach((row) => {
+    const high = row.amount >= 300 && row.lastPaymentLabel === "Brak ostatniej wpłaty";
+    issues.push(
+      createWorkQueueIssue({
+        id: `debt-${row.id}`,
+        type: high ? "Czeka na wpłatę" : "Zaległość do sprawdzenia",
+        priority: high ? "Wysoki" : row.amount < 100 ? "Niski" : "Średni",
+        tone: high ? "danger" : row.amount < 100 ? "info" : "warning",
+        payerLabel: row.payerLabel,
+        payerHref: row.payerHref,
+        amountLabel: row.amountLabel,
+        reason: row.reasonLabel,
+        nextStep: high ? "Sprawdź zaległość i ostatnią wpłatę." : row.nextStepLabel,
+        href: row.payerHref,
+      }),
+    );
+  });
+
+  debtsView.overpaymentRows.forEach((row) => {
+    issues.push(
+      createWorkQueueIssue({
+        id: `overpayment-${row.id}`,
+        type: "Nadpłata do decyzji",
+        priority: "Średni",
+        tone: "info",
+        payerLabel: row.payerLabel,
+        payerHref: row.payerHref,
+        amountLabel: row.amountLabel,
+        reason: row.possibleSourceLabel,
+        nextStep: "Zweryfikuj, czy nadpłata wymaga decyzji.",
+        href: row.payerHref,
+      }),
+    );
+  });
+
+  const checkedRows = (snapshot.paymentReviewStatuses ?? [])
+    .filter((status) => status.status === "checked")
+    .slice()
+    .sort(
+      (a, b) =>
+        String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")) ||
+        b.billing_payment_review_event_id - a.billing_payment_review_event_id,
+    )
+    .slice(0, 8)
+    .map((status) => {
+      const transaction = (snapshot.transactions ?? []).find((item) => item.billing_transaction_id === status.billing_transaction_id);
+      const matches = matchesByTransactionId.get(status.billing_transaction_id) ?? [];
+      const payerId = matches[0]?.billing_payer_id;
+      const payer = payerId ? payersById.get(payerId) : undefined;
+      return createWorkQueueIssue({
+        id: `checked-${status.billing_payment_review_event_id}`,
+        type: "Sprawdzone",
+        priority: "Niski",
+        tone: "ok",
+        payerLabel: payer ? getPayerLabel(payer) : readString(transaction?.counterparty_name, "Nieustalony płatnik"),
+        payerHref: payerId ? billingPayerDetailPath(payerId) : undefined,
+        paymentHref: billingPaymentDetailPath(status.billing_transaction_id),
+        amountLabel: formatMoney(transaction?.amount, transaction?.currency ?? DEFAULT_CURRENCY),
+        reason: "Wpłata została oznaczona jako sprawdzona.",
+        nextStep: "W razie potrzeby wróć do szczegółu wpłaty.",
+        href: billingPaymentDetailPath(status.billing_transaction_id),
+        createdAt: status.created_at,
+      });
+    });
+
+  const actionableIssues = Array.from(new Map(issues.map((issue) => [issue.id, issue])).values())
+    .filter((issue) => issue.type !== "Sprawdzone")
+    .sort(
+      (a, b) =>
+        workQueuePriorityRank(b.priority) - workQueuePriorityRank(a.priority) ||
+        String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")) ||
+        a.payerLabel.localeCompare(b.payerLabel, "pl"),
+    );
+
+  const paymentRows = actionableIssues.filter((issue) =>
+    ["Wpłata do wyjaśnienia", "Nie ruszać automatycznie"].includes(issue.type),
+  );
+  const contactRows = actionableIssues.filter((issue) => ["Czeka na kontakt", "Czeka na wpłatę", "Zaległość do sprawdzenia"].includes(issue.type));
+  const overpaymentRows = actionableIssues.filter((issue) => issue.type === "Nadpłata do decyzji");
+
+  return {
+    summary: {
+      highPriorityCount: actionableIssues.filter((issue) => issue.priority === "Wysoki").length,
+      needsReviewCount: paymentRows.length,
+      contactCount: contactRows.length,
+      overpaymentCount: overpaymentRows.length,
+      debtCount: actionableIssues.filter((issue) => issue.type === "Zaległość do sprawdzenia" || issue.type === "Czeka na wpłatę").length,
+      checkedCount: checkedRows.length,
+    },
+    firstRows: actionableIssues.slice(0, 8),
+    paymentRows,
+    contactRows,
+    overpaymentRows,
+    checkedRows,
+    contextItems: [
+      {
+        label: "Co pokazuje",
+        value: "Łączy zaległości, nadpłaty, wpłaty do wyjaśnienia, statusy operacyjne i notatki rozliczeniowe w jedną listę pracy.",
+      },
+      {
+        label: "Czego nie robi",
+        value: "Nie zmienia sald, wpłat, naliczeń ani przypisań. Nie wysyła przypomnień i nie tworzy zadań.",
+      },
+      {
+        label: "Jak z tego korzystać",
+        value: "Kliknij w szczegół wpłaty, płatnika, wpłaty albo zaległości i podejmij decyzję poza tym widokiem.",
       },
     ],
   };

@@ -348,6 +348,26 @@ class BillingService:
             "history": events,
         }
 
+    def list_latest_payment_review_statuses(
+        self,
+        *,
+        organization_id: int | None = None,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed sprawdzeniem statusow wplat.")
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+        statuses = self.billing_repository.list_latest_payment_review_statuses(
+            organization_id=organization_id,
+            limit=limit,
+        )
+        return {
+            "organization_id": organization_id,
+            "statuses": statuses,
+        }
+
     def add_payment_review_event(
         self,
         billing_transaction_id: int,

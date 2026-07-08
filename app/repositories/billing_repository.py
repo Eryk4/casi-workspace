@@ -273,6 +273,40 @@ class BillingRepository:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def list_latest_payment_review_statuses(
+        self,
+        *,
+        organization_id: int,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM (
+                    SELECT
+                        e.*,
+                        COALESCE(u.display_name, u.login) AS created_by_user_name,
+                        u.role AS created_by_user_role,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY e.billing_transaction_id
+                            ORDER BY e.created_at DESC, e.billing_payment_review_event_id DESC
+                        ) AS row_number
+                    FROM billing_payment_review_events e
+                    JOIN billing_transactions t
+                        ON t.billing_transaction_id = e.billing_transaction_id
+                       AND t.organization_id = e.organization_id
+                    LEFT JOIN users u ON u.user_id = e.created_by_user_id
+                    WHERE e.organization_id = ?
+                ) ranked
+                WHERE row_number = 1
+                ORDER BY created_at DESC, billing_payment_review_event_id DESC
+                LIMIT ?
+                """,
+                (organization_id, max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def create_payer(self, payload: dict[str, Any]) -> int:
         timestamp = now_iso()
         with get_connection() as connection:

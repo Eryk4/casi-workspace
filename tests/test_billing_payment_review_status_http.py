@@ -173,6 +173,56 @@ class BillingPaymentReviewStatusHttpTests(HttpServerTestCase):
         self.assertEqual(response.status, 200, payload.decode("utf-8"))
         self.assertIsNone(json.loads(payload)["current"])
 
+    def test_list_payment_review_statuses_is_organization_scoped_and_read_only(self) -> None:
+        organization_id = int(self.organization["organization_id"])
+        wrong_organization_id = int(self.second_organization["organization_id"])
+        financial_counts_before = {
+            "transactions": len(self.services["billing_service"].list_transactions(organization_id=organization_id)),
+            "matches": len(self.services["billing_ledger_service"].list_payment_matches(organization_id=organization_id)),
+            "charges": len(self.services["billing_service"].list_charges(organization_id=organization_id)),
+            "ledger_entries": self._ledger_entry_count(),
+        }
+
+        response, payload = self._request(
+            "POST",
+            f"/api/billing/payments/{self.transaction_id}/review-status?organization_id={organization_id}",
+            body=json.dumps({"status": "waiting_for_contact", "note_text": "Sprawdzic kontakt z platnikiem."}),
+            headers={"Content-Type": "application/json", "Cookie": self.cookie},
+        )
+        self.assertEqual(response.status, 201, payload.decode("utf-8"))
+
+        response, payload = self._request(
+            "GET",
+            f"/api/billing/payment-review-statuses?organization_id={organization_id}",
+            headers={"Cookie": self.cookie},
+        )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        data = json.loads(payload)
+        self.assertEqual(int(data["organization_id"]), organization_id)
+        self.assertEqual(len(data["statuses"]), 1)
+        self.assertEqual(data["statuses"][0]["status"], "waiting_for_contact")
+        self.assertEqual(int(data["statuses"][0]["billing_transaction_id"]), self.transaction_id)
+
+        response, payload = self._request(
+            "GET",
+            f"/api/billing/payment-review-statuses?organization_id={wrong_organization_id}",
+            headers={"Cookie": self.cookie},
+        )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        wrong_data = json.loads(payload)
+        self.assertEqual(int(wrong_data["organization_id"]), wrong_organization_id)
+        self.assertEqual(wrong_data["statuses"], [])
+
+        self.assertEqual(
+            financial_counts_before,
+            {
+                "transactions": len(self.services["billing_service"].list_transactions(organization_id=organization_id)),
+                "matches": len(self.services["billing_ledger_service"].list_payment_matches(organization_id=organization_id)),
+                "charges": len(self.services["billing_service"].list_charges(organization_id=organization_id)),
+                "ledger_entries": self._ledger_entry_count(),
+            },
+        )
+
 
 if __name__ == "__main__":
     import unittest

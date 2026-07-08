@@ -77,3 +77,9 @@ Ten etap nie dodaje:
 - statusów finansowych.
 
 To jest bezpieczny status operacyjny, a nie workflow płatności.
+
+## Wykorzystanie w sprawach rozliczeniowych
+
+`/rozliczenia/sprawy` używa ostatnich statusów operacyjnych wpłat jako sygnału do kolejki pracy. Do tego służy read-only agregat `GET /api/billing/payment-review-statuses?organization_id=...`, który zwraca ostatni status wpłat w ramach jednej organizacji.
+
+Agregat nie zapisuje danych i nie zmienia transakcji, naliczeń, dopasowań, sald ani historii finansowej. Dzięki niemu ekran spraw rozliczeniowych nie musi odpytywać osobno każdej wpłaty.

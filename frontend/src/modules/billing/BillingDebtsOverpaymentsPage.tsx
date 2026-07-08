@@ -21,6 +21,7 @@ import {
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_PAYMENTS_ROUTE,
   BILLING_PERIODS_ROUTE,
+  BILLING_WORK_QUEUE_ROUTE,
   BILLING_READ_ONLY,
   buildBillingDebtsOverpaymentsView,
   canUseBillingOrganizationScope,
@@ -324,6 +325,10 @@ export function BillingDebtsOverpaymentsPage() {
               </Card>
 
               <Card className="module-quick-actions" title="Przejdź dalej">
+                <Link className="module-quick-action" href={BILLING_WORK_QUEUE_ROUTE}>
+                  <span>Sprawy rozliczeniowe</span>
+                  <WalletCards aria-hidden="true" size={15} />
+                </Link>
                 <Link className="module-quick-action" href={BILLING_CANONICAL_ROUTE}>
                   <span>Rozliczenia</span>
                   <CreditCard aria-hidden="true" size={15} />

@@ -1226,6 +1226,19 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(transactions)
+            if path == "/api/billing/payment-review-statuses":
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 500
+                try:
+                    review_statuses = self.billing_service.list_latest_payment_review_statuses(
+                        organization_id=organization_id,
+                        limit=min(max(limit, 1), 1000),
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(review_statuses)
             if path == "/api/billing/schools":
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:

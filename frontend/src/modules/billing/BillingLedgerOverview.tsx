@@ -20,6 +20,7 @@ import { readWorkItems } from "../work-items/workItemsModel";
 import {
   BILLING_CANONICAL_ROUTE,
   BILLING_DEBTS_ROUTE,
+  BILLING_WORK_QUEUE_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_READ_ONLY,
@@ -674,6 +675,10 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
               </Card>
 
               <Card className="module-quick-actions" title="Przejdź do modułów">
+                <Link className="module-quick-action" href={BILLING_WORK_QUEUE_ROUTE}>
+                  <span>Sprawy rozliczeniowe</span>
+                  <ListChecks aria-hidden="true" size={15} />
+                </Link>
                 <Link className="module-quick-action" href="/faktury">
                   <span>Faktury</span>
                   <FileText aria-hidden="true" size={15} />

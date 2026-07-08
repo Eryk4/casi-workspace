@@ -76,3 +76,7 @@ Nadpłata nie jest automatycznie przenoszona ani zwracana. To wymaga osobnego, k
 ## Następny bezpieczny krok
 
 Po live-weryfikacji tego ekranu najbezpieczniejszym kolejnym krokiem jest decyzja, czy potrzebny jest osobny read-only agregat backendowy dla rozliczeń. Write actions dotyczące dopasowań, importu, przypomnień albo rozliczania nadpłat powinny pozostać poza zakresem do czasu osobnego audytu kontraktu, uprawnień i tenant isolation.
+
+## Powiązanie ze sprawami rozliczeniowymi
+
+Widok `/rozliczenia/zaleglosci` linkuje do `/rozliczenia/sprawy`, gdzie zaległości i nadpłaty są pokazane razem z wpłatami wymagającymi wyjaśnienia oraz statusami operacyjnymi wpłat. To nadal jest read-only kolejka pracy, a nie przypomnienia, dopasowania ani rozliczanie nadpłat.

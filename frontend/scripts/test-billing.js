@@ -53,6 +53,7 @@ const {
   BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE,
   BILLING_PAYMENT_REVIEW_STATUS_ENDPOINT_SUFFIX,
+  BILLING_PAYMENT_REVIEW_STATUSES_ENDPOINT,
   BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT,
   BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH,
   BILLING_PAYMENT_REVIEW_STATUS_OPTIONS,
@@ -69,6 +70,7 @@ const {
   BILLING_READ_ONLY,
   BILLING_STUDENTS_ENDPOINT,
   BILLING_TRANSACTIONS_ENDPOINT,
+  BILLING_WORK_QUEUE_ROUTE,
   billingBalanceTone,
   billingPaymentDetailPath,
   billingPayerDetailPath,
@@ -89,6 +91,7 @@ const {
   buildBillingPaymentDetailView,
   buildBillingPaymentsAllocationView,
   buildBillingPeriodView,
+  buildBillingWorkQueueView,
   buildBillingRecentPaymentRows,
   buildBillingRelatedWorkItemRows,
   buildBillingServiceEnrollmentRows,
@@ -106,6 +109,7 @@ const {
   readBillingInvoices,
   readBillingPayerNotes,
   readBillingPaymentMatches,
+  readBillingPaymentReviewStatuses,
   readBillingPayers,
   readBillingStudents,
   readBillingTransactions,
@@ -463,6 +467,48 @@ const snapshot = {
     makeTransaction({ billing_transaction_id: 64, amount: 999, title: "Wpłata ogólna Rodzina Kowalskich", matched_status: "payer_only" }),
     makeTransaction({ billing_transaction_id: 65, amount: 77, title: "Przelew bez identyfikatora", matched_status: "unmatched" }),
   ]),
+  paymentReviewStatuses: [
+    {
+      billing_payment_review_event_id: 801,
+      organization_id: 42,
+      billing_transaction_id: 61,
+      status: "checked",
+      note_text: "Wpłata sprawdzona.",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2026-03-09T10:00:00",
+    },
+    {
+      billing_payment_review_event_id: 802,
+      organization_id: 42,
+      billing_transaction_id: 62,
+      status: "waiting_for_contact",
+      note_text: "Czeka na kontakt z płatnikiem.",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2026-03-10T10:00:00",
+    },
+    {
+      billing_payment_review_event_id: 803,
+      organization_id: 42,
+      billing_transaction_id: 64,
+      status: "do_not_auto_match",
+      note_text: "Nie ruszać bez decyzji.",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2026-03-11T10:00:00",
+    },
+    {
+      billing_payment_review_event_id: 804,
+      organization_id: 42,
+      billing_transaction_id: 65,
+      status: "needs_review",
+      note_text: "Brak jasnego identyfikatora.",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2026-03-12T10:00:00",
+    },
+  ],
   payerNotes: readBillingPayerNotes([
     {
       billing_note_id: 701,
@@ -626,6 +672,22 @@ assert.ok(debtsView.explanationRows.some((row) => row.problemLabel === "Nadpłat
 assert.ok(debtsView.urgentRows.some((row) => row.payerHref === "/rozliczenia/platnicy/1"));
 assert.match(debtsView.contextItems.map((item) => item.value).join(" "), /Nie wysyła przypomnień|nie zmienia sald/i);
 
+const workQueueView = buildBillingWorkQueueView(snapshot);
+assert.ok(workQueueView.firstRows.length <= 8);
+assert.ok(workQueueView.firstRows.every((row) => ["Wysoki", "Średni", "Niski"].includes(row.priority)));
+assert.ok(workQueueView.firstRows.some((row) => row.type === "Wpłata do wyjaśnienia" && row.paymentHref === "/rozliczenia/wplaty/65"));
+assert.ok(workQueueView.firstRows.some((row) => row.type === "Nie ruszać automatycznie" && row.paymentHref === "/rozliczenia/wplaty/64"));
+assert.ok(workQueueView.contactRows.some((row) => row.type === "Czeka na kontakt" && row.paymentHref === "/rozliczenia/wplaty/62"));
+assert.ok(workQueueView.paymentRows.some((row) => row.type === "Wpłata do wyjaśnienia" && row.paymentHref === "/rozliczenia/wplaty/64"));
+assert.ok(workQueueView.paymentRows.some((row) => row.type === "Wpłata do wyjaśnienia" && row.paymentHref === "/rozliczenia/wplaty/65"));
+assert.ok(workQueueView.overpaymentRows.some((row) => row.type === "Nadpłata do decyzji" && row.payerHref === "/rozliczenia/platnicy/2"));
+assert.ok(workQueueView.firstRows.some((row) => row.type === "Zaległość do sprawdzenia" && row.payerHref === "/rozliczenia/platnicy/1"));
+assert.ok(workQueueView.checkedRows.some((row) => row.type === "Sprawdzone" && row.paymentHref === "/rozliczenia/wplaty/61"));
+assert.equal(workQueueView.firstRows.some((row) => row.type === "Sprawdzone"), false);
+assert.match(workQueueView.contextItems.map((item) => item.value).join(" "), /nie zmienia sald/i);
+assert.match(workQueueView.contextItems.map((item) => item.value).join(" "), /nie wysyła przypomnień/i);
+assert.doesNotMatch(workQueueView.contextItems.map((item) => item.value).join(" "), /endpoint|payload|debug|match id|ledger entry id|foreign key|mutation/i);
+
 const chargeAssignedPaymentDetail = buildBillingPaymentDetailView(snapshot, 61);
 assert.ok(chargeAssignedPaymentDetail);
 assert.equal(chargeAssignedPaymentDetail.title, "Szczegół wpłaty");
@@ -692,7 +754,28 @@ const paymentReviewStatus = readBillingPaymentReviewStatus(paymentReviewStatusPa
 assert.equal(paymentReviewStatus.current.status, "needs_review");
 assert.equal(paymentReviewStatus.current.note_text, "Sprawdzic tytul wplaty.");
 assert.equal(paymentReviewStatus.history.length, 1);
+const paymentReviewStatusesPayload = {
+  organization_id: 42,
+  statuses: [
+    paymentReviewStatusPayload.current,
+    {
+      billing_payment_review_event_id: 702,
+      organization_id: 42,
+      billing_transaction_id: 64,
+      status: "do_not_auto_match",
+      note_text: "Nie ruszać bez decyzji.",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2026-03-10T10:00:00",
+    },
+  ],
+};
+const paymentReviewStatuses = readBillingPaymentReviewStatuses(paymentReviewStatusesPayload);
+assert.equal(paymentReviewStatuses.organization_id, 42);
+assert.equal(paymentReviewStatuses.statuses.length, 2);
+assert.equal(paymentReviewStatuses.statuses[1].status, "do_not_auto_match");
 assert.equal(billingPaymentReviewStatusEndpoint(61), "/billing/payments/61/review-status");
+assert.equal(BILLING_PAYMENT_REVIEW_STATUSES_ENDPOINT, "/billing/payment-review-statuses");
 assert.equal(BILLING_PAYMENT_REVIEW_STATUS_ENDPOINT_SUFFIX, "/review-status");
 assert.equal(BILLING_PAYMENT_REVIEW_STATUS_MAX_NOTE_LENGTH, 1000);
 assert.deepEqual(
@@ -715,6 +798,7 @@ assert.equal(buildBillingPaymentReviewStatusRequest("needs_review", "x".repeat(1
 assert.equal(buildBillingPaymentReviewStatusRequest("needs_review", "", null).ok, false);
 assert.throws(() => readBillingPaymentReviewStatus({ history: [] }, 61), ApiContractError);
 assert.throws(() => readBillingPaymentReviewStatus({ billing_transaction_id: 61, current: null }, 61), ApiContractError);
+assert.throws(() => readBillingPaymentReviewStatuses({ organization_id: 42 }), ApiContractError);
 
 const relatedWorkItems = buildBillingRelatedWorkItemRows(snapshot.workItems, snapshot.invoices, snapshot.contractors);
 assert.equal(relatedWorkItems[0].href, "/work-items/44");
@@ -767,6 +851,7 @@ assert.equal(BILLING_PAYER_DETAIL_ROUTE, "/rozliczenia/platnicy");
 assert.equal(BILLING_PERIODS_ROUTE, "/rozliczenia/okresy");
 assert.equal(BILLING_PAYMENTS_ROUTE, "/rozliczenia/wplaty");
 assert.equal(BILLING_DEBTS_ROUTE, "/rozliczenia/zaleglosci");
+assert.equal(BILLING_WORK_QUEUE_ROUTE, "/rozliczenia/sprawy");
 assert.equal(BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć wpłatę");
 assert.doesNotMatch(BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id|endpoint|payload|debug/i);
 assert.equal(BILLING_READ_ONLY, true);
@@ -807,7 +892,10 @@ assert.equal(findNavigationItem("/kasa").id, "dashboard");
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "kasa", "page.tsx"), "utf8"), /redirect\("\/rozliczenia"\)/);
 assert.match(fs.readFileSync(path.join(srcRoot, "..", "next.config.js"), "utf8"), /source: "\/kasa"[\s\S]*destination: "\/rozliczenia"/);
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "zaleglosci", "page.tsx"), "utf8"), /BillingDebtsOverpaymentsPage/);
+assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "sprawy", "page.tsx"), "utf8"), /BillingWorkQueuePage/);
 assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8"), /Zaległości i nadpłaty/);
+assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8"), /Sprawy rozliczeniowe/);
+assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingDebtsOverpaymentsPage.tsx"), "utf8"), /Sprawy rozliczeniowe/);
 assert.equal(canUseBillingOrganizationScope(null), false);
 assert.equal(canUseBillingOrganizationScope(""), false);
 assert.equal(canUseBillingOrganizationScope("   "), false);
@@ -941,6 +1029,12 @@ const screenStrings = [
   ]),
   ...debtsView.explanationRows.flatMap((row) => [row.payerLabel, row.problemLabel, row.amountLabel, row.reasonLabel, row.nextHref]),
   ...debtsView.contextItems.flatMap((item) => [item.label, item.value]),
+  ...workQueueView.firstRows.flatMap((row) => [row.type, row.priority, row.payerLabel, row.amountLabel, row.reason, row.nextStep, row.href, row.paymentHref, row.payerHref]),
+  ...workQueueView.paymentRows.flatMap((row) => [row.type, row.priority, row.payerLabel, row.amountLabel, row.reason, row.nextStep, row.href, row.paymentHref, row.payerHref]),
+  ...workQueueView.contactRows.flatMap((row) => [row.type, row.priority, row.payerLabel, row.amountLabel, row.reason, row.nextStep, row.href, row.paymentHref, row.payerHref]),
+  ...workQueueView.overpaymentRows.flatMap((row) => [row.type, row.priority, row.payerLabel, row.amountLabel, row.reason, row.nextStep, row.href, row.paymentHref, row.payerHref]),
+  ...workQueueView.checkedRows.flatMap((row) => [row.type, row.priority, row.payerLabel, row.amountLabel, row.reason, row.nextStep, row.href, row.paymentHref, row.payerHref]),
+  ...workQueueView.contextItems.flatMap((item) => [item.label, item.value]),
   ...(chargeAssignedPaymentDetail
     ? [
         chargeAssignedPaymentDetail.title,
@@ -1062,6 +1156,22 @@ async function main() {
 
   await withMockedFetch(
     async (url, options) => {
+      assert.ok(url.startsWith("/api/billing/payment-review-statuses?"));
+      assert.match(url, /organization_id=42/);
+      assert.match(url, /limit=1000/);
+      assert.equal(options.method, "GET");
+      assert.equal(options.body, undefined);
+      return jsonResponse(200, paymentReviewStatusesPayload);
+    },
+    async () => {
+      const payload = await api.billingPaymentReviewStatuses(withActiveOrganizationQuery("42", { limit: 1000 }));
+      const statuses = readBillingPaymentReviewStatuses(payload);
+      assert.equal(statuses.statuses.length, 2);
+    },
+  );
+
+  await withMockedFetch(
+    async (url, options) => {
       assert.equal(url, "/api/billing/payments/61/review-status?organization_id=42");
       assert.equal(options.method, "POST");
       assert.deepEqual(JSON.parse(options.body), { status: "checked", note_text: "Zweryfikowano tytul." });
@@ -1165,6 +1275,9 @@ async function main() {
       if (url.startsWith(`/api${BILLING_TRANSACTIONS_ENDPOINT}`)) {
         return jsonResponse(200, [makeTransaction()]);
       }
+      if (url.startsWith(`/api${BILLING_PAYMENT_REVIEW_STATUSES_ENDPOINT}`)) {
+        return jsonResponse(200, paymentReviewStatusesPayload);
+      }
       if (url.startsWith("/api/invoices")) {
         return jsonResponse(200, [makeInvoice()]);
       }
@@ -1179,7 +1292,19 @@ async function main() {
     async () => {
       const query = withActiveOrganizationQuery("42");
       const workItemsQuery = withActiveOrganizationQuery("42", { limit: 100, only_open: 1 });
-      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, notesPayload, matchesPayload, transactionsPayload, invoicesPayload, contractorsPayload, workItemsPayload] = await Promise.all([
+      const [
+        balancesPayload,
+        payersPayload,
+        studentsPayload,
+        chargesPayload,
+        notesPayload,
+        matchesPayload,
+        transactionsPayload,
+        reviewStatusesPayload,
+        invoicesPayload,
+        contractorsPayload,
+        workItemsPayload,
+      ] = await Promise.all([
         api.ledgerBalances(query),
         api.billingPayers(query),
         api.billingStudents(query),
@@ -1187,6 +1312,7 @@ async function main() {
         api.billingPayerNotes(14, withActiveOrganizationQuery("42", { limit: 100 })),
         api.billingLedgerMatches(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.billingTransactions(withActiveOrganizationQuery("42", { limit: 1000 })),
+        api.billingPaymentReviewStatuses(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.invoices(query),
         api.contractors(query),
         api.workItems(workItemsQuery),
@@ -1198,6 +1324,7 @@ async function main() {
       assert.equal(readBillingPayerNotes(notesPayload).length, 1);
       assert.equal(readBillingPaymentMatches(matchesPayload).length, 1);
       assert.equal(readBillingTransactions(transactionsPayload).length, 1);
+      assert.equal(readBillingPaymentReviewStatuses(reviewStatusesPayload).statuses.length, 2);
       assert.equal(readBillingInvoices(invoicesPayload).length, 1);
       assert.equal(Array.isArray(contractorsPayload), true);
       assert.equal(Array.isArray(workItemsPayload), true);
@@ -1209,6 +1336,7 @@ async function main() {
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/payers/14/notes") && url.includes("limit=100")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/ledger/matches") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/transactions") && url.includes("limit=1000")));
+  assert.ok(requestedUrls.some((url) => url.includes("/api/billing/payment-review-statuses") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/work-items") && url.includes("only_open=1") && url.includes("limit=100")));
 
   console.log("Billing regression tests passed.");
