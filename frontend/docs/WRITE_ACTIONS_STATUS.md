@@ -8,12 +8,12 @@ No new write action should be added until the existing paths below stay green in
 
 ## Summary
 
-- Current write surfaces: Work Items, invoice operator comments, CRM contractor notes, billing payer notes, billing payment operational review status, and billing work queue decisions.
+- Current write surfaces: Work Items, invoice operator comments, CRM contractor notes, billing payer notes, billing payment operational review status, billing work queue decisions, and billing contact draft/log events.
 - Every active write path is organization-scoped.
 - The frontend blocks writes without an active organization before calling the API.
 - The backend resolves write scope server-side and rejects missing/invalid organization scope.
 - UI success is only shown after backend confirmation.
-- No current write path should send data to external systems, KSeF, email, AI, or S3. Billing payer notes, payment operational status, and work queue decisions are internal-only and do not change financial state.
+- No current write path should send data to external systems, KSeF, email, AI, or S3. Billing payer notes, payment operational status, work queue decisions, and billing contact draft/log events are internal-only and do not change financial state or send messages.
 - Active Next write paths listed below have explicit payload allowlists.
 - Broader backend mutating endpoints are tracked separately in `docs/PAYLOAD_ALLOWLIST_AUDIT.md` before any future hardening.
 - Backend-only additive comments/notes for support, intake, tasks, and knowledge documents now also reject extra JSON fields, but they are not promoted as active Next write actions by this document.
@@ -37,6 +37,7 @@ No new write action should be added until the existing paths below stay green in
 | Rozliczenia | `POST /api/billing/payers/{payerId}/notes?organization_id=...` | `/rozliczenia/platnicy/{payerId}` | `{ "note_text": string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads payer by `billing_payer_id` and `organization_id`; no balance/charge/payment/match mutation | `test-billing.js`, `tests/test_billing_notes_http.py` |
 | Rozliczenia | `POST /api/billing/payments/{paymentId}/review-status?organization_id=...` | `/rozliczenia/wplaty/{paymentId}` | `{ "status": string, "note_text"?: string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads incoming transaction by `billing_transaction_id` and `organization_id`; no transaction/charge/match/ledger/balance mutation | `test-billing.js`, `tests/test_billing_payment_review_status_http.py` |
 | Rozliczenia | `POST /api/billing/work-queue/events?organization_id=...` | `/rozliczenia/sprawy` | `{ "issue_key": string, "issue_type": string, "target_type": string, "target_id"?: number, "action": "handled" | "snoozed", "note_text"?: string }` | Required by active organization context | Form loading; queue refreshes after backend response | `_resolve_write_scope`; service validates `payment` and `payer` targets by organization; no transaction/charge/match/ledger/balance mutation | `test-billing.js`, `tests/test_billing_work_queue_events_http.py` |
+| Rozliczenia | `POST /api/billing/contact-events?organization_id=...` | `/rozliczenia/platnicy/{payerId}` | `{ "payer_id": number, "related_payment_id"?: number, "related_issue_key"?: string, "channel": string, "contact_action": string, "message_text"?: string, "note_text"?: string }` | Required by active organization context | Form loading; payer detail refreshes after backend response | `_resolve_write_scope`; service validates payer and optional payment by organization; no transaction/charge/match/ledger/balance mutation and no external sending | `test-billing.js`, `tests/test_billing_contact_events_http.py` |
 
 ## Tenant Isolation Status
 
@@ -217,3 +218,15 @@ Current frontend and backend hardening rules:
 ## Rozliczenia
 
 `/rozliczenia` hosts `Centrum rozliczeń` product v1 and remains read-only. `/kasa` is only a legacy redirect. No billing write actions, payment matching, bank statement import, posting, export, or charge generation are exposed in Next.
+
+### Billing Contact Events
+
+- Frontend blocks contact submit without active organization.
+- Backend requires write scope and accepts only `payer_id`, optional `related_payment_id`, optional `related_issue_key`, `channel`, `contact_action`, optional `message_text`, and optional `note_text`.
+- Allowed channels are `sms`, `email`, `phone`, `in_person`, and `other`.
+- Allowed actions are `draft_prepared`, `contact_logged`, `no_answer`, `promised_payment`, and `needs_followup`.
+- `message_text` is limited to 2000 characters and `note_text` to 1000 characters.
+- The endpoint validates payer scope and optional payment scope by organization.
+- The endpoint must not change balances, charges, payment matches, transactions, ledger entries, imports, reminders, exports, or accounting state.
+- Audit details store metadata and text lengths, not the full message or note.
+- UI copy states that CASI Workspace does not send the message; the operator must copy and send it manually outside the app.

@@ -70,6 +70,7 @@ function buildIssueColumns(
         <Link className="module-link" href={row.href}>Otwórz</Link>
         {row.paymentHref ? <Link className="module-link" href={row.paymentHref}>Szczegół wpłaty</Link> : null}
         {row.payerHref ? <Link className="module-link" href={row.payerHref}>Szczegół płatnika</Link> : null}
+        {row.payerHref ? <Link className="module-link" href={row.payerHref}>Przygotuj kontakt</Link> : null}
       </span>
     ),
   },

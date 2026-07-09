@@ -148,6 +148,8 @@ Write endpoints exist in the backend but are not exposed as active Next write ac
 
 `POST /api/billing/work-queue/events` is the third promoted billing write path. It accepts only `{ issue_key, issue_type, target_type, target_id, action, note_text? }`, requires `organization_id`, writes an append-only record to `billing_work_queue_events`, and must not change payment, charge, match, ledger, balance, reminder, task manager, import, or accounting state. `Obs?u?ona` means work-list handled, not financially settled. `Od?o?ona` means postponed in the queue, not a reminder.
 
+`POST /api/billing/contact-events` is the fourth promoted billing write path. It accepts only `{ payer_id, related_payment_id?, related_issue_key?, channel, contact_action, message_text?, note_text? }`, requires `organization_id`, writes an append-only record to `billing_contact_events`, validates payer and optional payment scope, and must not send messages or change payment, charge, match, ledger, balance, reminder, import, or accounting state.
+
 ### Current Services And Repositories
 
 Current backend services/repositories:
@@ -910,3 +912,13 @@ A narrow read-only endpoint, `GET /api/billing/payment-review-statuses?organizat
 This screen is not a reminder workflow, allocation workflow, payment import, accounting export, or task creation feature. Those remain separate future stages with their own permissions and tenant-isolation reviews.
 
 The write v1 extension adds `billing_work_queue_events` and two append-only decisions: `handled` and `snoozed`. These decisions only organize the human work queue. They do not change the payment review status, payment allocation, charge, balance, payer ledger, reminder state, or task manager.
+
+### Stage 2h: Billing contact draft and log
+
+Status: implemented as an additive contact event foundation on payer detail.
+
+The route `/rozliczenia/platnicy/{payerId}` now includes `Kontakt rozliczeniowy`. It can store a prepared message draft or a contact log entry in `billing_contact_events`. The app explicitly does not send SMS or e-mail in this stage.
+
+This stage is not a reminder workflow, notification system, debt collection workflow, AI drafting tool, payment matching workflow, import flow, or accounting action. It only records operator-owned contact context under organization scope.
+
+Future stages may add a read-only contact log at `/rozliczenia/kontakty` or controlled notification sending, but only after a separate contract, permissions review, tenant-isolation test, and live verification.

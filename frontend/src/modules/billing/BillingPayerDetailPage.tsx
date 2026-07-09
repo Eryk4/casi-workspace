@@ -20,22 +20,36 @@ import { readContractors } from "../crm/crmModel";
 import { readWorkItems } from "../work-items/workItemsModel";
 import {
   BILLING_CANONICAL_ROUTE,
+  BILLING_CONTACT_ACTION_OPTIONS,
+  BILLING_CONTACT_CHANNEL_OPTIONS,
+  BILLING_CONTACT_DRAFT_TEMPLATES,
+  BILLING_CONTACT_EVENT_HELP_TEXT,
+  BILLING_CONTACT_MESSAGE_MAX_LENGTH,
+  BILLING_CONTACT_NOTE_MAX_LENGTH,
+  BILLING_CONTACT_NO_SEND_HELP_TEXT,
   BILLING_PAYER_NOTE_HELP_TEXT,
   BILLING_PAYER_NOTE_MAX_LENGTH,
   BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_TITLE,
   BILLING_READ_ONLY,
+  buildBillingContactEventRequest,
   buildBillingPayerNoteRequest,
   buildBillingPayerDetailView,
   canUseBillingOrganizationScope,
+  createBillingContactEventSubmitter,
   createBillingPayerNoteSubmitter,
   getBillingErrorState,
   readBillingBalances,
   readBillingCharges,
+  readBillingContactEvents,
   readBillingInvoices,
   readBillingPayerNotes,
   readBillingPayers,
   readBillingStudents,
+  type BillingContactAction,
+  type BillingContactChannel,
+  type BillingContactEventErrorState,
+  type BillingContactEventRow,
   type BillingBalanceExplanationRow,
   type BillingCenterSnapshot,
   type BillingErrorState,
@@ -159,6 +173,13 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
   const [noteSubmitting, setNoteSubmitting] = useState(false);
   const [noteErrorState, setNoteErrorState] = useState<BillingPayerNoteErrorState | null>(null);
   const [noteSuccessMessage, setNoteSuccessMessage] = useState<string | null>(null);
+  const [contactChannel, setContactChannel] = useState<BillingContactChannel>("sms");
+  const [contactAction, setContactAction] = useState<BillingContactAction>("draft_prepared");
+  const [contactMessageText, setContactMessageText] = useState("");
+  const [contactNoteText, setContactNoteText] = useState("");
+  const [contactSubmitting, setContactSubmitting] = useState(false);
+  const [contactErrorState, setContactErrorState] = useState<BillingContactEventErrorState | null>(null);
+  const [contactSuccessMessage, setContactSuccessMessage] = useState<string | null>(null);
 
   const loadPayer = useCallback(async () => {
     if (organizationStatus === "loading") {
@@ -185,6 +206,7 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
         studentsPayload,
         chargesPayload,
         payerNotesPayload,
+        contactEventsPayload,
         invoicesPayload,
         contractorsPayload,
         workItemsPayload,
@@ -194,6 +216,7 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
         api.billingStudents(query),
         api.billingCharges(withActiveOrganizationQuery(selectedOrganizationId, { limit: 200 })),
         api.billingPayerNotes(payerId, withActiveOrganizationQuery(selectedOrganizationId, { limit: 100 })),
+        api.billingContactEvents(withActiveOrganizationQuery(selectedOrganizationId, { payer_id: payerId, limit: 50 })),
         api.invoices(query),
         api.contractors(query),
         api.workItems(withActiveOrganizationQuery(selectedOrganizationId, { limit: 100, only_open: 1 })),
@@ -205,6 +228,7 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
         students: readBillingStudents(studentsPayload),
         charges: readBillingCharges(chargesPayload),
         payerNotes: readBillingPayerNotes(payerNotesPayload),
+        contactEvents: readBillingContactEvents(contactEventsPayload).events,
         invoices: readBillingInvoices(invoicesPayload),
         contractors: readContractors(contractorsPayload),
         workItems: readWorkItems(workItemsPayload),
@@ -231,6 +255,15 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
         submitNote: (payload) => api.addBillingPayerNote(payerId, payload.note_text, selectedOrganizationId),
       }),
     [loadPayer, payerId, selectedOrganizationId],
+  );
+  const contactSubmitter = useMemo(
+    () =>
+      createBillingContactEventSubmitter({
+        refreshDetail: loadPayer,
+        setSubmitting: setContactSubmitting,
+        submitContact: (payload) => api.addBillingContactEvent(payload, selectedOrganizationId),
+      }),
+    [loadPayer, selectedOrganizationId],
   );
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
   const notFound = status === "ready" && snapshot && !detail;
@@ -265,6 +298,45 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
       }
     },
     [noteSubmitter, noteText, selectedOrganizationId],
+  );
+
+  const handleContactSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setContactErrorState(null);
+      setContactSuccessMessage(null);
+
+      const validation = buildBillingContactEventRequest({
+        payerId,
+        channel: contactChannel,
+        contactAction,
+        messageText: contactMessageText,
+        noteText: contactNoteText,
+        organizationId: selectedOrganizationId,
+      });
+      const result = await contactSubmitter(validation);
+
+      if (result.status === "blocked") {
+        setContactErrorState({
+          status: "error",
+          title: "Nie można zapisać kontaktu",
+          description: result.message,
+        });
+        return;
+      }
+
+      if (result.status === "error") {
+        setContactErrorState(result.errorState);
+        return;
+      }
+
+      if (result.status === "success") {
+        setContactMessageText("");
+        setContactNoteText("");
+        setContactSuccessMessage("Kontakt rozliczeniowy został zapisany.");
+      }
+    },
+    [contactAction, contactChannel, contactMessageText, contactNoteText, contactSubmitter, payerId, selectedOrganizationId],
   );
 
   return (
@@ -369,6 +441,160 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
 
               <Card description="Wpłaty widoczne w obecnym read-only modelu. Jeśli brak listy transakcji, pokazujemy ostatnią znaną wpłatę." title="Widoczne wpłaty">
                 <Table columns={paymentColumns} data={detail.paymentRows} emptyMessage="Brak widocznych wpłat dla tego płatnika." getRowKey={(row) => row.id} />
+              </Card>
+
+              <Card
+                action={<Badge tone="success">Addytywne</Badge>}
+                description="Przygotuj treść kontaktu albo zapisz ślad rozmowy. Ten formularz nie wysyła SMS ani e-maila."
+                title="Kontakt rozliczeniowy"
+              >
+                <form className="invoice-comment-form" onSubmit={handleContactSubmit}>
+                  <div className="module-grid module-grid--two">
+                    <label className="invoice-comment-form__label" htmlFor="billing-contact-channel">
+                      Kanał kontaktu
+                      <select
+                        className="module-filter__select"
+                        disabled={contactSubmitting}
+                        id="billing-contact-channel"
+                        onChange={(event) => {
+                          setContactChannel(event.target.value as BillingContactChannel);
+                          setContactErrorState(null);
+                          setContactSuccessMessage(null);
+                        }}
+                        value={contactChannel}
+                      >
+                        {BILLING_CONTACT_CHANNEL_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="invoice-comment-form__label" htmlFor="billing-contact-action">
+                      Typ wpisu
+                      <select
+                        className="module-filter__select"
+                        disabled={contactSubmitting}
+                        id="billing-contact-action"
+                        onChange={(event) => {
+                          setContactAction(event.target.value as BillingContactAction);
+                          setContactErrorState(null);
+                          setContactSuccessMessage(null);
+                        }}
+                        value={contactAction}
+                      >
+                        {BILLING_CONTACT_ACTION_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="billing-inline-links" aria-label="Szablony treści kontaktu">
+                    {BILLING_CONTACT_DRAFT_TEMPLATES.map((template) => (
+                      <Button
+                        key={template.label}
+                        disabled={contactSubmitting}
+                        onClick={() => {
+                          setContactAction("draft_prepared");
+                          setContactMessageText(template.value);
+                          setContactErrorState(null);
+                          setContactSuccessMessage(null);
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                      >
+                        {template.label}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <label className="invoice-comment-form__label" htmlFor="billing-contact-message">
+                    Treść do skopiowania
+                  </label>
+                  <textarea
+                    className="invoice-comment-form__textarea"
+                    disabled={contactSubmitting}
+                    id="billing-contact-message"
+                    maxLength={BILLING_CONTACT_MESSAGE_MAX_LENGTH}
+                    onChange={(event) => {
+                      setContactMessageText(event.target.value);
+                      setContactErrorState(null);
+                      setContactSuccessMessage(null);
+                    }}
+                    placeholder="Przygotuj krótką treść SMS lub e-maila do samodzielnego wysłania."
+                    rows={4}
+                    value={contactMessageText}
+                  />
+                  <div className="invoice-comment-form__meta">
+                    <span>{BILLING_CONTACT_NO_SEND_HELP_TEXT}</span>
+                    <span>{contactMessageText.trim().length}/{BILLING_CONTACT_MESSAGE_MAX_LENGTH}</span>
+                  </div>
+
+                  <label className="invoice-comment-form__label" htmlFor="billing-contact-note">
+                    Notatka wewnętrzna
+                  </label>
+                  <textarea
+                    className="invoice-comment-form__textarea"
+                    disabled={contactSubmitting}
+                    id="billing-contact-note"
+                    maxLength={BILLING_CONTACT_NOTE_MAX_LENGTH}
+                    onChange={(event) => {
+                      setContactNoteText(event.target.value);
+                      setContactErrorState(null);
+                      setContactSuccessMessage(null);
+                    }}
+                    placeholder="Np. Telefon bez odpowiedzi albo płatnik obiecał wpłatę do piątku."
+                    rows={3}
+                    value={contactNoteText}
+                  />
+                  <div className="invoice-comment-form__meta">
+                    <span>{BILLING_CONTACT_EVENT_HELP_TEXT}</span>
+                    <span>{contactNoteText.trim().length}/{BILLING_CONTACT_NOTE_MAX_LENGTH}</span>
+                  </div>
+
+                  {contactErrorState ? (
+                    <div className="invoice-comment-form__message invoice-comment-form__message--error" role="alert">
+                      <strong>{contactErrorState.title}</strong>
+                      <span>{contactErrorState.description}</span>
+                    </div>
+                  ) : null}
+                  {contactSuccessMessage ? (
+                    <div className="invoice-comment-form__message invoice-comment-form__message--success" role="status">
+                      {contactSuccessMessage}
+                    </div>
+                  ) : null}
+                  <Button disabled={contactSubmitting || (!contactMessageText.trim() && !contactNoteText.trim())} size="sm" type="submit">
+                    {contactSubmitting ? "Zapisywanie..." : "Zapisz kontakt"}
+                  </Button>
+                </form>
+
+                <div className="module-readiness" aria-label="Historia kontaktu rozliczeniowego">
+                  {detail.contactEventRows.length ? (
+                    detail.contactEventRows.map((contact: BillingContactEventRow) => (
+                      <div className="module-readiness__item" key={contact.id}>
+                        <MessageSquareText aria-hidden="true" size={17} />
+                        <div>
+                          <strong>{contact.actionLabel} · {contact.channelLabel}</strong>
+                          <span>{contact.dateLabel} · {contact.authorLabel} · {contact.contextLabel}</span>
+                          {contact.messageText ? <p>{contact.messageText}</p> : null}
+                          {contact.noteText ? <p>{contact.noteText}</p> : null}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="module-readiness__item">
+                      <MessageSquareText aria-hidden="true" size={17} />
+                      <div>
+                        <strong>Brak zapisanych kontaktów</strong>
+                        <span>Możesz przygotować treść lub zapisać ślad kontaktu bez zmiany rozliczeń.</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </Card>
 
               <Card

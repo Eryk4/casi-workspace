@@ -61,6 +61,7 @@ CRITICAL_TABLES = {
     "billing_transactions",
     "billing_payment_review_events",
     "billing_work_queue_events",
+    "billing_contact_events",
     "billing_payment_matches",
     "billing_payer_ledger_entries",
     "billing_notes",

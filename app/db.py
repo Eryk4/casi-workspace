@@ -1059,6 +1059,33 @@ CREATE INDEX IF NOT EXISTS idx_billing_work_queue_events_issue
 CREATE INDEX IF NOT EXISTS idx_billing_work_queue_events_target
     ON billing_work_queue_events(organization_id, target_type, target_id);
 
+CREATE TABLE IF NOT EXISTS billing_contact_events (
+    billing_contact_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    billing_payer_id INTEGER NOT NULL,
+    related_payment_id INTEGER,
+    related_issue_key TEXT,
+    channel TEXT NOT NULL,
+    contact_action TEXT NOT NULL,
+    message_text TEXT,
+    note_text TEXT,
+    created_by_user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    FOREIGN KEY (billing_payer_id) REFERENCES billing_payers(billing_payer_id) ON DELETE CASCADE,
+    FOREIGN KEY (related_payment_id) REFERENCES billing_transactions(billing_transaction_id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_billing_contact_events_org
+    ON billing_contact_events(organization_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_contact_events_payer
+    ON billing_contact_events(organization_id, billing_payer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_contact_events_payment
+    ON billing_contact_events(organization_id, related_payment_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_contact_events_issue
+    ON billing_contact_events(organization_id, related_issue_key, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_id INTEGER NOT NULL,
@@ -2454,6 +2481,37 @@ CREATE INDEX IF NOT EXISTS idx_billing_work_queue_events_issue
 CREATE INDEX IF NOT EXISTS idx_billing_work_queue_events_target
     ON billing_work_queue_events(organization_id, target_type, target_id);
 
+CREATE TABLE IF NOT EXISTS billing_contact_events (
+    billing_contact_event_id BIGSERIAL PRIMARY KEY,
+    organization_id BIGINT NOT NULL,
+    billing_payer_id BIGINT NOT NULL,
+    related_payment_id BIGINT,
+    related_issue_key TEXT,
+    channel TEXT NOT NULL,
+    contact_action TEXT NOT NULL,
+    message_text TEXT,
+    note_text TEXT,
+    created_by_user_id BIGINT NOT NULL,
+    created_at TEXT NOT NULL,
+    CONSTRAINT fk_billing_contact_events_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id),
+    CONSTRAINT fk_billing_contact_events_payer
+        FOREIGN KEY (billing_payer_id) REFERENCES billing_payers(billing_payer_id) ON DELETE CASCADE,
+    CONSTRAINT fk_billing_contact_events_payment
+        FOREIGN KEY (related_payment_id) REFERENCES billing_transactions(billing_transaction_id) ON DELETE SET NULL,
+    CONSTRAINT fk_billing_contact_events_user
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_billing_contact_events_org
+    ON billing_contact_events(organization_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_contact_events_payer
+    ON billing_contact_events(organization_id, billing_payer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_contact_events_payment
+    ON billing_contact_events(organization_id, related_payment_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_contact_events_issue
+    ON billing_contact_events(organization_id, related_issue_key, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id BIGSERIAL PRIMARY KEY,
     invoice_id BIGINT NOT NULL,
@@ -2760,6 +2818,7 @@ PRAGMA foreign_keys = OFF;
   DROP TABLE IF EXISTS user_module_inbox_state;
   DROP TABLE IF EXISTS billing_payer_charge_state;
 DROP TABLE IF EXISTS billing_payer_ledger_entries;
+DROP TABLE IF EXISTS billing_contact_events;
 DROP TABLE IF EXISTS billing_work_queue_events;
 DROP TABLE IF EXISTS billing_payment_review_events;
   DROP TABLE IF EXISTS billing_payment_matches;
@@ -2819,6 +2878,7 @@ POSTGRES_RESET_SCRIPT = """
   DROP TABLE IF EXISTS user_module_inbox_state CASCADE;
   DROP TABLE IF EXISTS billing_payer_charge_state CASCADE;
 DROP TABLE IF EXISTS billing_payer_ledger_entries CASCADE;
+DROP TABLE IF EXISTS billing_contact_events CASCADE;
 DROP TABLE IF EXISTS billing_work_queue_events CASCADE;
 DROP TABLE IF EXISTS billing_payment_review_events CASCADE;
   DROP TABLE IF EXISTS billing_payment_matches CASCADE;

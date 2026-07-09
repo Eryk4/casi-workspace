@@ -542,6 +542,48 @@ export type BillingPayerNoteRow = {
   noteText: string;
 };
 
+export type BillingContactChannel = "sms" | "email" | "phone" | "in_person" | "other";
+
+export type BillingContactAction =
+  | "draft_prepared"
+  | "contact_logged"
+  | "no_answer"
+  | "promised_payment"
+  | "needs_followup";
+
+export type BillingContactEventRecord = {
+  billing_contact_event_id: number;
+  organization_id?: number;
+  billing_payer_id: number;
+  payer_display_name?: string | null;
+  related_payment_id?: number | null;
+  related_issue_key?: string | null;
+  channel: BillingContactChannel;
+  contact_action: BillingContactAction;
+  message_text?: string | null;
+  note_text?: string | null;
+  created_by_user_id?: number;
+  created_by_user_name?: string | null;
+  created_by_user_role?: string | null;
+  created_at?: string | null;
+};
+
+export type BillingContactEventsResponse = {
+  organization_id?: number;
+  events: BillingContactEventRecord[];
+};
+
+export type BillingContactEventRow = {
+  id: string;
+  channelLabel: string;
+  actionLabel: string;
+  authorLabel: string;
+  dateLabel: string;
+  messageText?: string;
+  noteText?: string;
+  contextLabel: string;
+};
+
 export type BillingPayerRelatedInvoiceRow = {
   id: string;
   href: string;
@@ -570,6 +612,7 @@ export type BillingPayerDetailView = {
   chargeRows: BillingPayerChargeRow[];
   paymentRows: BillingPayerPaymentRow[];
   noteRows: BillingPayerNoteRow[];
+  contactEventRows: BillingContactEventRow[];
   invoiceRows: BillingPayerRelatedInvoiceRow[];
   workItemRows: BillingRelatedWorkItemRow[];
   contextItems: Array<{ label: string; value: string }>;
@@ -584,6 +627,7 @@ export type BillingCenterSnapshot = {
   transactions?: BillingTransactionRecord[];
   paymentReviewStatuses?: BillingPaymentReviewStatusRecord[];
   workQueueEvents?: BillingWorkQueueEventRecord[];
+  contactEvents?: BillingContactEventRecord[];
   payerNotes?: BillingPayerNoteRecord[];
   invoices: InvoiceRecord[];
   contractors: ContractorRecord[];
@@ -624,6 +668,56 @@ export type BillingPayerNoteSubmitterDeps = {
   refreshDetail: () => Promise<void>;
   setSubmitting: (isSubmitting: boolean) => void;
   submitNote: (payload: { note_text: string }) => Promise<unknown>;
+};
+
+export type BillingContactEventValidationResult =
+  | {
+      ok: true;
+      payload: {
+        payer_id: number;
+        related_payment_id?: number;
+        related_issue_key?: string;
+        channel: BillingContactChannel;
+        contact_action: BillingContactAction;
+        message_text?: string;
+        note_text?: string;
+      };
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
+export type BillingContactEventErrorState = BillingErrorState;
+
+export type BillingContactEventSubmitResult =
+  | {
+      status: "success";
+    }
+  | {
+      status: "blocked";
+      message: string;
+    }
+  | {
+      status: "ignored";
+    }
+  | {
+      status: "error";
+      errorState: BillingContactEventErrorState;
+    };
+
+export type BillingContactEventSubmitterDeps = {
+  refreshDetail: () => Promise<void>;
+  setSubmitting: (isSubmitting: boolean) => void;
+  submitContact: (payload: {
+    payer_id: number;
+    related_payment_id?: number;
+    related_issue_key?: string;
+    channel: BillingContactChannel;
+    contact_action: BillingContactAction;
+    message_text?: string;
+    note_text?: string;
+  }) => Promise<unknown>;
 };
 
 export type BillingPaymentReviewStatusCode =
@@ -815,6 +909,44 @@ export const BILLING_WORK_QUEUE_EVENTS_ENDPOINT = "/billing/work-queue/events";
 export const BILLING_WORK_QUEUE_DECISION_MAX_NOTE_LENGTH = 1000;
 export const BILLING_WORK_QUEUE_DECISION_HELP_TEXT =
   "Ta decyzja nie zmienia salda, wpłat ani naliczeń. Służy tylko do uporządkowania pracy nad rozliczeniami.";
+export const BILLING_CONTACT_EVENTS_ENDPOINT = "/billing/contact-events";
+export const BILLING_CONTACT_MESSAGE_MAX_LENGTH = 2000;
+export const BILLING_CONTACT_NOTE_MAX_LENGTH = 1000;
+export const BILLING_CONTACT_NO_SEND_HELP_TEXT =
+  "CASI Workspace nie wysyła tej wiadomości. Skopiuj treść i wyślij ją samodzielnie wybranym kanałem.";
+export const BILLING_CONTACT_EVENT_HELP_TEXT =
+  "Kontakt rozliczeniowy zapisuje tylko roboczą treść albo ślad kontaktu. Nie zmienia salda, naliczeń, wpłat ani przypisań.";
+export const BILLING_CONTACT_CHANNEL_OPTIONS: Array<{ value: BillingContactChannel; label: string }> = [
+  { value: "sms", label: "SMS" },
+  { value: "email", label: "E-mail" },
+  { value: "phone", label: "Telefon" },
+  { value: "in_person", label: "Osobiście" },
+  { value: "other", label: "Inny kanał" },
+];
+export const BILLING_CONTACT_ACTION_OPTIONS: Array<{ value: BillingContactAction; label: string }> = [
+  { value: "draft_prepared", label: "Przygotowano treść" },
+  { value: "contact_logged", label: "Zapisano kontakt" },
+  { value: "no_answer", label: "Brak odpowiedzi" },
+  { value: "promised_payment", label: "Obietnica wpłaty" },
+  { value: "needs_followup", label: "Wymaga ponowienia" },
+];
+export const BILLING_CONTACT_DRAFT_TEMPLATES = [
+  {
+    label: "Delikatne przypomnienie",
+    value:
+      "Dzień dobry, przypominamy o sprawdzeniu rozliczenia. Jeśli wpłata została już wykonana, prosimy o krótkie potwierdzenie.",
+  },
+  {
+    label: "Wyjaśnienie wpłaty",
+    value:
+      "Dzień dobry, widzimy wpłatę, która wymaga doprecyzowania. Prosimy o informację, którego okresu lub zajęć dotyczy.",
+  },
+  {
+    label: "Potwierdzenie nadpłaty",
+    value:
+      "Dzień dobry, w rozliczeniu widoczna jest nadpłata. Prosimy o potwierdzenie, czy zostawić ją na kolejny okres.",
+  },
+];
 export const BILLING_CANONICAL_ROUTE = "/rozliczenia";
 export const BILLING_LEGACY_ROUTE = "/kasa";
 export const BILLING_PAYER_DETAIL_ROUTE = `${BILLING_CANONICAL_ROUTE}/platnicy`;
@@ -1159,6 +1291,59 @@ function isBillingPaymentReviewStatusCode(value: unknown): value is BillingPayme
 
 function isBillingWorkQueueAction(value: unknown): value is BillingWorkQueueEventAction {
   return value === "handled" || value === "snoozed";
+}
+
+function isBillingContactChannel(value: unknown): value is BillingContactChannel {
+  return BILLING_CONTACT_CHANNEL_OPTIONS.some((option) => option.value === value);
+}
+
+function isBillingContactAction(value: unknown): value is BillingContactAction {
+  return BILLING_CONTACT_ACTION_OPTIONS.some((option) => option.value === value);
+}
+
+function readBillingContactEventRecord(payload: unknown): BillingContactEventRecord {
+  if (!isRecord(payload)) {
+    throw new ApiContractError(BILLING_CONTACT_EVENTS_ENDPOINT, payload);
+  }
+  const eventId = readNumber(payload.billing_contact_event_id);
+  const payerId = readNumber(payload.billing_payer_id);
+  const channel = readOptionalString(payload.channel);
+  const action = readOptionalString(payload.contact_action);
+  if (!eventId || !payerId || !isBillingContactChannel(channel) || !isBillingContactAction(action)) {
+    throw new ApiContractError(BILLING_CONTACT_EVENTS_ENDPOINT, payload);
+  }
+  return {
+    billing_contact_event_id: eventId,
+    organization_id: readNumber(payload.organization_id),
+    billing_payer_id: payerId,
+    payer_display_name: safeBillingText(payload.payer_display_name, "") || null,
+    related_payment_id: readNumber(payload.related_payment_id) ?? null,
+    related_issue_key: safeBillingText(payload.related_issue_key, "") || null,
+    channel,
+    contact_action: action,
+    message_text:
+      readOptionalString(payload.message_text) === undefined
+        ? null
+        : safeBillingText(payload.message_text, "Ukryto techniczną lub wrażliwą treść wiadomości."),
+    note_text:
+      readOptionalString(payload.note_text) === undefined
+        ? null
+        : safeBillingText(payload.note_text, "Ukryto techniczną lub wrażliwą treść notatki."),
+    created_by_user_id: readNumber(payload.created_by_user_id),
+    created_by_user_name: safeBillingText(payload.created_by_user_name, "") || null,
+    created_by_user_role: safeBillingText(payload.created_by_user_role, "") || null,
+    created_at: readOptionalString(payload.created_at) ?? null,
+  };
+}
+
+export function readBillingContactEvents(payload: unknown): BillingContactEventsResponse {
+  if (!isRecord(payload) || !Array.isArray(payload.events)) {
+    throw new ApiContractError(BILLING_CONTACT_EVENTS_ENDPOINT, payload);
+  }
+  return {
+    organization_id: payload.organization_id === undefined || payload.organization_id === null ? undefined : readNumber(payload.organization_id),
+    events: payload.events.map(readBillingContactEventRecord),
+  };
 }
 
 function isBillingWorkQueueTargetType(value: unknown): value is BillingWorkQueueTargetType {
@@ -3473,6 +3658,39 @@ function buildPayerNoteRows(notes: BillingPayerNoteRecord[], payerId: number): B
     }));
 }
 
+export function getBillingContactChannelLabel(channel: BillingContactChannel): string {
+  return BILLING_CONTACT_CHANNEL_OPTIONS.find((option) => option.value === channel)?.label ?? "Inny kanał";
+}
+
+export function getBillingContactActionLabel(action: BillingContactAction): string {
+  return BILLING_CONTACT_ACTION_OPTIONS.find((option) => option.value === action)?.label ?? "Kontakt";
+}
+
+function buildBillingContactEventRows(events: BillingContactEventRecord[], payerId: number): BillingContactEventRow[] {
+  return events
+    .filter((event) => event.billing_payer_id === payerId)
+    .slice()
+    .sort(
+      (a, b) =>
+        String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")) ||
+        b.billing_contact_event_id - a.billing_contact_event_id,
+    )
+    .map((event) => ({
+      id: String(event.billing_contact_event_id),
+      channelLabel: getBillingContactChannelLabel(event.channel),
+      actionLabel: getBillingContactActionLabel(event.contact_action),
+      authorLabel: safeBillingText(event.created_by_user_name, event.created_by_user_id ? `Użytkownik #${event.created_by_user_id}` : "Operator"),
+      dateLabel: formatDateLabel(event.created_at, "Brak daty"),
+      messageText: event.message_text ? safeBillingText(event.message_text, "Ukryto techniczną lub wrażliwą treść wiadomości.") : undefined,
+      noteText: event.note_text ? safeBillingText(event.note_text, "Ukryto techniczną lub wrażliwą treść notatki.") : undefined,
+      contextLabel: event.related_payment_id
+        ? `Powiązane z wpłatą #${event.related_payment_id}`
+        : event.related_issue_key
+          ? "Powiązane ze sprawą rozliczeniową"
+          : "Kontakt zapisany przy płatniku",
+    }));
+}
+
 function buildPayerRelatedInvoiceRows(
   payer: BillingPayerRecord,
   students: BillingStudentRecord[],
@@ -3587,6 +3805,7 @@ export function buildBillingPayerDetailView(snapshot: BillingCenterSnapshot, pay
     chargeRows: buildPayerChargeRows(payerCharges),
     paymentRows: buildPayerPaymentRows(payer, payerBalance),
     noteRows: buildPayerNoteRows(snapshot.payerNotes ?? [], payer.billing_payer_id),
+    contactEventRows: buildBillingContactEventRows(snapshot.contactEvents ?? [], payer.billing_payer_id),
     invoiceRows: buildPayerRelatedInvoiceRows(payer, payerStudents, snapshot.invoices),
     workItemRows: buildPayerRelatedWorkItemRows(payer, payerStudents, snapshot.workItems),
     contextItems: [
@@ -3694,6 +3913,116 @@ export function buildBillingPayerNoteRequest(
     payload: {
       note_text: trimmedNote,
     },
+  };
+}
+
+export function buildBillingContactEventRequest({
+  payerId,
+  channel,
+  contactAction,
+  messageText,
+  noteText,
+  organizationId,
+  relatedPaymentId,
+  relatedIssueKey,
+}: {
+  payerId: number;
+  channel: BillingContactChannel;
+  contactAction: BillingContactAction;
+  messageText: string;
+  noteText: string;
+  organizationId: string | number | null | undefined;
+  relatedPaymentId?: number;
+  relatedIssueKey?: string;
+}): BillingContactEventValidationResult {
+  if (!canUseBillingOrganizationScope(organizationId)) {
+    return {
+      ok: false,
+      message: BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_TITLE,
+    };
+  }
+
+  if (!payerId || !Number.isFinite(payerId)) {
+    return {
+      ok: false,
+      message: "Nie można zapisać kontaktu bez płatnika.",
+    };
+  }
+
+  if (!isBillingContactChannel(channel)) {
+    return {
+      ok: false,
+      message: "Wybierz poprawny kanał kontaktu.",
+    };
+  }
+
+  if (!isBillingContactAction(contactAction)) {
+    return {
+      ok: false,
+      message: "Wybierz poprawny typ wpisu kontaktowego.",
+    };
+  }
+
+  const trimmedMessage = messageText.trim();
+  const trimmedNote = noteText.trim();
+  if (!trimmedMessage && !trimmedNote) {
+    return {
+      ok: false,
+      message: "Dodaj treść roboczą albo krótką notatkę z kontaktu.",
+    };
+  }
+
+  if (contactAction === "draft_prepared" && !trimmedMessage) {
+    return {
+      ok: false,
+      message: "Przygotowanie treści wymaga wiadomości do skopiowania.",
+    };
+  }
+
+  if (trimmedMessage.length > BILLING_CONTACT_MESSAGE_MAX_LENGTH) {
+    return {
+      ok: false,
+      message: `Treść wiadomości może mieć maksymalnie ${BILLING_CONTACT_MESSAGE_MAX_LENGTH} znaków.`,
+    };
+  }
+
+  if (trimmedNote.length > BILLING_CONTACT_NOTE_MAX_LENGTH) {
+    return {
+      ok: false,
+      message: `Notatka kontaktowa może mieć maksymalnie ${BILLING_CONTACT_NOTE_MAX_LENGTH} znaków.`,
+    };
+  }
+
+  const payload: {
+    payer_id: number;
+    related_payment_id?: number;
+    related_issue_key?: string;
+    channel: BillingContactChannel;
+    contact_action: BillingContactAction;
+    message_text?: string;
+    note_text?: string;
+  } = {
+    payer_id: payerId,
+    channel,
+    contact_action: contactAction,
+  };
+  if (relatedPaymentId) {
+    payload.related_payment_id = relatedPaymentId;
+  }
+  const trimmedIssueKey = relatedIssueKey?.trim();
+  if (trimmedIssueKey) {
+    payload.related_issue_key = trimmedIssueKey;
+  }
+  if (trimmedMessage) {
+    payload.message_text = trimmedMessage;
+  }
+  if (trimmedNote) {
+    payload.note_text = trimmedNote;
+  }
+
+  return {
+    ok: true,
+    payload,
   };
 }
 
@@ -3897,6 +4226,66 @@ export function getBillingPayerNoteErrorState(error: unknown): BillingPayerNoteE
   };
 }
 
+export function getBillingContactEventErrorState(error: unknown): BillingContactEventErrorState {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return {
+        status: "unauthenticated",
+        title: "Sesja wygasła",
+        description: "Zaloguj się ponownie, aby zapisać kontakt rozliczeniowy.",
+      };
+    }
+    if (error.status === 403) {
+      return {
+        status: "forbidden",
+        title: "Brak uprawnień do kontaktu",
+        description: "Twoje konto nie ma uprawnień do zapisywania kontaktów rozliczeniowych.",
+      };
+    }
+    if (error.status === 404) {
+      return {
+        status: "error",
+        title: "Nie znaleziono płatnika",
+        description: "Kontakt nie został zapisany, bo backend nie znalazł płatnika albo wpłaty w wybranej organizacji.",
+      };
+    }
+    if (error.status >= 500) {
+      return {
+        status: "server-error",
+        title: "Backend nie zapisał kontaktu",
+        description: "Wystąpił błąd serwera. Kontakt nie jest traktowany jako zapisany bez potwierdzenia backendu.",
+      };
+    }
+    return {
+      status: "error",
+      title: `Błąd API (${error.status})`,
+      description: error.message,
+    };
+  }
+
+  if (error instanceof ApiContractError) {
+    return {
+      status: "error",
+      title: "Niepoprawny format kontaktu",
+      description: "Backend odpowiedział, ale zapisany kontakt nie pasuje do oczekiwanego kontraktu.",
+    };
+  }
+
+  if (error instanceof TypeError) {
+    return {
+      status: "error",
+      title: "Problem z połączeniem z API",
+      description: "Nie udało się połączyć z backendem. Kontakt nie został potwierdzony.",
+    };
+  }
+
+  return {
+    status: "error",
+    title: "Nie udało się zapisać kontaktu",
+    description: error instanceof Error ? error.message : "Wystąpił nieznany błąd zapisu kontaktu rozliczeniowego.",
+  };
+}
+
 export function createBillingPayerNoteSubmitter(deps: BillingPayerNoteSubmitterDeps) {
   let inFlight = false;
 
@@ -3925,6 +4314,42 @@ export function createBillingPayerNoteSubmitter(deps: BillingPayerNoteSubmitterD
       return {
         status: "error",
         errorState: getBillingPayerNoteErrorState(error),
+      };
+    } finally {
+      inFlight = false;
+      deps.setSubmitting(false);
+    }
+  };
+}
+
+export function createBillingContactEventSubmitter(deps: BillingContactEventSubmitterDeps) {
+  let inFlight = false;
+
+  return async function submitBillingContactEvent(
+    validation: BillingContactEventValidationResult,
+  ): Promise<BillingContactEventSubmitResult> {
+    if (!validation.ok) {
+      return {
+        status: "blocked",
+        message: validation.message,
+      };
+    }
+
+    if (inFlight) {
+      return { status: "ignored" };
+    }
+
+    inFlight = true;
+    deps.setSubmitting(true);
+
+    try {
+      await deps.submitContact(validation.payload);
+      await deps.refreshDetail();
+      return { status: "success" };
+    } catch (error) {
+      return {
+        status: "error",
+        errorState: getBillingContactEventErrorState(error),
       };
     } finally {
       inFlight = false;

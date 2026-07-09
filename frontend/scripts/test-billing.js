@@ -38,6 +38,14 @@ const { withActiveOrganizationQuery } = require("../src/context/organizationCont
 const {
   BILLING_BALANCES_ENDPOINT,
   BILLING_CANONICAL_ROUTE,
+  BILLING_CONTACT_ACTION_OPTIONS,
+  BILLING_CONTACT_CHANNEL_OPTIONS,
+  BILLING_CONTACT_DRAFT_TEMPLATES,
+  BILLING_CONTACT_EVENT_HELP_TEXT,
+  BILLING_CONTACT_EVENTS_ENDPOINT,
+  BILLING_CONTACT_MESSAGE_MAX_LENGTH,
+  BILLING_CONTACT_NO_SEND_HELP_TEXT,
+  BILLING_CONTACT_NOTE_MAX_LENGTH,
   BILLING_DEBTS_ROUTE,
   BILLING_FORBIDDEN_WRITE_ACTIONS,
   BILLING_LEGACY_ROUTE,
@@ -61,10 +69,14 @@ const {
   BILLING_WORK_QUEUE_DECISION_MAX_NOTE_LENGTH,
   BILLING_WORK_QUEUE_EVENTS_ENDPOINT,
   billingPaymentReviewStatusEndpoint,
+  buildBillingContactEventRequest,
   buildBillingPaymentReviewStatusRequest,
   buildBillingWorkQueueDecisionRequest,
+  createBillingContactEventSubmitter,
   createBillingPaymentReviewStatusSubmitter,
+  getBillingContactEventErrorState,
   getBillingPaymentReviewStatusErrorState,
+  readBillingContactEvents,
   readBillingPaymentReviewStatus,
   BILLING_CHARGES_ENDPOINT,
   BILLING_PAYERS_ENDPOINT,
@@ -376,6 +388,43 @@ const payerNotes = readBillingPayerNotes([
 assert.equal(payerNotes.length, 2);
 assert.equal(payerNotes[0].note_text, "Rodzic potwierdził wyjaśnienie salda.");
 assert.equal(payerNotes[1].note_text, "Ukryto techniczną lub wrażliwą treść notatki.");
+const contactEventsPayload = {
+  organization_id: 42,
+  events: [
+    {
+      billing_contact_event_id: 901,
+      organization_id: 42,
+      billing_payer_id: 14,
+      payer_display_name: "Rodzina Kowalskich",
+      related_payment_id: 61,
+      related_issue_key: "payment:61:payer-only",
+      channel: "sms",
+      contact_action: "draft_prepared",
+      message_text: "Dzień dobry, prosimy o sprawdzenie rozliczenia.",
+      note_text: "Treść przygotowana do samodzielnego wysłania.",
+      created_by_user_id: 2,
+      created_by_user_name: "Operator",
+      created_at: "2099-05-10T10:00:00",
+    },
+    {
+      billing_contact_event_id: 902,
+      organization_id: 42,
+      billing_payer_id: 14,
+      channel: "phone",
+      contact_action: "contact_logged",
+      message_text: "C:\\Users\\secret\\message.txt",
+      note_text: "Rozmowa telefoniczna bez zmiany salda.",
+      created_by_user_id: 2,
+      created_by_user_name: "Operator",
+      created_at: "2099-05-11T10:00:00",
+    },
+  ],
+};
+const contactEvents = readBillingContactEvents(contactEventsPayload);
+assert.equal(contactEvents.organization_id, 42);
+assert.equal(contactEvents.events.length, 2);
+assert.equal(contactEvents.events[0].channel, "sms");
+assert.equal(contactEvents.events[1].message_text, "Ukryto techniczną lub wrażliwą treść wiadomości.");
 
 const rows = buildBillingBalanceRows(balances);
 assert.equal(rows[0].payerLabel, "Rodzina Kowalskich");
@@ -526,6 +575,7 @@ const snapshot = {
       created_at: "2099-05-08T10:00:00",
     },
   ]),
+  contactEvents: contactEvents.events.map((event) => ({ ...event, billing_payer_id: 1 })),
   invoices: readBillingInvoices([
     makeInvoice({ invoice_id: 18, contractor_id: 14, invoice_number: "FV/CASI/18", duplicate_type: "podejrzenie" }),
     makeInvoice({ invoice_id: 19, contractor_id: 8, invoice_number: "FV/MR/19", status: "zaakceptowana", duplicate_type: "brak", flag_reason: null }),
@@ -924,6 +974,12 @@ assert.equal(payerDetail.paymentRows[0].amountLabel, "300,00 PLN");
 assert.equal(payerDetail.noteRows.length, 1);
 assert.equal(payerDetail.noteRows[0].typeLabel, "Notatka operatora");
 assert.equal(payerDetail.noteRows[0].noteText, "Ustalono rozmowę o saldzie po zajęciach.");
+assert.equal(payerDetail.contactEventRows.length, 2);
+assert.equal(payerDetail.contactEventRows[0].actionLabel, "Zapisano kontakt");
+assert.equal(payerDetail.contactEventRows[0].channelLabel, "Telefon");
+assert.equal(payerDetail.contactEventRows[0].messageText, "Ukryto techniczną lub wrażliwą treść wiadomości.");
+assert.equal(payerDetail.contactEventRows[1].actionLabel, "Przygotowano treść");
+assert.match(payerDetail.contactEventRows[1].contextLabel, /wpłatą #61/);
 assert.equal(payerDetail.invoiceRows[0].href, "/faktury/18");
 assert.equal(payerDetail.workItemRows[0].href, "/work-items/44");
 assert.equal(buildBillingPayerDetailView(snapshot, 999), null);
@@ -959,6 +1015,16 @@ assert.equal(billingPayerNoteEndpoint(14), "/billing/payers/14/notes");
 assert.match(BILLING_PAYER_NOTE_HELP_TEXT, /nie zmienia salda/i);
 assert.match(BILLING_PAYER_NOTE_HELP_TEXT, /przypisań wpłat/i);
 assert.doesNotMatch(BILLING_PAYER_NOTE_HELP_TEXT, /endpoint|payload|debug|demo/i);
+assert.equal(BILLING_CONTACT_EVENTS_ENDPOINT, "/billing/contact-events");
+assert.equal(BILLING_CONTACT_MESSAGE_MAX_LENGTH, 2000);
+assert.equal(BILLING_CONTACT_NOTE_MAX_LENGTH, 1000);
+assert.equal(BILLING_CONTACT_CHANNEL_OPTIONS.some((option) => option.value === "sms" && option.label === "SMS"), true);
+assert.equal(BILLING_CONTACT_ACTION_OPTIONS.some((option) => option.value === "draft_prepared" && option.label === "Przygotowano treść"), true);
+assert.equal(BILLING_CONTACT_DRAFT_TEMPLATES.length >= 3, true);
+assert.match(BILLING_CONTACT_NO_SEND_HELP_TEXT, /nie wysyła tej wiadomości/i);
+assert.match(BILLING_CONTACT_NO_SEND_HELP_TEXT, /samodzielnie/i);
+assert.match(BILLING_CONTACT_EVENT_HELP_TEXT, /Nie zmienia salda/i);
+assert.doesNotMatch(BILLING_CONTACT_EVENT_HELP_TEXT, /endpoint|payload|debug|demo|mutation/i);
 assert.deepEqual(BILLING_FORBIDDEN_WRITE_ACTIONS, [
   "Dodaj płatność",
   "Edytuj płatność",
@@ -993,8 +1059,14 @@ assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "sprawy", 
 const workQueuePageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingWorkQueuePage.tsx"), "utf8");
 assert.match(workQueuePageSource, /Oznacz jako obsłużoną/);
 assert.match(workQueuePageSource, /Odłóż/);
+assert.match(workQueuePageSource, /Przygotuj kontakt/);
 assert.match(workQueuePageSource, /BILLING_WORK_QUEUE_DECISION_HELP_TEXT/);
 assert.doesNotMatch(workQueuePageSource, /zaksięguj|rozlicz nadpłatę|dopasuj|wyślij przypomnienie/i);
+const payerDetailPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingPayerDetailPage.tsx"), "utf8");
+assert.match(payerDetailPageSource, /Kontakt rozliczeniowy/);
+assert.match(payerDetailPageSource, /Zapisz kontakt/);
+assert.match(payerDetailPageSource, /BILLING_CONTACT_NO_SEND_HELP_TEXT/);
+assert.doesNotMatch(payerDetailPageSource, /Wyślij SMS|Wyślij e-mail|Wyślij przypomnienie|Dodaj płatność|Dopasuj wpłatę/i);
 assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8"), /Zaległości i nadpłaty/);
 assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8"), /Sprawy rozliczeniowe/);
 assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingDebtsOverpaymentsPage.tsx"), "utf8"), /Sprawy rozliczeniowe/);
@@ -1012,6 +1084,86 @@ assert.equal(buildBillingPayerNoteRequest("Ustalono termin dopłaty.", null).ok,
 assert.equal(buildBillingPayerNoteRequest("   ", "42").ok, false);
 assert.equal(buildBillingPayerNoteRequest("x".repeat(BILLING_PAYER_NOTE_MAX_LENGTH + 1), "42").ok, false);
 assert.equal(getBillingPayerNoteErrorState(new ApiError("Nie zapisano", 500)).title, "Backend nie zapisał notatki");
+assert.deepEqual(
+  buildBillingContactEventRequest({
+    payerId: 14,
+    channel: "sms",
+    contactAction: "draft_prepared",
+    messageText: "  Prosimy o sprawdzenie rozliczenia.  ",
+    noteText: "  Do wysłania ręcznie.  ",
+    organizationId: "42",
+    relatedPaymentId: 61,
+    relatedIssueKey: " payment:61:payer-only ",
+  }),
+  {
+    ok: true,
+    payload: {
+      payer_id: 14,
+      related_payment_id: 61,
+      related_issue_key: "payment:61:payer-only",
+      channel: "sms",
+      contact_action: "draft_prepared",
+      message_text: "Prosimy o sprawdzenie rozliczenia.",
+      note_text: "Do wysłania ręcznie.",
+    },
+  },
+);
+assert.equal(
+  buildBillingContactEventRequest({
+    payerId: 14,
+    channel: "phone",
+    contactAction: "contact_logged",
+    messageText: "",
+    noteText: "Rozmowa bez odpowiedzi.",
+    organizationId: "42",
+  }).ok,
+  true,
+);
+assert.equal(
+  buildBillingContactEventRequest({
+    payerId: 14,
+    channel: "sms",
+    contactAction: "draft_prepared",
+    messageText: "",
+    noteText: "Brak wiadomości.",
+    organizationId: "42",
+  }).ok,
+  false,
+);
+assert.equal(
+  buildBillingContactEventRequest({
+    payerId: 14,
+    channel: "sms",
+    contactAction: "draft_prepared",
+    messageText: "x".repeat(BILLING_CONTACT_MESSAGE_MAX_LENGTH + 1),
+    noteText: "",
+    organizationId: "42",
+  }).ok,
+  false,
+);
+assert.equal(
+  buildBillingContactEventRequest({
+    payerId: 14,
+    channel: "phone",
+    contactAction: "contact_logged",
+    messageText: "",
+    noteText: "x".repeat(BILLING_CONTACT_NOTE_MAX_LENGTH + 1),
+    organizationId: "42",
+  }).ok,
+  false,
+);
+assert.equal(
+  buildBillingContactEventRequest({
+    payerId: 14,
+    channel: "phone",
+    contactAction: "contact_logged",
+    messageText: "",
+    noteText: "Rozmowa.",
+    organizationId: null,
+  }).ok,
+  false,
+);
+assert.equal(getBillingContactEventErrorState(new ApiError("Nie zapisano", 500)).title, "Backend nie zapisał kontaktu");
 
 const billingProductNote = fs.readFileSync(path.join(srcRoot, "..", "docs", "BILLING_CENTER_PRODUCT_NOTE.md"), "utf8");
 assert.match(billingProductNote, /Docelowy zakres pełnego modułu rozliczeń/);
@@ -1186,6 +1338,15 @@ const screenStrings = [
         ...payerDetail.chargeRows.flatMap((row) => [row.periodLabel, row.personLabel, row.serviceLabel]),
         ...payerDetail.paymentRows.flatMap((row) => [row.dateLabel, row.amountLabel, row.titleLabel, row.contextLabel]),
         ...payerDetail.noteRows.flatMap((row) => [row.authorLabel, row.dateLabel, row.typeLabel, row.noteText]),
+        ...payerDetail.contactEventRows.flatMap((row) => [
+          row.channelLabel,
+          row.actionLabel,
+          row.authorLabel,
+          row.dateLabel,
+          row.messageText,
+          row.noteText,
+          row.contextLabel,
+        ]),
         ...payerDetail.invoiceRows.flatMap((row) => [row.invoiceLabel, row.contractorLabel, row.href]),
         ...payerDetail.workItemRows.flatMap((row) => [row.titleLabel, row.reasonLabel, row.href]),
         ...payerDetail.contextItems.flatMap((item) => [item.label, item.value]),
@@ -1201,6 +1362,8 @@ assert.throws(() => readBillingPayers({ payers: [] }), ApiContractError);
 assert.throws(() => readBillingPayers([{ display_name: "Brak ID" }]), ApiContractError);
 assert.throws(() => readBillingPayerNotes({ notes: [] }), ApiContractError);
 assert.throws(() => readBillingPayerNotes([{ note_text: "Brak ID" }]), ApiContractError);
+assert.throws(() => readBillingContactEvents({ events: "bad" }), ApiContractError);
+assert.throws(() => readBillingContactEvents({ organization_id: 42, events: [{ billing_contact_event_id: 1 }] }), ApiContractError);
 assert.throws(() => readBillingStudents({ students: [] }), ApiContractError);
 assert.throws(() => readBillingStudents([{ full_name: "Brak płatnika" }]), ApiContractError);
 assert.throws(() => readBillingCharges({ charges: [] }), ApiContractError);
@@ -1239,6 +1402,51 @@ async function main() {
     async () => {
       const payload = await api.addBillingPayerNote(14, "Ustalono termin dopłaty.", "42");
       assert.equal(readBillingPayerNotes([payload])[0].note_text, "Rodzic potwierdził wyjaśnienie salda.");
+    },
+  );
+
+  await withMockedFetch(
+    async (url, options) => {
+      assert.ok(url.startsWith("/api/billing/contact-events?"));
+      assert.match(url, /organization_id=42/);
+      assert.match(url, /payer_id=14/);
+      assert.match(url, /limit=50/);
+      assert.equal(options.method, "GET");
+      assert.equal(options.body, undefined);
+      return jsonResponse(200, contactEventsPayload);
+    },
+    async () => {
+      const payload = await api.billingContactEvents(withActiveOrganizationQuery("42", { payer_id: 14, limit: 50 }));
+      const events = readBillingContactEvents(payload);
+      assert.equal(events.events.length, 2);
+    },
+  );
+
+  await withMockedFetch(
+    async (url, options) => {
+      assert.equal(url, "/api/billing/contact-events?organization_id=42");
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body), {
+        payer_id: 14,
+        channel: "sms",
+        contact_action: "draft_prepared",
+        message_text: "Prosimy o sprawdzenie rozliczenia.",
+        note_text: "Do wysłania ręcznie.",
+      });
+      return jsonResponse(201, contactEventsPayload.events[0]);
+    },
+    async () => {
+      const payload = await api.addBillingContactEvent(
+        {
+          payer_id: 14,
+          channel: "sms",
+          contact_action: "draft_prepared",
+          message_text: "Prosimy o sprawdzenie rozliczenia.",
+          note_text: "Do wysłania ręcznie.",
+        },
+        "42",
+      );
+      assert.equal(readBillingContactEvents({ organization_id: 42, events: [payload] }).events[0].contact_action, "draft_prepared");
     },
   );
 
@@ -1359,6 +1567,62 @@ async function main() {
   refreshCount = 0;
   submittingStates = [];
   submittedPayload = null;
+  const contactSubmitter = createBillingContactEventSubmitter({
+    refreshDetail: async () => {
+      refreshCount += 1;
+    },
+    setSubmitting: (isSubmitting) => {
+      submittingStates.push(isSubmitting);
+    },
+    submitContact: async (payload) => {
+      submittedPayload = payload;
+    },
+  });
+  const contactSubmitResult = await contactSubmitter(
+    buildBillingContactEventRequest({
+      payerId: 14,
+      channel: "sms",
+      contactAction: "draft_prepared",
+      messageText: "  Prosimy o sprawdzenie rozliczenia.  ",
+      noteText: "",
+      organizationId: "42",
+    }),
+  );
+  assert.equal(contactSubmitResult.status, "success");
+  assert.deepEqual(submittedPayload, {
+    payer_id: 14,
+    channel: "sms",
+    contact_action: "draft_prepared",
+    message_text: "Prosimy o sprawdzenie rozliczenia.",
+  });
+  assert.equal(refreshCount, 1);
+  assert.deepEqual(submittingStates, [true, false]);
+
+  const failingContactSubmitter = createBillingContactEventSubmitter({
+    refreshDetail: async () => {
+      throw new Error("Refresh should not run after failed contact submit.");
+    },
+    setSubmitting: () => {},
+    submitContact: async () => {
+      throw new ApiError("Backend odmówił", 500);
+    },
+  });
+  const failingContactResult = await failingContactSubmitter(
+    buildBillingContactEventRequest({
+      payerId: 14,
+      channel: "phone",
+      contactAction: "contact_logged",
+      messageText: "",
+      noteText: "Rozmowa.",
+      organizationId: "42",
+    }),
+  );
+  assert.equal(failingContactResult.status, "error");
+  assert.equal(failingContactResult.errorState.title, "Backend nie zapisał kontaktu");
+
+  refreshCount = 0;
+  submittingStates = [];
+  submittedPayload = null;
   const reviewSubmitter = createBillingPaymentReviewStatusSubmitter({
     refreshStatus: async () => {
       refreshCount += 1;
@@ -1399,6 +1663,9 @@ async function main() {
       }
       if (url.startsWith(`/api${billingPayerNoteEndpoint(14)}`)) {
         return jsonResponse(200, [payerNotes[0]]);
+      }
+      if (url.startsWith(`/api${BILLING_CONTACT_EVENTS_ENDPOINT}`)) {
+        return jsonResponse(200, contactEventsPayload);
       }
       if (url.startsWith(`/api${BILLING_PAYERS_ENDPOINT}`)) {
         return jsonResponse(200, [makePayer()]);
@@ -1441,6 +1708,7 @@ async function main() {
         studentsPayload,
         chargesPayload,
         notesPayload,
+        contactEventsListPayload,
         matchesPayload,
         transactionsPayload,
         reviewStatusesPayload,
@@ -1454,6 +1722,7 @@ async function main() {
         api.billingStudents(query),
         api.billingCharges(withActiveOrganizationQuery("42", { limit: 100 })),
         api.billingPayerNotes(14, withActiveOrganizationQuery("42", { limit: 100 })),
+        api.billingContactEvents(withActiveOrganizationQuery("42", { payer_id: 14, limit: 50 })),
         api.billingLedgerMatches(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.billingTransactions(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.billingPaymentReviewStatuses(withActiveOrganizationQuery("42", { limit: 1000 })),
@@ -1467,6 +1736,7 @@ async function main() {
       assert.equal(readBillingStudents(studentsPayload).length, 1);
       assert.equal(readBillingCharges(chargesPayload).length, 1);
       assert.equal(readBillingPayerNotes(notesPayload).length, 1);
+      assert.equal(readBillingContactEvents(contactEventsListPayload).events.length, 2);
       assert.equal(readBillingPaymentMatches(matchesPayload).length, 1);
       assert.equal(readBillingTransactions(transactionsPayload).length, 1);
       assert.equal(readBillingPaymentReviewStatuses(reviewStatusesPayload).statuses.length, 2);
@@ -1480,6 +1750,7 @@ async function main() {
   assert.ok(requestedUrls.every((url) => url.includes("organization_id=42")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/charges") && url.includes("limit=100")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/payers/14/notes") && url.includes("limit=100")));
+  assert.ok(requestedUrls.some((url) => url.includes("/api/billing/contact-events") && url.includes("payer_id=14") && url.includes("limit=50")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/ledger/matches") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/transactions") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/payment-review-statuses") && url.includes("limit=1000")));

@@ -34,6 +34,15 @@ BILLING_WORK_QUEUE_ISSUE_TYPES = {
     "Sprawdzone",
 }
 
+BILLING_CONTACT_CHANNELS = {"sms", "email", "phone", "in_person", "other"}
+BILLING_CONTACT_ACTIONS = {
+    "draft_prepared",
+    "contact_logged",
+    "no_answer",
+    "promised_payment",
+    "needs_followup",
+}
+
 
 class BillingService:
     HEADER_ALIASES = {
@@ -508,6 +517,161 @@ class BillingService:
                 "target_id": target_id,
                 "action": action,
                 "note_text": normalized_note or None,
+                "created_by_user_id": int(actor_user["user_id"]),
+                "created_by_user_name": actor_user.get("display_name") or actor_user.get("login"),
+            },
+        )
+
+    def list_contact_events(
+        self,
+        *,
+        organization_id: int | None = None,
+        billing_payer_id: int | None = None,
+        related_payment_id: int | None = None,
+        related_issue_key: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed sprawdzeniem kontaktow rozliczeniowych.")
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+        if billing_payer_id is not None:
+            payer = self.billing_repository.get_payer_by_id(billing_payer_id, organization_id=organization_id)
+            if not payer:
+                raise ValueError("Nie znaleziono platnika w wybranej organizacji.")
+        if related_payment_id is not None:
+            transaction = self.billing_repository.get_transaction_by_id(
+                related_payment_id,
+                organization_id=organization_id,
+            )
+            if not transaction:
+                raise ValueError("Nie znaleziono wplaty w wybranej organizacji.")
+        events = self.billing_repository.list_contact_events(
+            organization_id=organization_id,
+            billing_payer_id=billing_payer_id,
+            related_payment_id=related_payment_id,
+            related_issue_key=related_issue_key,
+            limit=limit,
+        )
+        return {
+            "organization_id": organization_id,
+            "events": events,
+        }
+
+    def add_contact_event(
+        self,
+        payload: dict[str, Any],
+        *,
+        actor_user: dict[str, Any] | None,
+        actor: str,
+        organization_id: int | None = None,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed zapisaniem kontaktu rozliczeniowego.")
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+        if not actor_user or not actor_user.get("user_id"):
+            raise ValueError("Nie mozna zapisac kontaktu bez zalogowanego uzytkownika.")
+
+        try:
+            billing_payer_id = int(payload.get("payer_id") or 0)
+        except (TypeError, ValueError):
+            raise ValueError("Platnik jest wymagany dla kontaktu rozliczeniowego.") from None
+        payer = self.billing_repository.get_payer_by_id(billing_payer_id, organization_id=organization_id)
+        if not payer:
+            raise ValueError("Nie znaleziono platnika w wybranej organizacji.")
+
+        related_payment_id: int | None = None
+        if payload.get("related_payment_id") not in {None, ""}:
+            try:
+                related_payment_id = int(payload.get("related_payment_id") or 0)
+            except (TypeError, ValueError):
+                raise ValueError("Nieprawidlowy identyfikator wplaty kontaktu.") from None
+            if related_payment_id <= 0:
+                raise ValueError("Nieprawidlowy identyfikator wplaty kontaktu.")
+            transaction = self.billing_repository.get_transaction_by_id(
+                related_payment_id,
+                organization_id=organization_id,
+            )
+            if not transaction:
+                raise ValueError("Nie znaleziono wplaty w wybranej organizacji.")
+
+        channel = str(payload.get("channel") or "").strip()
+        contact_action = str(payload.get("contact_action") or "").strip()
+        if channel not in BILLING_CONTACT_CHANNELS:
+            raise ValueError("Nieprawidlowy kanal kontaktu rozliczeniowego.")
+        if contact_action not in BILLING_CONTACT_ACTIONS:
+            raise ValueError("Nieprawidlowy typ kontaktu rozliczeniowego.")
+
+        related_issue_key = str(payload.get("related_issue_key") or "").strip()
+        if len(related_issue_key) > 300:
+            raise ValueError("Klucz sprawy kontaktu musi byc krotki.")
+        message_text = str(payload.get("message_text") or "").strip()
+        note_text = str(payload.get("note_text") or "").strip()
+        if len(message_text) > 2000:
+            raise ValueError("Tresc kontaktu moze miec maksymalnie 2000 znakow.")
+        if len(note_text) > 1000:
+            raise ValueError("Notatka kontaktu moze miec maksymalnie 1000 znakow.")
+        if contact_action == "draft_prepared" and not message_text:
+            raise ValueError("Przygotowana tresc kontaktu nie moze byc pusta.")
+        if not message_text and not note_text:
+            raise ValueError("Dodaj tresc wiadomosci albo notatke kontaktu.")
+
+        event_id = self.billing_repository.add_contact_event(
+            {
+                "organization_id": organization_id,
+                "billing_payer_id": billing_payer_id,
+                "related_payment_id": related_payment_id,
+                "related_issue_key": related_issue_key or None,
+                "channel": channel,
+                "contact_action": contact_action,
+                "message_text": message_text or None,
+                "note_text": note_text or None,
+                "created_by_user_id": int(actor_user["user_id"]),
+            }
+        )
+        self.event_repository.log(
+            event_type="billing_contact_event_added",
+            invoice_id=None,
+            organization_id=organization_id,
+            source="BILLING",
+            status_before=None,
+            status_after=contact_action,
+            decision_reason="Dodano kontakt rozliczeniowy.",
+            actor=actor,
+            details={
+                "billing_contact_event_id": event_id,
+                "billing_payer_id": billing_payer_id,
+                "related_payment_id": related_payment_id,
+                "channel": channel,
+                "contact_action": contact_action,
+                "message_length": len(message_text),
+                "note_length": len(note_text),
+            },
+        )
+        events = self.billing_repository.list_contact_events(
+            organization_id=organization_id,
+            billing_payer_id=billing_payer_id,
+            limit=100,
+        )
+        return next(
+            (
+                item
+                for item in events
+                if int(item.get("billing_contact_event_id") or 0) == int(event_id)
+            ),
+            {
+                "billing_contact_event_id": event_id,
+                "organization_id": organization_id,
+                "billing_payer_id": billing_payer_id,
+                "related_payment_id": related_payment_id,
+                "related_issue_key": related_issue_key or None,
+                "channel": channel,
+                "contact_action": contact_action,
+                "message_text": message_text or None,
+                "note_text": note_text or None,
                 "created_by_user_id": int(actor_user["user_id"]),
                 "created_by_user_name": actor_user.get("display_name") or actor_user.get("login"),
             },

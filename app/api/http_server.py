@@ -1252,6 +1252,27 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(work_queue_events)
+            if path == "/api/billing/contact-events":
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 100
+                payer_id = self._parse_optional_int(self._query_one(query, "payer_id"))
+                payment_id = self._parse_optional_int(self._query_one(query, "payment_id"))
+                issue_key = str(self._query_one(query, "issue_key") or "").strip() or None
+                try:
+                    contact_events = self.billing_service.list_contact_events(
+                        organization_id=organization_id,
+                        billing_payer_id=payer_id,
+                        related_payment_id=payment_id,
+                        related_issue_key=issue_key,
+                        limit=min(max(limit, 1), 500),
+                    )
+                except ValueError as error:
+                    if "Nie znaleziono" in str(error):
+                        return self._send_json({"error": str(error)}, status=404)
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(contact_events)
             if path == "/api/billing/schools":
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:
@@ -3467,6 +3488,43 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         return self._send_json({"error": str(error)}, status=404)
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(work_queue_event, status=201)
+
+            if path == "/api/billing/contact-events":
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                payload = self._read_json()
+                allowed_fields = {
+                    "payer_id",
+                    "related_payment_id",
+                    "related_issue_key",
+                    "channel",
+                    "contact_action",
+                    "message_text",
+                    "note_text",
+                }
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {
+                            "error": (
+                                "Endpoint przyjmuje tylko pola payer_id, related_payment_id, related_issue_key, "
+                                "channel, contact_action, message_text i note_text."
+                            )
+                        },
+                        status=400,
+                    )
+                try:
+                    contact_event = self.billing_service.add_contact_event(
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    if "Nie znaleziono wplaty" in str(error) or "Nie znaleziono platnika" in str(error):
+                        return self._send_json({"error": str(error)}, status=404)
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(contact_event, status=201)
 
             if path == "/api/billing/students":
                 organization_id = self._resolve_write_scope(user, query)

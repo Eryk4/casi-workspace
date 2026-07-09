@@ -354,6 +354,71 @@ class BillingRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def add_contact_event(self, payload: dict[str, Any]) -> int:
+        with get_connection() as connection:
+            return execute_insert_returning_id(
+                connection,
+                """
+                INSERT INTO billing_contact_events (
+                    organization_id, billing_payer_id, related_payment_id, related_issue_key,
+                    channel, contact_action, message_text, note_text, created_by_user_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["organization_id"],
+                    payload["billing_payer_id"],
+                    payload.get("related_payment_id"),
+                    payload.get("related_issue_key"),
+                    payload["channel"],
+                    payload["contact_action"],
+                    payload.get("message_text"),
+                    payload.get("note_text"),
+                    payload["created_by_user_id"],
+                    now_iso(),
+                ),
+                "billing_contact_event_id",
+            )
+
+    def list_contact_events(
+        self,
+        *,
+        organization_id: int,
+        billing_payer_id: int | None = None,
+        related_payment_id: int | None = None,
+        related_issue_key: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        params: list[Any] = [organization_id]
+        query = """
+            SELECT
+                e.*,
+                p.display_name AS payer_display_name,
+                p.contact_phone AS payer_contact_phone,
+                p.email AS payer_email,
+                COALESCE(u.display_name, u.login) AS created_by_user_name,
+                u.role AS created_by_user_role
+            FROM billing_contact_events e
+            JOIN billing_payers p
+                ON p.billing_payer_id = e.billing_payer_id
+               AND p.organization_id = e.organization_id
+            LEFT JOIN users u ON u.user_id = e.created_by_user_id
+            WHERE e.organization_id = ?
+        """
+        if billing_payer_id is not None:
+            query += " AND e.billing_payer_id = ?"
+            params.append(billing_payer_id)
+        if related_payment_id is not None:
+            query += " AND e.related_payment_id = ?"
+            params.append(related_payment_id)
+        if related_issue_key:
+            query += " AND e.related_issue_key = ?"
+            params.append(related_issue_key)
+        query += " ORDER BY e.created_at DESC, e.billing_contact_event_id DESC LIMIT ?"
+        params.append(max(1, int(limit)))
+        with get_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
     def create_payer(self, payload: dict[str, Any]) -> int:
         timestamp = now_iso()
         with get_connection() as connection:

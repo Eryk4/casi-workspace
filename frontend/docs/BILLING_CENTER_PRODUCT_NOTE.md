@@ -152,3 +152,9 @@ Widok używa statusów operacyjnych wpłat jako sygnałów, ale nie zmienia stat
 Trasa `/rozliczenia/sprawy` ma jedn? w?sk? akcj? zapisu: append-only decyzj? `Obs?u?ona` albo `Od?o?ona` dla konkretnej sprawy z kolejki. Zapis trafia do `billing_work_queue_events` i s?u?y tylko do uporz?dkowania pracy cz?owieka.
 
 Ta decyzja nie zmienia salda, wp?at, nalicze?, dopasowa?, ledgeru, statusu operacyjnego wp?aty, okresu rozliczeniowego ani nadp?aty. `Obs?u?ona` nie znaczy `rozliczona`, a `Od?o?ona` nie tworzy przypomnienia ani zadania.
+
+## Etap: Kontakt rozliczeniowy — draft & log v1
+
+Szczegół płatnika `/rozliczenia/platnicy/{payerId}` zawiera teraz sekcję `Kontakt rozliczeniowy`. Jest to pierwszy bezpieczny fundament kontaktu z płatnikiem: przygotowanie treści do samodzielnego wysłania albo zapis śladu rozmowy.
+
+CASI Workspace nie wysyła SMS-ów ani e-maili w tym etapie. Widok nie uruchamia przypomnień, nie importuje płatności, nie dopasowuje wpłat i nie zmienia salda. Szczegóły kontraktu są opisane w `frontend/docs/BILLING_CONTACT_EVENTS_PRODUCT_NOTE.md`.

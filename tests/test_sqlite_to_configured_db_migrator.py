@@ -56,6 +56,7 @@ BILLING_CORE_TABLES = (
     "billing_transactions",
     "billing_payment_review_events",
     "billing_work_queue_events",
+    "billing_contact_events",
     "billing_payment_matches",
     "billing_payer_ledger_entries",
     "billing_notes",
@@ -154,6 +155,7 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
             "billing_transactions": "billing_transaction_id",
             "billing_payment_review_events": "billing_payment_review_event_id",
             "billing_work_queue_events": "billing_work_queue_event_id",
+            "billing_contact_events": "billing_contact_event_id",
             "billing_payment_matches": "billing_payment_match_id",
             "billing_payer_ledger_entries": "billing_payer_ledger_entry_id",
             "billing_notes": "billing_note_id",
@@ -244,6 +246,9 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
         self.assertLess(table_order.index("billing_transactions"), table_order.index("billing_payment_review_events"))
         self.assertLess(table_order.index("users"), table_order.index("billing_work_queue_events"))
         self.assertLess(table_order.index("billing_transactions"), table_order.index("billing_work_queue_events"))
+        self.assertLess(table_order.index("users"), table_order.index("billing_contact_events"))
+        self.assertLess(table_order.index("billing_payers"), table_order.index("billing_contact_events"))
+        self.assertLess(table_order.index("billing_transactions"), table_order.index("billing_contact_events"))
         self.assertLess(table_order.index("billing_transactions"), table_order.index("billing_payment_matches"))
         self.assertLess(table_order.index("billing_charges"), table_order.index("billing_payment_matches"))
         self.assertLess(table_order.index("billing_payers"), table_order.index("billing_payer_ledger_entries"))
@@ -330,7 +335,7 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
 
         for table_name in ACCESS_CORE_TABLES:
             self.assertNotIn(table_name, report["tables_missing_from_migrator"])
-        self.assertEqual(len(report["migrator_tables"]), 61)
+        self.assertEqual(len(report["migrator_tables"]), 62)
         self.assertEqual(len(report["tables_missing_from_migrator"]), 10)
         self.assertEqual(report["blocker_count"], 0)
 

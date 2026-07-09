@@ -79,3 +79,9 @@ Sprawy oznaczone jako `Obsłużona` albo `Odłożona` nie trafiają do `Najpierw
 To nie jest ten sam mechanizm co status operacyjny wpłaty. Status wpłaty mówi o samej wpłacie, np. `Do wyjaśnienia` albo `Sprawdzone`. Decyzja sprawy mówi tylko, co operator zrobił z konkretną pozycją w kolejce pracy.
 
 Zmiana decyzji sprawy nie zmienia automatycznie statusu wpłaty.
+
+## Relacja z kontaktem rozliczeniowym
+
+Decyzja sprawy rozliczeniowej i kontakt rozliczeniowy to dwa różne mechanizmy. Decyzja `Obsłużona` lub `Odłożona` porządkuje kolejkę pracy. Kontakt rozliczeniowy zapisuje roboczą treść albo ślad kontaktu przy płatniku.
+
+Żaden z tych mechanizmów nie zmienia salda, naliczeń, dopasowań, przypisań wpłat, przypomnień ani księgowania.

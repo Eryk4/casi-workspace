@@ -83,3 +83,11 @@ Notatka jest addytywna, wymaga aktywnej organizacji, przyjmuje wy??cznie pole `n
 ## Następny bezpieczny krok
 
 Po live-weryfikacji warto rozważyć osobny read-only kontrakt backendowy dla usług/zapisów tylko wtedy, gdy frontendowa inferencja z naliczeń okaże się zbyt płytka. Nadal bez importów, płatności i akcji zapisu.
+
+## Etap: Kontakt rozliczeniowy — draft & log v1
+
+Szczegół płatnika ma teraz addytywną sekcję `Kontakt rozliczeniowy`. Operator może przygotować treść do samodzielnego skopiowania albo zapisać ślad kontaktu z płatnikiem. CASI Workspace nie wysyła tej wiadomości i nie integruje się w tym etapie z SMS, e-mailem, Gmailem ani automatyzacją przypomnień.
+
+Kontakt rozliczeniowy zapisuje rekord w `billing_contact_events`, wymaga aktywnego `organization_id`, sprawdza płatnika i opcjonalną wpłatę w tej samej organizacji, a systemowy audit zapisuje tylko metadane oraz długości treści. Pełna treść wiadomości i notatki nie jest kopiowana do details zdarzenia.
+
+Ten etap nie zmienia salda, naliczeń, wpłat, dopasowań, statusów, importów, przypomnień ani księgowania. To nadal kontrolowany fundament operacyjny, a nie workflow wysyłki.
