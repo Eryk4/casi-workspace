@@ -36,3 +36,7 @@ Dane sa zawsze pobierane w scope aktywnej organizacji. Przy zmianie organizacji 
 ## Warunki przed kolejnymi etapami
 
 Kolejne kroki, takie jak wysylka wiadomosci, przypomnienia albo automatyzacje kontaktu, wymagaja osobnego kontraktu, uprawnien, limitow, audit trail, tenant-isolation testow i live-weryfikacji.
+
+## Powiązanie z raportem rozliczeniowym
+
+`/rozliczenia/kontakty` linkuje do `/rozliczenia/raport`. Raport uwzględnia kontakty wymagające ponownego działania, ale nadal nie wysyła wiadomości i nie tworzy automatyzacji kontaktu.

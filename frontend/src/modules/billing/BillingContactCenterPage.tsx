@@ -19,6 +19,7 @@ import {
   BILLING_CONTACT_ACTION_OPTIONS,
   BILLING_CONTACT_CHANNEL_OPTIONS,
   BILLING_CONTACT_NO_SEND_HELP_TEXT,
+  BILLING_OPERATIONAL_REPORT_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_WORK_QUEUE_ROUTE,
@@ -303,6 +304,7 @@ export function BillingContactCenterPage() {
           <div className="module-grid module-grid--two">
             <Card className="module-quick-actions" title="Przejdź dalej">
               <Link className="module-quick-action" href={BILLING_CANONICAL_ROUTE}>Centrum rozliczeń</Link>
+              <Link className="module-quick-action" href={BILLING_OPERATIONAL_REPORT_ROUTE}>Raport rozliczeniowy</Link>
               <Link className="module-quick-action" href={BILLING_WORK_QUEUE_ROUTE}>Sprawy rozliczeniowe</Link>
             </Card>
             <Card title="Kontekst biznesowy">

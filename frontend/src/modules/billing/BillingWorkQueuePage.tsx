@@ -19,6 +19,7 @@ import {
   BILLING_CANONICAL_ROUTE,
   BILLING_CONTACT_CENTER_ROUTE,
   BILLING_DEBTS_ROUTE,
+  BILLING_OPERATIONAL_REPORT_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_PAYMENTS_ROUTE,
@@ -298,6 +299,7 @@ export function BillingWorkQueuePage() {
           />
           <Card className="module-quick-actions" title="Przejdź dalej">
             <Link className="module-quick-action" href={BILLING_CONTACT_CENTER_ROUTE}>Kontakty rozliczeniowe</Link>
+            <Link className="module-quick-action" href={BILLING_OPERATIONAL_REPORT_ROUTE}>Raport rozliczeniowy</Link>
             <Link className="module-quick-action" href={BILLING_CANONICAL_ROUTE}>Centrum rozliczeń</Link>
           </Card>
         </>
@@ -450,6 +452,7 @@ export function BillingWorkQueuePage() {
           <div className="module-grid module-grid--two">
             <Card className="module-quick-actions" title="Przejdź dalej">
               <Link className="module-quick-action" href={BILLING_CONTACT_CENTER_ROUTE}>Kontakty rozliczeniowe</Link>
+              <Link className="module-quick-action" href={BILLING_OPERATIONAL_REPORT_ROUTE}>Raport rozliczeniowy</Link>
               <Link className="module-quick-action" href={BILLING_PAYMENTS_ROUTE}>Wpłaty i przypisania</Link>
               <Link className="module-quick-action" href={BILLING_DEBTS_ROUTE}>Zaległości i nadpłaty</Link>
               <Link className="module-quick-action" href={BILLING_PERIODS_ROUTE}>Okresy rozliczeniowe</Link>

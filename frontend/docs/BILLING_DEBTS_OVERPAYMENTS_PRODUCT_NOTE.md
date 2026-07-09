@@ -80,3 +80,7 @@ Po live-weryfikacji tego ekranu najbezpieczniejszym kolejnym krokiem jest decyzj
 ## Powiązanie ze sprawami rozliczeniowymi
 
 Widok `/rozliczenia/zaleglosci` linkuje do `/rozliczenia/sprawy`, gdzie zaległości i nadpłaty są pokazane razem z wpłatami wymagającymi wyjaśnienia oraz statusami operacyjnymi wpłat. To nadal jest read-only kolejka pracy, a nie przypomnienia, dopasowania ani rozliczanie nadpłat.
+
+## Powiązanie z raportem rozliczeniowym
+
+`/rozliczenia/zaleglosci` linkuje do `/rozliczenia/raport`. Raport pokazuje zaległości i nadpłaty jako część szerszego podsumowania operacyjnego, ale nie rozstrzyga nadpłat i nie zmienia sald.

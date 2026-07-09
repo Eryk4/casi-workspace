@@ -162,3 +162,9 @@ CASI Workspace nie wysyła SMS-ów ani e-maili w tym etapie. Widok nie uruchamia
 ## Centrum kontaktow rozliczeniowych
 
 Trasa `/rozliczenia/kontakty` porzadkuje istniejace kontakty rozliczeniowe w jednym read-only widoku. Centrum rozliczen prowadzi do tego ekranu jako do przegladu historii kontaktu z platnikami. Widok nie wysyla wiadomosci i nie zmienia sald, platnosci, dopasowan ani naliczen.
+
+## Etap: Raport rozliczeniowy — read-only v1
+
+Trasa `/rozliczenia/raport` dodaje operacyjny raport właściciela firmy. Raport zbiera zaległości, nadpłaty, wpłaty wymagające wyjaśnienia, sprawy rozliczeniowe i kontakty z płatnikami z istniejących read-only danych organizacji.
+
+Raport nie jest dokumentem księgowym, nie generuje plików, nie wysyła wiadomości i nie zmienia finansów. Zawiera tekst `Raport do skopiowania`, który użytkownik może ręcznie wykorzystać w swoich notatkach.

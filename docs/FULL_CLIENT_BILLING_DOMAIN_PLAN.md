@@ -926,3 +926,11 @@ Future stages may add a read-only contact log at `/rozliczenia/kontakty` or cont
 ## Billing contact center - read-only stage
 
 The billing contact center at `/rozliczenia/kontakty` is a read-only operational view over existing contact events. It must remain separate from message sending, payment import, payment allocation, reminders, and collection workflows. Future outbound communication requires a separate permissions model, audit trail, rate limits, tenant-isolation tests, and live verification.
+
+## Operational billing report
+
+Status: implemented as a read-only operational report under `/rozliczenia/raport`.
+
+The report aggregates existing organization-scoped billing data: payer balances, charges, transactions, payment matches, payment review statuses, work queue events, and contact events. It is not an accounting document, does not create files, does not send messages, and does not change financial state.
+
+Future PDF, spreadsheet, message sending, or accounting export flows require a separate contract, permissions model, audit trail, and tenant-isolation verification.

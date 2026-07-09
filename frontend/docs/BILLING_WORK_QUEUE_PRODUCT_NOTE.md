@@ -82,3 +82,7 @@ Kolejka spraw nadal nie wysyła przypomnień, nie tworzy zadań i nie zmienia sa
 ## Powiazanie z centrum kontaktow
 
 Widok `/rozliczenia/sprawy` linkuje do `/rozliczenia/kontakty`, zeby operator mogl sprawdzic istniejaca historie kontaktow. Link nie jest akcja zapisu i nie wysyla wiadomosci.
+
+## Powiązanie z raportem rozliczeniowym
+
+`/rozliczenia/sprawy` linkuje do `/rozliczenia/raport`, żeby aktywne, odłożone i obsłużone sprawy mogły być widoczne w zbiorczym podsumowaniu. Raport pozostaje read-only i nie zastępuje decyzji operacyjnych spraw.

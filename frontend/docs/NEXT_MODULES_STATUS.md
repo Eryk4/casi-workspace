@@ -167,3 +167,7 @@ Billing contact events accept only { payer_id, related_payment_id?, related_issu
 ## Rozliczenia - centrum kontaktow rozliczeniowych
 
 `/rozliczenia/kontakty` jest read-only centrum kontaktow rozliczeniowych. Korzysta z istniejacych wpisow kontaktowych, pokazuje przygotowane tresci, deklaracje platnosci, brak odpowiedzi i wpisy wymagajace ponownego kontaktu. Ekran nie dodaje nowych write actions, nie wysyla wiadomosci i nie zmienia danych finansowych.
+
+## Rozliczenia — raport operacyjny
+
+`/rozliczenia/raport` jest read-only raportem operacyjnym dla właściciela firmy. Zbiera zaległości, nadpłaty, wpłaty, sprawy i kontakty rozliczeniowe z istniejących danych organizacji. Nie jest dokumentem księgowym, nie generuje PDF/XLSX, nie wysyła wiadomości i nie zmienia finansów.

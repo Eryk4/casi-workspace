@@ -17,6 +17,7 @@ import { withActiveOrganizationQuery } from "@/context/organizationContextModel"
 import { api } from "@/lib/api";
 import {
   BILLING_CANONICAL_ROUTE,
+  BILLING_OPERATIONAL_REPORT_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_PAYMENTS_ROUTE,
@@ -255,10 +256,22 @@ export function BillingDebtsOverpaymentsPage() {
       {errorState ? <ErrorState description={errorState.description} title={errorState.title} /> : null}
       {organizationMissing ? <EmptyState description={BILLING_ORGANIZATION_REQUIRED_DESCRIPTION} title={BILLING_ORGANIZATION_REQUIRED_TITLE} /> : null}
       {readyWithoutData ? (
-        <EmptyState
-          description="Nie ma zaległości, nadpłat ani oczywistych spraw do wyjaśnienia w aktualnych danych tej organizacji."
-          title="Brak zaległości i nadpłat"
-        />
+        <>
+          <EmptyState
+            description="Nie ma zaległości, nadpłat ani oczywistych spraw do wyjaśnienia w aktualnych danych tej organizacji."
+            title="Brak zaległości i nadpłat"
+          />
+          <Card className="module-quick-actions" title="Przejdź dalej">
+            <Link className="module-quick-action" href={BILLING_OPERATIONAL_REPORT_ROUTE}>
+              <span>Raport rozliczeniowy</span>
+              <CreditCard aria-hidden="true" size={15} />
+            </Link>
+            <Link className="module-quick-action" href={BILLING_CANONICAL_ROUTE}>
+              <span>Rozliczenia</span>
+              <CreditCard aria-hidden="true" size={15} />
+            </Link>
+          </Card>
+        </>
       ) : null}
 
       {status === "ready" && debtsView && !organizationMissing && !readyWithoutData ? (
@@ -328,6 +341,10 @@ export function BillingDebtsOverpaymentsPage() {
                 <Link className="module-quick-action" href={BILLING_WORK_QUEUE_ROUTE}>
                   <span>Sprawy rozliczeniowe</span>
                   <WalletCards aria-hidden="true" size={15} />
+                </Link>
+                <Link className="module-quick-action" href={BILLING_OPERATIONAL_REPORT_ROUTE}>
+                  <span>Raport rozliczeniowy</span>
+                  <CreditCard aria-hidden="true" size={15} />
                 </Link>
                 <Link className="module-quick-action" href={BILLING_CANONICAL_ROUTE}>
                   <span>Rozliczenia</span>

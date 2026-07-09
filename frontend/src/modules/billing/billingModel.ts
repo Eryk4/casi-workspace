@@ -629,6 +629,53 @@ export type BillingContactCenterView = {
   contextItems: Array<{ label: string; value: string }>;
 };
 
+export type BillingOperationalReportSummary = {
+  debtTotalLabel: string;
+  debtPayerCount: number;
+  overpaymentTotalLabel: string;
+  overpaymentPayerCount: number;
+  settledPayerCount: number;
+  chargeAssignedPaymentCount: number;
+  payerOnlyPaymentCount: number;
+  unexplainedPaymentCount: number;
+  activeIssueCount: number;
+  snoozedIssueCount: number;
+  handledIssueCount: number;
+  contactCount: number;
+  contactActionRequiredCount: number;
+};
+
+export type BillingOperationalReportCard = {
+  id: string;
+  label: string;
+  value: string;
+  description: string;
+};
+
+export type BillingOperationalReportImportantItem = {
+  id: string;
+  typeLabel: string;
+  payerLabel: string;
+  amountLabel?: string;
+  reasonLabel: string;
+  nextStepLabel: string;
+  href: string;
+};
+
+export type BillingOperationalReportView = {
+  summary: BillingOperationalReportSummary;
+  summaryCards: BillingOperationalReportCard[];
+  importantRows: BillingOperationalReportImportantItem[];
+  paymentRows: BillingPaymentAssignmentRow[];
+  debtRows: BillingDebtDecisionRow[];
+  overpaymentRows: BillingOverpaymentDecisionRow[];
+  workQueueRows: BillingWorkQueueIssue[];
+  contactRows: BillingContactCenterRow[];
+  reportText: string;
+  limitations: string[];
+  contextItems: Array<{ label: string; value: string }>;
+};
+
 export type BillingPayerRelatedInvoiceRow = {
   id: string;
   href: string;
@@ -1000,6 +1047,7 @@ export const BILLING_PAYMENTS_ROUTE = `${BILLING_CANONICAL_ROUTE}/wplaty`;
 export const BILLING_DEBTS_ROUTE = `${BILLING_CANONICAL_ROUTE}/zaleglosci`;
 export const BILLING_WORK_QUEUE_ROUTE = `${BILLING_CANONICAL_ROUTE}/sprawy`;
 export const BILLING_CONTACT_CENTER_ROUTE = `${BILLING_CANONICAL_ROUTE}/kontakty`;
+export const BILLING_OPERATIONAL_REPORT_ROUTE = `${BILLING_CANONICAL_ROUTE}/raport`;
 export const BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć wpłatę";
 export const BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION =
   "Najpierw wskaż organizację w topbarze. Szczegół wpłaty pokazuje tylko dane z wybranej organizacji.";
@@ -3846,6 +3894,217 @@ export function buildBillingContactCenterView(
       {
         label: "Finanse",
         value: "Kontakt, draft albo deklaracja płatności nie zmienia sald, wpłat, naliczeń ani przypisań.",
+      },
+    ],
+  };
+}
+
+function uniqueOperationalItems(items: BillingOperationalReportImportantItem[], limit = 10): BillingOperationalReportImportantItem[] {
+  return Array.from(new Map(items.map((item) => [item.id, item])).values()).slice(0, limit);
+}
+
+function buildOperationalReportText({
+  organizationName,
+  summary,
+  importantRows,
+  limitations,
+}: {
+  organizationName: string;
+  summary: BillingOperationalReportSummary;
+  importantRows: BillingOperationalReportImportantItem[];
+  limitations: string[];
+}): string {
+  const lines = [
+    `Raport rozliczeniowy — ${organizationName}`,
+    "",
+    "1. Podsumowanie",
+    `- Suma zaległości: ${summary.debtTotalLabel}`,
+    `- Płatnicy z zaległością: ${summary.debtPayerCount}`,
+    `- Suma nadpłat: ${summary.overpaymentTotalLabel}`,
+    `- Wpłaty do wyjaśnienia: ${summary.payerOnlyPaymentCount + summary.unexplainedPaymentCount}`,
+    `- Aktywne sprawy: ${summary.activeIssueCount}`,
+    `- Kontakty wymagające działania: ${summary.contactActionRequiredCount}`,
+    "",
+    "2. Najważniejsze do sprawdzenia",
+    ...(importantRows.length
+      ? importantRows.map((item) => {
+          const amount = item.amountLabel ? ` · ${item.amountLabel}` : "";
+          return `- ${item.typeLabel}: ${item.payerLabel}${amount}. ${item.reasonLabel} Następny krok: ${item.nextStepLabel}`;
+        })
+      : ["- Brak oczywistych spraw do sprawdzenia w aktualnych danych."]),
+    "",
+    "3. Ograniczenia",
+    ...limitations.map((item) => `- ${item}`),
+  ];
+
+  return lines.join("\n");
+}
+
+export function buildBillingOperationalReport(
+  snapshot: BillingCenterSnapshot,
+  organizationName = "Wybrana organizacja",
+): BillingOperationalReportView {
+  const debtsView = buildBillingDebtsOverpaymentsView(snapshot);
+  const paymentsView = buildBillingPaymentsAllocationView(snapshot);
+  const workQueueView = buildBillingWorkQueueView(snapshot);
+  const contactView = buildBillingContactCenterView(snapshot.contactEvents ?? []);
+  const activeWorkQueueRows = Array.from(
+    new Map(
+      [...workQueueView.firstRows, ...workQueueView.paymentRows, ...workQueueView.contactRows, ...workQueueView.overpaymentRows].map((row) => [
+        row.id,
+        row,
+      ]),
+    ).values(),
+  );
+  const paymentOperationalCount = snapshot.paymentReviewStatuses?.length ?? 0;
+  const paymentNeedsExplanationCount = paymentsView.payerOnlyRows.length + paymentsView.unexplainedRows.length;
+  const contactActionRequiredCount = contactView.attentionRows.length;
+
+  const summary: BillingOperationalReportSummary = {
+    debtTotalLabel: debtsView.summary.debtTotalLabel,
+    debtPayerCount: debtsView.summary.debtPayerCount,
+    overpaymentTotalLabel: debtsView.summary.overpaymentTotalLabel,
+    overpaymentPayerCount: debtsView.summary.overpaymentPayerCount,
+    settledPayerCount: debtsView.summary.settledPayerCount,
+    chargeAssignedPaymentCount: paymentsView.chargeAssignedRows.length,
+    payerOnlyPaymentCount: paymentsView.payerOnlyRows.length,
+    unexplainedPaymentCount: paymentsView.unexplainedRows.length,
+    activeIssueCount: activeWorkQueueRows.length,
+    snoozedIssueCount: workQueueView.snoozedRows.length,
+    handledIssueCount: workQueueView.handledRows.length,
+    contactCount: contactView.summary.totalCount,
+    contactActionRequiredCount,
+  };
+
+  const importantRows = uniqueOperationalItems([
+    ...debtsView.debtRows.slice(0, 3).map((row): BillingOperationalReportImportantItem => ({
+      id: `debt-${row.id}`,
+      typeLabel: "Zaległość",
+      payerLabel: row.payerLabel,
+      amountLabel: row.amountLabel,
+      reasonLabel: row.reasonLabel,
+      nextStepLabel: row.nextStepLabel,
+      href: row.payerHref,
+    })),
+    ...paymentsView.unexplainedRows.slice(0, 3).map((row): BillingOperationalReportImportantItem => ({
+      id: `unexplained-payment-${row.id}`,
+      typeLabel: "Wpłata do wyjaśnienia",
+      payerLabel: row.payerLabel,
+      amountLabel: row.amountLabel,
+      reasonLabel: row.contextLabel,
+      nextStepLabel: "Otwórz szczegół wpłaty i sprawdź opis.",
+      href: row.paymentHref ?? BILLING_PAYMENTS_ROUTE,
+    })),
+    ...paymentsView.payerOnlyRows.slice(0, 3).map((row): BillingOperationalReportImportantItem => ({
+      id: `payer-only-payment-${row.id}`,
+      typeLabel: "Wpłata tylko przy płatniku",
+      payerLabel: row.payerLabel,
+      amountLabel: row.amountLabel,
+      reasonLabel: row.contextLabel,
+      nextStepLabel: "Sprawdź płatnika albo szczegół wpłaty.",
+      href: row.paymentHref ?? row.payerHref ?? BILLING_PAYMENTS_ROUTE,
+    })),
+    ...workQueueView.firstRows.slice(0, 4).map((row): BillingOperationalReportImportantItem => ({
+      id: `work-${row.id}`,
+      typeLabel: row.type,
+      payerLabel: row.payerLabel,
+      amountLabel: row.amountLabel,
+      reasonLabel: row.reason,
+      nextStepLabel: row.nextStep,
+      href: row.href,
+    })),
+    ...contactView.followupRows.slice(0, 3).map((row): BillingOperationalReportImportantItem => ({
+      id: `contact-${row.id}`,
+      typeLabel: "Kontakt wymagający działania",
+      payerLabel: row.payerLabel,
+      reasonLabel: row.attentionReason,
+      nextStepLabel: "Otwórz centrum kontaktów i sprawdź historię.",
+      href: BILLING_CONTACT_CENTER_ROUTE,
+    })),
+    ...debtsView.overpaymentRows.slice(0, 2).map((row): BillingOperationalReportImportantItem => ({
+      id: `overpayment-${row.id}`,
+      typeLabel: "Nadpłata do decyzji",
+      payerLabel: row.payerLabel,
+      amountLabel: row.amountLabel,
+      reasonLabel: row.possibleSourceLabel,
+      nextStepLabel: "Otwórz szczegół płatnika i sprawdź kontekst.",
+      href: row.payerHref,
+    })),
+  ]);
+
+  const limitations = [
+    "Raport pokazuje aktualny stan danych i nie jest dokumentem księgowym.",
+    "Raport nie zmienia danych, sald, naliczeń, wpłat ani przypisań.",
+    "CASI Workspace nie wysyła tego raportu i nie tworzy z niego pliku.",
+    "Widok nie przypisuje wpłat do naliczeń ani nie rozstrzyga nadpłat.",
+    "Filtrowanie po okresie będzie osobnym etapem, jeśli dane okresów będą wystarczająco kompletne.",
+  ];
+
+  return {
+    summary,
+    summaryCards: [
+      {
+        id: "debt-total",
+        label: "Suma zaległości",
+        value: summary.debtTotalLabel,
+        description: "Widoczna suma dopłat w aktualnych danych organizacji.",
+      },
+      {
+        id: "debt-payers",
+        label: "Płatnicy z zaległością",
+        value: String(summary.debtPayerCount),
+        description: "Płatnicy, u których saldo wskazuje dopłatę.",
+      },
+      {
+        id: "overpayment-total",
+        label: "Suma nadpłat",
+        value: summary.overpaymentTotalLabel,
+        description: "Widoczne nadpłaty bez automatycznej decyzji.",
+      },
+      {
+        id: "payments-explanation",
+        label: "Wpłaty do wyjaśnienia",
+        value: String(paymentNeedsExplanationCount),
+        description: "Wpłaty bez pełnego powiązania z naliczeniem albo płatnikiem.",
+      },
+      {
+        id: "active-issues",
+        label: "Aktywne sprawy",
+        value: String(summary.activeIssueCount),
+        description: "Sprawy rozliczeniowe widoczne do sprawdzenia.",
+      },
+      {
+        id: "contacts-action",
+        label: "Kontakty wymagające działania",
+        value: String(summary.contactActionRequiredCount),
+        description: "Kontakty bez odpowiedzi albo wymagające ponowienia.",
+      },
+    ],
+    importantRows,
+    paymentRows: [...paymentsView.unexplainedRows, ...paymentsView.payerOnlyRows, ...paymentsView.chargeAssignedRows].slice(0, 8),
+    debtRows: debtsView.debtRows.slice(0, 8),
+    overpaymentRows: debtsView.overpaymentRows.slice(0, 8),
+    workQueueRows: activeWorkQueueRows.slice(0, 8),
+    contactRows: contactView.attentionRows.slice(0, 8),
+    reportText: buildOperationalReportText({
+      organizationName,
+      summary,
+      importantRows,
+      limitations,
+    }),
+    limitations,
+    contextItems: [
+      {
+        label: "Zakres raportu",
+        value: "Raport obejmuje aktualnie widoczne dane wybranej organizacji.",
+      },
+      {
+        label: "Wpłaty operacyjne",
+        value: `${paymentOperationalCount} wpisów statusu operacyjnego wpłat w aktualnym zbiorze danych.`,
+      },
+      {
+        label: "Okresy",
+        value: "Okresy są pokazywane jako kontekst, ale raport nie filtruje jeszcze danych po okresie.",
       },
     ],
   };

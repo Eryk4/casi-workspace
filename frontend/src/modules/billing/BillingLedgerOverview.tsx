@@ -21,6 +21,7 @@ import {
   BILLING_CANONICAL_ROUTE,
   BILLING_CONTACT_CENTER_ROUTE,
   BILLING_DEBTS_ROUTE,
+  BILLING_OPERATIONAL_REPORT_ROUTE,
   BILLING_WORK_QUEUE_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
@@ -683,6 +684,10 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
                 <Link className="module-quick-action" href={BILLING_CONTACT_CENTER_ROUTE}>
                   <span>Kontakty rozliczeniowe</span>
                   <MessageSquareText aria-hidden="true" size={15} />
+                </Link>
+                <Link className="module-quick-action" href={BILLING_OPERATIONAL_REPORT_ROUTE}>
+                  <span>Raport rozliczeniowy</span>
+                  <FileText aria-hidden="true" size={15} />
                 </Link>
                 <Link className="module-quick-action" href="/faktury">
                   <span>Faktury</span>

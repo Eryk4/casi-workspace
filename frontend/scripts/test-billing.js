@@ -50,6 +50,7 @@ const {
   BILLING_DEBTS_ROUTE,
   BILLING_FORBIDDEN_WRITE_ACTIONS,
   BILLING_LEGACY_ROUTE,
+  BILLING_OPERATIONAL_REPORT_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_PAYER_NOTE_CREATE_ENABLED,
@@ -108,6 +109,7 @@ const {
   buildBillingPayerNoteRequest,
   buildBillingPaymentDetailView,
   buildBillingPaymentsAllocationView,
+  buildBillingOperationalReport,
   buildBillingPeriodView,
   buildBillingWorkQueueView,
   buildBillingRecentPaymentRows,
@@ -827,6 +829,39 @@ assert.equal(actionedWorkQueueView.firstRows.some((row) => row.issueKey === issu
 assert.ok(actionedWorkQueueView.handledRows.some((row) => row.issueKey === issueToHandle.issueKey));
 assert.ok(actionedWorkQueueView.snoozedRows.some((row) => row.issueKey === issueToSnooze.issueKey));
 
+const operationalReport = buildBillingOperationalReport(snapshot, "Misja Robotyka");
+assert.equal(operationalReport.summary.debtTotalLabel, "220,00 PLN");
+assert.equal(operationalReport.summary.debtPayerCount, 1);
+assert.equal(operationalReport.summary.overpaymentTotalLabel, "40,00 PLN");
+assert.equal(operationalReport.summary.overpaymentPayerCount, 1);
+assert.equal(operationalReport.summary.chargeAssignedPaymentCount, 3);
+assert.equal(operationalReport.summary.payerOnlyPaymentCount, 1);
+assert.equal(operationalReport.summary.unexplainedPaymentCount, 1);
+assert.ok(operationalReport.summary.activeIssueCount >= 4);
+assert.ok(operationalReport.summary.contactCount >= 4);
+assert.ok(operationalReport.summary.contactActionRequiredCount >= 2);
+assert.ok(operationalReport.summaryCards.some((card) => card.label === "Suma zaległości" && card.value === "220,00 PLN"));
+assert.ok(operationalReport.summaryCards.some((card) => card.label === "Wpłaty do wyjaśnienia" && card.value === "2"));
+assert.ok(operationalReport.importantRows.length >= 5);
+assert.ok(operationalReport.importantRows.length <= 10);
+assert.ok(operationalReport.importantRows.some((row) => row.typeLabel === "Zaległość" && row.href === "/rozliczenia/platnicy/1"));
+assert.ok(operationalReport.importantRows.some((row) => row.typeLabel === "Wpłata do wyjaśnienia" && row.href === "/rozliczenia/wplaty/65"));
+assert.ok(operationalReport.importantRows.some((row) => row.typeLabel === "Kontakt wymagający działania" && row.href === "/rozliczenia/kontakty"));
+assert.equal(operationalReport.paymentRows.some((row) => row.paymentHref === "/rozliczenia/wplaty/64"), true);
+assert.equal(operationalReport.paymentRows.some((row) => row.paymentHref === "/rozliczenia/wplaty/61"), true);
+assert.match(operationalReport.reportText, /Raport rozliczeniowy — Misja Robotyka/);
+assert.match(operationalReport.reportText, /1\. Podsumowanie/);
+assert.match(operationalReport.reportText, /2\. Najważniejsze do sprawdzenia/);
+assert.match(operationalReport.reportText, /3\. Ograniczenia/);
+assert.match(operationalReport.reportText, /nie jest dokumentem księgowym/i);
+assert.match(operationalReport.reportText, /CASI Workspace nie wysyła tego raportu/i);
+assert.doesNotMatch(
+  operationalReport.reportText,
+  /Wyślij raport|Pobierz PDF|Pobierz XLSX|Wyślij e-mail|Wyślij SMS|Zaksięguj|Dopasuj|windykacja|\braw\b|endpoint|payload|debug|match id|ledger entry id|foreign key|mutation/i,
+);
+assert.ok(operationalReport.limitations.some((item) => /nie zmienia danych/i.test(item)));
+assert.ok(operationalReport.limitations.some((item) => /nie tworzy z niego pliku/i.test(item)));
+
 const chargeAssignedPaymentDetail = buildBillingPaymentDetailView(snapshot, 61);
 assert.ok(chargeAssignedPaymentDetail);
 assert.equal(chargeAssignedPaymentDetail.title, "Szczegół wpłaty");
@@ -1046,6 +1081,7 @@ assert.equal(BILLING_PAYMENTS_ROUTE, "/rozliczenia/wplaty");
 assert.equal(BILLING_DEBTS_ROUTE, "/rozliczenia/zaleglosci");
 assert.equal(BILLING_WORK_QUEUE_ROUTE, "/rozliczenia/sprawy");
 assert.equal(BILLING_CONTACT_CENTER_ROUTE, "/rozliczenia/kontakty");
+assert.equal(BILLING_OPERATIONAL_REPORT_ROUTE, "/rozliczenia/raport");
 assert.equal(BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć wpłatę");
 assert.doesNotMatch(BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id|endpoint|payload|debug/i);
 assert.equal(BILLING_READ_ONLY, true);
@@ -1098,13 +1134,29 @@ assert.match(fs.readFileSync(path.join(srcRoot, "..", "next.config.js"), "utf8")
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "zaleglosci", "page.tsx"), "utf8"), /BillingDebtsOverpaymentsPage/);
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "sprawy", "page.tsx"), "utf8"), /BillingWorkQueuePage/);
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "kontakty", "page.tsx"), "utf8"), /BillingContactCenterPage/);
+assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "raport", "page.tsx"), "utf8"), /BillingOperationalReportPage/);
 const workQueuePageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingWorkQueuePage.tsx"), "utf8");
 assert.match(workQueuePageSource, /Oznacz jako obsłużoną/);
 assert.match(workQueuePageSource, /Odłóż/);
 assert.match(workQueuePageSource, /Przygotuj kontakt/);
 assert.match(workQueuePageSource, /Kontakty rozliczeniowe/);
+assert.match(workQueuePageSource, /BILLING_OPERATIONAL_REPORT_ROUTE/);
 assert.match(workQueuePageSource, /BILLING_WORK_QUEUE_DECISION_HELP_TEXT/);
 assert.doesNotMatch(workQueuePageSource, /zaksięguj|rozlicz nadpłatę|dopasuj|wyślij przypomnienie/i);
+const billingCenterReportLinkSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8");
+const debtsReportLinkSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingDebtsOverpaymentsPage.tsx"), "utf8");
+const contactCenterReportLinkSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingContactCenterPage.tsx"), "utf8");
+const operationalReportPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingOperationalReportPage.tsx"), "utf8");
+assert.match(billingCenterReportLinkSource, /BILLING_OPERATIONAL_REPORT_ROUTE/);
+assert.match(debtsReportLinkSource, /BILLING_OPERATIONAL_REPORT_ROUTE/);
+assert.match(contactCenterReportLinkSource, /BILLING_OPERATIONAL_REPORT_ROUTE/);
+assert.match(operationalReportPageSource, /Ten raport nie zmienia danych/);
+assert.match(operationalReportPageSource, /CASI Workspace nie wysyła tego raportu/);
+assert.match(operationalReportPageSource, /Raport do skopiowania/);
+assert.doesNotMatch(
+  operationalReportPageSource,
+  /Wyślij raport|Pobierz PDF|Pobierz XLSX|Wyślij e-mail|Wyślij SMS|Zaksięguj|Dopasuj|windykacja|\braw\b|endpoint|techniczny payload|debug|match id|ledger entry id|foreign key|mutation/i,
+);
 const payerDetailPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingPayerDetailPage.tsx"), "utf8");
 assert.match(payerDetailPageSource, /Kontakt rozliczeniowy/);
 assert.match(payerDetailPageSource, /Zapisz kontakt/);
