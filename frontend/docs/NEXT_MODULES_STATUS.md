@@ -163,3 +163,7 @@ python run_quality_checks.py --profile frontend-smoke
 3. Keep invoice comments as the only invoice write until workflow decision UX, permissions, and state-specific confirmations are reviewed.
 
 Billing contact events accept only { payer_id, related_payment_id?, related_issue_key?, channel, contact_action, message_text?, note_text? }, require active organization scope, validate payer/payment scope, and do not send SMS/e-mail or change transactions, charges, matches, ledger entries, balances, imports, reminders, exports, or accounting state.
+
+## Rozliczenia - centrum kontaktow rozliczeniowych
+
+`/rozliczenia/kontakty` jest read-only centrum kontaktow rozliczeniowych. Korzysta z istniejacych wpisow kontaktowych, pokazuje przygotowane tresci, deklaracje platnosci, brak odpowiedzi i wpisy wymagajace ponownego kontaktu. Ekran nie dodaje nowych write actions, nie wysyla wiadomosci i nie zmienia danych finansowych.

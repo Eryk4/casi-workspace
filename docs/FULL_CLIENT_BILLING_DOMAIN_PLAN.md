@@ -922,3 +922,7 @@ The route `/rozliczenia/platnicy/{payerId}` now includes `Kontakt rozliczeniowy`
 This stage is not a reminder workflow, notification system, debt collection workflow, AI drafting tool, payment matching workflow, import flow, or accounting action. It only records operator-owned contact context under organization scope.
 
 Future stages may add a read-only contact log at `/rozliczenia/kontakty` or controlled notification sending, but only after a separate contract, permissions review, tenant-isolation test, and live verification.
+
+## Billing contact center - read-only stage
+
+The billing contact center at `/rozliczenia/kontakty` is a read-only operational view over existing contact events. It must remain separate from message sending, payment import, payment allocation, reminders, and collection workflows. Future outbound communication requires a separate permissions model, audit trail, rate limits, tenant-isolation tests, and live verification.

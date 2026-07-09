@@ -1,4 +1,4 @@
-import { ApiContractError, ApiError } from "@/lib/api";
+﻿import { ApiContractError, ApiError } from "@/lib/api";
 import type { DataViewErrorState, DataViewStatus } from "@/lib/types";
 import { readInvoiceList } from "../invoices/api";
 import type { InvoiceRecord } from "../invoices/types";
@@ -584,6 +584,51 @@ export type BillingContactEventRow = {
   contextLabel: string;
 };
 
+export type BillingContactCenterFilters = {
+  channel?: BillingContactChannel | "all";
+  action?: BillingContactAction | "all";
+  payerQuery?: string;
+};
+
+export type BillingContactCenterRow = {
+  id: string;
+  payerLabel: string;
+  payerHref: string;
+  paymentHref?: string;
+  workQueueHref: string;
+  channelLabel: string;
+  actionLabel: string;
+  dateLabel: string;
+  messageExcerpt?: string;
+  noteExcerpt?: string;
+  contextLabel: string;
+  attentionReason: string;
+  isDraft: boolean;
+  isPromisedPayment: boolean;
+  isNoAnswer: boolean;
+  needsFollowup: boolean;
+};
+
+export type BillingContactCenterSummary = {
+  totalCount: number;
+  draftCount: number;
+  promisedPaymentCount: number;
+  noAnswerCount: number;
+  needsFollowupCount: number;
+  recentCount: number;
+};
+
+export type BillingContactCenterView = {
+  summary: BillingContactCenterSummary;
+  allRows: BillingContactCenterRow[];
+  filteredRows: BillingContactCenterRow[];
+  attentionRows: BillingContactCenterRow[];
+  draftRows: BillingContactCenterRow[];
+  promisedPaymentRows: BillingContactCenterRow[];
+  followupRows: BillingContactCenterRow[];
+  contextItems: Array<{ label: string; value: string }>;
+};
+
 export type BillingPayerRelatedInvoiceRow = {
   id: string;
   href: string;
@@ -927,8 +972,8 @@ export const BILLING_CONTACT_ACTION_OPTIONS: Array<{ value: BillingContactAction
   { value: "draft_prepared", label: "Przygotowano treść" },
   { value: "contact_logged", label: "Zapisano kontakt" },
   { value: "no_answer", label: "Brak odpowiedzi" },
-  { value: "promised_payment", label: "Obietnica wpłaty" },
-  { value: "needs_followup", label: "Wymaga ponowienia" },
+  { value: "promised_payment", label: "Deklaracja płatności" },
+  { value: "needs_followup", label: "Wymaga ponownego kontaktu" },
 ];
 export const BILLING_CONTACT_DRAFT_TEMPLATES = [
   {
@@ -954,6 +999,7 @@ export const BILLING_PERIODS_ROUTE = `${BILLING_CANONICAL_ROUTE}/okresy`;
 export const BILLING_PAYMENTS_ROUTE = `${BILLING_CANONICAL_ROUTE}/wplaty`;
 export const BILLING_DEBTS_ROUTE = `${BILLING_CANONICAL_ROUTE}/zaleglosci`;
 export const BILLING_WORK_QUEUE_ROUTE = `${BILLING_CANONICAL_ROUTE}/sprawy`;
+export const BILLING_CONTACT_CENTER_ROUTE = `${BILLING_CANONICAL_ROUTE}/kontakty`;
 export const BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć wpłatę";
 export const BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION =
   "Najpierw wskaż organizację w topbarze. Szczegół wpłaty pokazuje tylko dane z wybranej organizacji.";
@@ -3689,6 +3735,120 @@ function buildBillingContactEventRows(events: BillingContactEventRecord[], payer
           ? "Powiązane ze sprawą rozliczeniową"
           : "Kontakt zapisany przy płatniku",
     }));
+}
+
+function contactTextExcerpt(value: string | null | undefined, fallback = "Brak treści w danych"): string {
+  const text = safeBillingText(value, "").trim();
+  if (!text) {
+    return fallback;
+  }
+  return text.length > 160 ? `${text.slice(0, 157).trim()}...` : text;
+}
+
+function buildBillingContactCenterRows(events: BillingContactEventRecord[]): BillingContactCenterRow[] {
+  return events
+    .slice()
+    .sort(
+      (a, b) =>
+        String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")) ||
+        b.billing_contact_event_id - a.billing_contact_event_id,
+    )
+    .map((event) => {
+      const isDraft = event.contact_action === "draft_prepared";
+      const isPromisedPayment = event.contact_action === "promised_payment";
+      const isNoAnswer = event.contact_action === "no_answer";
+      const needsFollowup = event.contact_action === "needs_followup";
+      const payerLabel = safeBillingText(event.payer_display_name, "Płatnik");
+      return {
+        id: String(event.billing_contact_event_id),
+        payerLabel,
+        payerHref: `${BILLING_PAYER_DETAIL_ROUTE}/${event.billing_payer_id}`,
+        paymentHref: event.related_payment_id ? `${BILLING_PAYMENTS_ROUTE}/${event.related_payment_id}` : undefined,
+        workQueueHref: BILLING_WORK_QUEUE_ROUTE,
+        channelLabel: getBillingContactChannelLabel(event.channel),
+        actionLabel: getBillingContactActionLabel(event.contact_action),
+        dateLabel: formatDateLabel(event.created_at, "Brak daty"),
+        messageExcerpt: event.message_text ? contactTextExcerpt(event.message_text, "Brak treści wiadomości") : undefined,
+        noteExcerpt: event.note_text ? contactTextExcerpt(event.note_text, "Brak notatki") : undefined,
+        contextLabel: event.related_payment_id
+          ? "Kontakt powiązany z wpłatą"
+          : event.related_issue_key
+            ? "Kontakt powiązany ze sprawą rozliczeniową"
+            : "Kontakt zapisany przy płatniku",
+        attentionReason: isNoAnswer
+          ? "Brak odpowiedzi może wymagać ponownego kontaktu."
+          : needsFollowup
+            ? "Wpis oznaczono jako wymagający ponowienia kontaktu."
+            : isPromisedPayment
+              ? "Deklaracja płatności wymaga późniejszego sprawdzenia wpłaty."
+              : isDraft
+                ? "Przygotowano treść, ale CASI Workspace jej nie wysłał."
+                : "Kontakt zapisany w historii płatnika.",
+        isDraft,
+        isPromisedPayment,
+        isNoAnswer,
+        needsFollowup,
+      };
+    });
+}
+
+export function buildBillingContactCenterView(
+  events: BillingContactEventRecord[],
+  filters: BillingContactCenterFilters = {},
+): BillingContactCenterView {
+  const allRows = buildBillingContactCenterRows(events);
+  const normalizedQuery = normalizeText(filters.payerQuery ?? "");
+  const filteredRows = allRows.filter((row) => {
+    const event = events.find((item) => String(item.billing_contact_event_id) === row.id);
+    if (!event) {
+      return false;
+    }
+    if (filters.channel && filters.channel !== "all" && event.channel !== filters.channel) {
+      return false;
+    }
+    if (filters.action && filters.action !== "all" && event.contact_action !== filters.action) {
+      return false;
+    }
+    if (normalizedQuery && !normalizeText(row.payerLabel).includes(normalizedQuery)) {
+      return false;
+    }
+    return true;
+  });
+  const draftRows = allRows.filter((row) => row.isDraft);
+  const promisedPaymentRows = allRows.filter((row) => row.isPromisedPayment);
+  const followupRows = allRows.filter((row) => row.isNoAnswer || row.needsFollowup);
+  const attentionRows = allRows.filter((row) => row.isNoAnswer || row.needsFollowup || row.isPromisedPayment || row.isDraft).slice(0, 10);
+
+  return {
+    summary: {
+      totalCount: allRows.length,
+      draftCount: draftRows.length,
+      promisedPaymentCount: promisedPaymentRows.length,
+      noAnswerCount: allRows.filter((row) => row.isNoAnswer).length,
+      needsFollowupCount: allRows.filter((row) => row.needsFollowup).length,
+      recentCount: allRows.slice(0, 7).length,
+    },
+    allRows,
+    filteredRows,
+    attentionRows,
+    draftRows,
+    promisedPaymentRows,
+    followupRows,
+    contextItems: [
+      {
+        label: "Zakres",
+        value: "Ten ekran zbiera historię kontaktów rozliczeniowych z płatnikami w wybranej organizacji.",
+      },
+      {
+        label: "Brak wysyłki",
+        value: "CASI Workspace nie wysyła wiadomości z tego widoku i nie tworzy automatycznych przypomnień.",
+      },
+      {
+        label: "Finanse",
+        value: "Kontakt, draft albo deklaracja płatności nie zmienia sald, wpłat, naliczeń ani przypisań.",
+      },
+    ],
+  };
 }
 
 function buildPayerRelatedInvoiceRows(

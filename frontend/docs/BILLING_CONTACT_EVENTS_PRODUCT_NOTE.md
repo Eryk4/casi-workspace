@@ -96,3 +96,7 @@ Ten etap nie dodaje:
 ## Następny bezpieczny krok
 
 Po live-weryfikacji można rozważyć osobny widok `/rozliczenia/kontakty` jako read-only dziennik kontaktów. Nie powinien powstać przed potwierdzeniem, że lista kontaktów przy płatniku jest użyteczna i bezpieczna.
+
+## Centrum kontaktow rozliczeniowych
+
+Po etapie zapisu kontaktu dodano read-only widok `/rozliczenia/kontakty`. To centrum przegladu istniejacych wpisow kontaktowych w aktywnej organizacji. Ekran nie wysyla wiadomosci, nie tworzy przypomnien i nie zmienia finansow. Pokazuje przygotowane tresci, zapisane kontakty, deklaracje platnosci oraz wpisy wymagajace ponowienia kontaktu.

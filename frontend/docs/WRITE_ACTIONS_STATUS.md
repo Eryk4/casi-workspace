@@ -230,3 +230,7 @@ Current frontend and backend hardening rules:
 - The endpoint must not change balances, charges, payment matches, transactions, ledger entries, imports, reminders, exports, or accounting state.
 - Audit details store metadata and text lengths, not the full message or note.
 - UI copy states that CASI Workspace does not send the message; the operator must copy and send it manually outside the app.
+
+## Rozliczenia - centrum kontaktow rozliczeniowych
+
+`/rozliczenia/kontakty` nie dodaje nowej akcji zapisu. Jest read-only przegladem kontaktow zapisanych wczesniej na szczegole platnika. Formularz kontaktu pozostaje na `/rozliczenia/platnicy/{payerId}` i nadal nie wysyla wiadomosci ani nie zmienia finansow.

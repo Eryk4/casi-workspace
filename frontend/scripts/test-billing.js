@@ -43,6 +43,7 @@ const {
   BILLING_CONTACT_DRAFT_TEMPLATES,
   BILLING_CONTACT_EVENT_HELP_TEXT,
   BILLING_CONTACT_EVENTS_ENDPOINT,
+  BILLING_CONTACT_CENTER_ROUTE,
   BILLING_CONTACT_MESSAGE_MAX_LENGTH,
   BILLING_CONTACT_NO_SEND_HELP_TEXT,
   BILLING_CONTACT_NOTE_MAX_LENGTH,
@@ -70,6 +71,7 @@ const {
   BILLING_WORK_QUEUE_EVENTS_ENDPOINT,
   billingPaymentReviewStatusEndpoint,
   buildBillingContactEventRequest,
+  buildBillingContactCenterView,
   buildBillingPaymentReviewStatusRequest,
   buildBillingWorkQueueDecisionRequest,
   createBillingContactEventSubmitter,
@@ -410,6 +412,7 @@ const contactEventsPayload = {
       billing_contact_event_id: 902,
       organization_id: 42,
       billing_payer_id: 14,
+      payer_display_name: "Rodzina Kowalskich",
       channel: "phone",
       contact_action: "contact_logged",
       message_text: "C:\\Users\\secret\\message.txt",
@@ -418,13 +421,52 @@ const contactEventsPayload = {
       created_by_user_name: "Operator",
       created_at: "2099-05-11T10:00:00",
     },
+    {
+      billing_contact_event_id: 903,
+      organization_id: 42,
+      billing_payer_id: 14,
+      payer_display_name: "Rodzina Kowalskich",
+      channel: "email",
+      contact_action: "promised_payment",
+      message_text: null,
+      note_text: "Płatnik deklaruje wpłatę do piątku.",
+      created_by_user_id: 2,
+      created_by_user_name: "Operator",
+      created_at: "2099-05-12T10:00:00",
+    },
+    {
+      billing_contact_event_id: 904,
+      organization_id: 42,
+      billing_payer_id: 15,
+      payer_display_name: "Firma Sigma",
+      channel: "phone",
+      contact_action: "needs_followup",
+      message_text: null,
+      note_text: "Oddzwonić po potwierdzenie przelewu.",
+      created_by_user_id: 2,
+      created_by_user_name: "Operator",
+      created_at: "2099-05-13T10:00:00",
+    },
   ],
 };
 const contactEvents = readBillingContactEvents(contactEventsPayload);
 assert.equal(contactEvents.organization_id, 42);
-assert.equal(contactEvents.events.length, 2);
+assert.equal(contactEvents.events.length, 4);
 assert.equal(contactEvents.events[0].channel, "sms");
 assert.equal(contactEvents.events[1].message_text, "Ukryto techniczną lub wrażliwą treść wiadomości.");
+const contactCenterView = buildBillingContactCenterView(contactEvents.events);
+assert.equal(contactCenterView.summary.totalCount, 4);
+assert.equal(contactCenterView.summary.draftCount, 1);
+assert.equal(contactCenterView.summary.promisedPaymentCount, 1);
+assert.equal(contactCenterView.summary.needsFollowupCount, 1);
+assert.ok(contactCenterView.draftRows.some((row) => row.actionLabel === "Przygotowano treść" && row.payerHref === "/rozliczenia/platnicy/14"));
+assert.ok(contactCenterView.promisedPaymentRows.some((row) => /Deklaracja płatności/.test(row.actionLabel)));
+assert.ok(contactCenterView.followupRows.some((row) => row.actionLabel === "Wymaga ponownego kontaktu"));
+assert.ok(contactCenterView.attentionRows.some((row) => row.paymentHref === "/rozliczenia/wplaty/61"));
+assert.ok(contactCenterView.attentionRows.every((row) => row.workQueueHref === "/rozliczenia/sprawy"));
+assert.equal(buildBillingContactCenterView(contactEvents.events, { channel: "sms" }).filteredRows.length, 1);
+assert.equal(buildBillingContactCenterView(contactEvents.events, { action: "promised_payment" }).filteredRows.length, 1);
+assert.equal(buildBillingContactCenterView(contactEvents.events, { payerQuery: "Firma Sigma" }).filteredRows.length, 1);
 
 const rows = buildBillingBalanceRows(balances);
 assert.equal(rows[0].payerLabel, "Rodzina Kowalskich");
@@ -974,12 +1016,10 @@ assert.equal(payerDetail.paymentRows[0].amountLabel, "300,00 PLN");
 assert.equal(payerDetail.noteRows.length, 1);
 assert.equal(payerDetail.noteRows[0].typeLabel, "Notatka operatora");
 assert.equal(payerDetail.noteRows[0].noteText, "Ustalono rozmowę o saldzie po zajęciach.");
-assert.equal(payerDetail.contactEventRows.length, 2);
-assert.equal(payerDetail.contactEventRows[0].actionLabel, "Zapisano kontakt");
-assert.equal(payerDetail.contactEventRows[0].channelLabel, "Telefon");
-assert.equal(payerDetail.contactEventRows[0].messageText, "Ukryto techniczną lub wrażliwą treść wiadomości.");
-assert.equal(payerDetail.contactEventRows[1].actionLabel, "Przygotowano treść");
-assert.match(payerDetail.contactEventRows[1].contextLabel, /wpłatą #61/);
+assert.equal(payerDetail.contactEventRows.length, 4);
+assert.ok(payerDetail.contactEventRows.some((row) => row.actionLabel === "Zapisano kontakt" && row.channelLabel === "Telefon"));
+assert.ok(payerDetail.contactEventRows.some((row) => row.messageText === "Ukryto techniczną lub wrażliwą treść wiadomości."));
+assert.ok(payerDetail.contactEventRows.some((row) => row.actionLabel === "Przygotowano treść" && /wpłatą #61/.test(row.contextLabel)));
 assert.equal(payerDetail.invoiceRows[0].href, "/faktury/18");
 assert.equal(payerDetail.workItemRows[0].href, "/work-items/44");
 assert.equal(buildBillingPayerDetailView(snapshot, 999), null);
@@ -1005,6 +1045,7 @@ assert.equal(BILLING_PERIODS_ROUTE, "/rozliczenia/okresy");
 assert.equal(BILLING_PAYMENTS_ROUTE, "/rozliczenia/wplaty");
 assert.equal(BILLING_DEBTS_ROUTE, "/rozliczenia/zaleglosci");
 assert.equal(BILLING_WORK_QUEUE_ROUTE, "/rozliczenia/sprawy");
+assert.equal(BILLING_CONTACT_CENTER_ROUTE, "/rozliczenia/kontakty");
 assert.equal(BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE, "Wybierz organizację, aby zobaczyć wpłatę");
 assert.doesNotMatch(BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION, /organization_id|endpoint|payload|debug/i);
 assert.equal(BILLING_READ_ONLY, true);
@@ -1056,19 +1097,31 @@ assert.match(fs.readFileSync(path.join(srcRoot, "app", "kasa", "page.tsx"), "utf
 assert.match(fs.readFileSync(path.join(srcRoot, "..", "next.config.js"), "utf8"), /source: "\/kasa"[\s\S]*destination: "\/rozliczenia"/);
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "zaleglosci", "page.tsx"), "utf8"), /BillingDebtsOverpaymentsPage/);
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "sprawy", "page.tsx"), "utf8"), /BillingWorkQueuePage/);
+assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "kontakty", "page.tsx"), "utf8"), /BillingContactCenterPage/);
 const workQueuePageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingWorkQueuePage.tsx"), "utf8");
 assert.match(workQueuePageSource, /Oznacz jako obsłużoną/);
 assert.match(workQueuePageSource, /Odłóż/);
 assert.match(workQueuePageSource, /Przygotuj kontakt/);
+assert.match(workQueuePageSource, /Kontakty rozliczeniowe/);
 assert.match(workQueuePageSource, /BILLING_WORK_QUEUE_DECISION_HELP_TEXT/);
 assert.doesNotMatch(workQueuePageSource, /zaksięguj|rozlicz nadpłatę|dopasuj|wyślij przypomnienie/i);
 const payerDetailPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingPayerDetailPage.tsx"), "utf8");
 assert.match(payerDetailPageSource, /Kontakt rozliczeniowy/);
 assert.match(payerDetailPageSource, /Zapisz kontakt/);
+assert.match(payerDetailPageSource, /Zobacz wszystkie kontakty rozliczeniowe/);
 assert.match(payerDetailPageSource, /BILLING_CONTACT_NO_SEND_HELP_TEXT/);
 assert.doesNotMatch(payerDetailPageSource, /Wyślij SMS|Wyślij e-mail|Wyślij przypomnienie|Dodaj płatność|Dopasuj wpłatę/i);
-assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8"), /Zaległości i nadpłaty/);
-assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8"), /Sprawy rozliczeniowe/);
+const contactCenterPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingContactCenterPage.tsx"), "utf8");
+assert.match(contactCenterPageSource, /Kontakty rozliczeniowe/);
+assert.match(contactCenterPageSource, /Przygotowane treści/);
+assert.match(contactCenterPageSource, /Deklaracja płatności nie oznacza dodania wpłaty/);
+assert.match(contactCenterPageSource, /CASI Workspace nie wysłał tej wiadomości/);
+assert.match(contactCenterPageSource, /BILLING_CONTACT_NO_SEND_HELP_TEXT/);
+assert.doesNotMatch(contactCenterPageSource, /Wyślij SMS|Wyślij e-mail|Wyślij przypomnienie|Dodaj płatność|Dopasuj wpłatę|raw JSON|techniczny payload|endpoint|debug|match id|ledger entry id|foreign key|mutation/i);
+const ledgerOverviewSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8");
+assert.match(ledgerOverviewSource, /Zaległości i nadpłaty/);
+assert.match(ledgerOverviewSource, /Sprawy rozliczeniowe/);
+assert.match(ledgerOverviewSource, /Kontakty rozliczeniowe/);
 assert.match(fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingDebtsOverpaymentsPage.tsx"), "utf8"), /Sprawy rozliczeniowe/);
 assert.equal(canUseBillingOrganizationScope(null), false);
 assert.equal(canUseBillingOrganizationScope(""), false);
@@ -1418,7 +1471,7 @@ async function main() {
     async () => {
       const payload = await api.billingContactEvents(withActiveOrganizationQuery("42", { payer_id: 14, limit: 50 }));
       const events = readBillingContactEvents(payload);
-      assert.equal(events.events.length, 2);
+      assert.equal(events.events.length, 4);
     },
   );
 
@@ -1736,7 +1789,7 @@ async function main() {
       assert.equal(readBillingStudents(studentsPayload).length, 1);
       assert.equal(readBillingCharges(chargesPayload).length, 1);
       assert.equal(readBillingPayerNotes(notesPayload).length, 1);
-      assert.equal(readBillingContactEvents(contactEventsListPayload).events.length, 2);
+      assert.equal(readBillingContactEvents(contactEventsListPayload).events.length, 4);
       assert.equal(readBillingPaymentMatches(matchesPayload).length, 1);
       assert.equal(readBillingTransactions(transactionsPayload).length, 1);
       assert.equal(readBillingPaymentReviewStatuses(reviewStatusesPayload).statuses.length, 2);

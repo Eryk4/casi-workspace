@@ -21,6 +21,7 @@ import { readWorkItems } from "../work-items/workItemsModel";
 import {
   BILLING_CANONICAL_ROUTE,
   BILLING_CONTACT_ACTION_OPTIONS,
+  BILLING_CONTACT_CENTER_ROUTE,
   BILLING_CONTACT_CHANNEL_OPTIONS,
   BILLING_CONTACT_DRAFT_TEMPLATES,
   BILLING_CONTACT_EVENT_HELP_TEXT,
@@ -448,6 +449,9 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
                 description="Przygotuj treść kontaktu albo zapisz ślad rozmowy. Ten formularz nie wysyła SMS ani e-maila."
                 title="Kontakt rozliczeniowy"
               >
+                <div className="billing-inline-links">
+                  <Link className="module-link" href={BILLING_CONTACT_CENTER_ROUTE}>Zobacz wszystkie kontakty rozliczeniowe</Link>
+                </div>
                 <form className="invoice-comment-form" onSubmit={handleContactSubmit}>
                   <div className="module-grid module-grid--two">
                     <label className="invoice-comment-form__label" htmlFor="billing-contact-channel">

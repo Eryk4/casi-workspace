@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Building2, CalendarDays, CreditCard, FileText, ListChecks, RefreshCw, UsersRound, WalletCards } from "lucide-react";
+import { ArrowRight, Building2, CalendarDays, CreditCard, FileText, ListChecks, MessageSquareText, RefreshCw, UsersRound, WalletCards } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -19,6 +19,7 @@ import { readContractors } from "../crm/crmModel";
 import { readWorkItems } from "../work-items/workItemsModel";
 import {
   BILLING_CANONICAL_ROUTE,
+  BILLING_CONTACT_CENTER_ROUTE,
   BILLING_DEBTS_ROUTE,
   BILLING_WORK_QUEUE_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
@@ -678,6 +679,10 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
                 <Link className="module-quick-action" href={BILLING_WORK_QUEUE_ROUTE}>
                   <span>Sprawy rozliczeniowe</span>
                   <ListChecks aria-hidden="true" size={15} />
+                </Link>
+                <Link className="module-quick-action" href={BILLING_CONTACT_CENTER_ROUTE}>
+                  <span>Kontakty rozliczeniowe</span>
+                  <MessageSquareText aria-hidden="true" size={15} />
                 </Link>
                 <Link className="module-quick-action" href="/faktury">
                   <span>Faktury</span>

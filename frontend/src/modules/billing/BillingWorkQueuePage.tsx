@@ -17,6 +17,7 @@ import { withActiveOrganizationQuery } from "@/context/organizationContextModel"
 import { api } from "@/lib/api";
 import {
   BILLING_CANONICAL_ROUTE,
+  BILLING_CONTACT_CENTER_ROUTE,
   BILLING_DEBTS_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_ORGANIZATION_REQUIRED_TITLE,
@@ -290,10 +291,16 @@ export function BillingWorkQueuePage() {
       {errorState ? <ErrorState description={errorState.description} title={errorState.title} /> : null}
       {organizationMissing ? <EmptyState description={BILLING_ORGANIZATION_REQUIRED_DESCRIPTION} title={BILLING_ORGANIZATION_REQUIRED_TITLE} /> : null}
       {readyWithoutData ? (
-        <EmptyState
-          description="Nie ma dziś oczywistych spraw rozliczeniowych do obsłużenia w wybranej organizacji."
-          title="Brak spraw do obsłużenia"
-        />
+        <>
+          <EmptyState
+            description="Nie ma dziś oczywistych spraw rozliczeniowych do obsłużenia w wybranej organizacji."
+            title="Brak spraw do obsłużenia"
+          />
+          <Card className="module-quick-actions" title="Przejdź dalej">
+            <Link className="module-quick-action" href={BILLING_CONTACT_CENTER_ROUTE}>Kontakty rozliczeniowe</Link>
+            <Link className="module-quick-action" href={BILLING_CANONICAL_ROUTE}>Centrum rozliczeń</Link>
+          </Card>
+        </>
       ) : null}
 
       {status === "ready" && workQueueView && !organizationMissing && !readyWithoutData ? (
@@ -442,6 +449,7 @@ export function BillingWorkQueuePage() {
 
           <div className="module-grid module-grid--two">
             <Card className="module-quick-actions" title="Przejdź dalej">
+              <Link className="module-quick-action" href={BILLING_CONTACT_CENTER_ROUTE}>Kontakty rozliczeniowe</Link>
               <Link className="module-quick-action" href={BILLING_PAYMENTS_ROUTE}>Wpłaty i przypisania</Link>
               <Link className="module-quick-action" href={BILLING_DEBTS_ROUTE}>Zaległości i nadpłaty</Link>
               <Link className="module-quick-action" href={BILLING_PERIODS_ROUTE}>Okresy rozliczeniowe</Link>

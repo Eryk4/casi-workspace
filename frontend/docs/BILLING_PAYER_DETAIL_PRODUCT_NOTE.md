@@ -91,3 +91,7 @@ Szczegół płatnika ma teraz addytywną sekcję `Kontakt rozliczeniowy`. Operat
 Kontakt rozliczeniowy zapisuje rekord w `billing_contact_events`, wymaga aktywnego `organization_id`, sprawdza płatnika i opcjonalną wpłatę w tej samej organizacji, a systemowy audit zapisuje tylko metadane oraz długości treści. Pełna treść wiadomości i notatki nie jest kopiowana do details zdarzenia.
 
 Ten etap nie zmienia salda, naliczeń, wpłat, dopasowań, statusów, importów, przypomnień ani księgowania. To nadal kontrolowany fundament operacyjny, a nie workflow wysyłki.
+
+## Powiazanie z centrum kontaktow
+
+Szczegol platnika prowadzi do `/rozliczenia/kontakty`, gdzie mozna przejrzec wszystkie kontakty rozliczeniowe w aktywnej organizacji. Szczegol platnika pozostaje miejscem zapisu pojedynczego kontaktu, a centrum kontaktow jest tylko read-only przegladem.

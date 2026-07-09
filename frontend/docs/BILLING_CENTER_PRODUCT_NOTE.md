@@ -158,3 +158,7 @@ Ta decyzja nie zmienia salda, wp?at, nalicze?, dopasowa?, ledgeru, statusu opera
 Szczegół płatnika `/rozliczenia/platnicy/{payerId}` zawiera teraz sekcję `Kontakt rozliczeniowy`. Jest to pierwszy bezpieczny fundament kontaktu z płatnikiem: przygotowanie treści do samodzielnego wysłania albo zapis śladu rozmowy.
 
 CASI Workspace nie wysyła SMS-ów ani e-maili w tym etapie. Widok nie uruchamia przypomnień, nie importuje płatności, nie dopasowuje wpłat i nie zmienia salda. Szczegóły kontraktu są opisane w `frontend/docs/BILLING_CONTACT_EVENTS_PRODUCT_NOTE.md`.
+
+## Centrum kontaktow rozliczeniowych
+
+Trasa `/rozliczenia/kontakty` porzadkuje istniejace kontakty rozliczeniowe w jednym read-only widoku. Centrum rozliczen prowadzi do tego ekranu jako do przegladu historii kontaktu z platnikami. Widok nie wysyla wiadomosci i nie zmienia sald, platnosci, dopasowan ani naliczen.

@@ -78,3 +78,7 @@ Po live-weryfikacji warto utrzymać ekran jako centrum pracy read-only. Kolejne 
 `/rozliczenia/sprawy` może prowadzić do szczegółu płatnika linkiem `Przygotuj kontakt`. Link nie jest akcją zapisu i nie wysyła wiadomości. Prowadzi do sekcji `Kontakt rozliczeniowy` na `/rozliczenia/platnicy/{payerId}`, gdzie operator może przygotować treść lub zapisać ślad kontaktu.
 
 Kolejka spraw nadal nie wysyła przypomnień, nie tworzy zadań i nie zmienia sald. Decyzje spraw pozostają osobnym append-only mechanizmem `Obsłużona` / `Odłożona`.
+
+## Powiazanie z centrum kontaktow
+
+Widok `/rozliczenia/sprawy` linkuje do `/rozliczenia/kontakty`, zeby operator mogl sprawdzic istniejaca historie kontaktow. Link nie jest akcja zapisu i nie wysyla wiadomosci.
