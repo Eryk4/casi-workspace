@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import ast
@@ -62,6 +62,7 @@ CRITICAL_TABLES = {
     "billing_payment_review_events",
     "billing_work_queue_events",
     "billing_contact_events",
+    "billing_next_step_events",
     "billing_payment_matches",
     "billing_payer_ledger_entries",
     "billing_notes",

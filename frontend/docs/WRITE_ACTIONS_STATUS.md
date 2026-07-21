@@ -8,12 +8,12 @@ No new write action should be added until the existing paths below stay green in
 
 ## Summary
 
-- Current write surfaces: Work Items, invoice operator comments, CRM contractor notes, billing payer notes, billing payment operational review status, billing work queue decisions, and billing contact draft/log events.
+- Current write surfaces: Work Items, invoice operator comments, CRM contractor notes, billing payer notes, billing payment operational review status, billing work queue decisions, billing contact draft/log events, and manual billing next-step events.
 - Every active write path is organization-scoped.
 - The frontend blocks writes without an active organization before calling the API.
 - The backend resolves write scope server-side and rejects missing/invalid organization scope.
 - UI success is only shown after backend confirmation.
-- No current write path should send data to external systems, KSeF, email, AI, or S3. Billing payer notes, payment operational status, work queue decisions, and billing contact draft/log events are internal-only and do not change financial state or send messages.
+- No current write path should send data to external systems, KSeF, email, AI, or S3. Billing payer notes, payment operational status, work queue decisions, billing contact draft/log events, and manual next-step events are internal-only and do not change financial state or send messages.
 - Active Next write paths listed below have explicit payload allowlists.
 - Broader backend mutating endpoints are tracked separately in `docs/PAYLOAD_ALLOWLIST_AUDIT.md` before any future hardening.
 - Backend-only additive comments/notes for support, intake, tasks, and knowledge documents now also reject extra JSON fields, but they are not promoted as active Next write actions by this document.
@@ -38,6 +38,7 @@ No new write action should be added until the existing paths below stay green in
 | Rozliczenia | `POST /api/billing/payments/{paymentId}/review-status?organization_id=...` | `/rozliczenia/wplaty/{paymentId}` | `{ "status": string, "note_text"?: string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads incoming transaction by `billing_transaction_id` and `organization_id`; no transaction/charge/match/ledger/balance mutation | `test-billing.js`, `tests/test_billing_payment_review_status_http.py` |
 | Rozliczenia | `POST /api/billing/work-queue/events?organization_id=...` | `/rozliczenia/sprawy` | `{ "issue_key": string, "issue_type": string, "target_type": string, "target_id"?: number, "action": "handled" | "snoozed", "note_text"?: string }` | Required by active organization context | Form loading; queue refreshes after backend response | `_resolve_write_scope`; service validates `payment` and `payer` targets by organization; no transaction/charge/match/ledger/balance mutation | `test-billing.js`, `tests/test_billing_work_queue_events_http.py` |
 | Rozliczenia | `POST /api/billing/contact-events?organization_id=...` | `/rozliczenia/platnicy/{payerId}` | `{ "payer_id": number, "related_payment_id"?: number, "related_issue_key"?: string, "channel": string, "contact_action": string, "message_text"?: string, "note_text"?: string }` | Required by active organization context | Form loading; payer detail refreshes after backend response | `_resolve_write_scope`; service validates payer and optional payment by organization; no transaction/charge/match/ledger/balance mutation and no external sending | `test-billing.js`, `tests/test_billing_contact_events_http.py` |
+| Rozliczenia | `POST /api/billing/next-step-events?organization_id=...` | `/rozliczenia/sprawy`, `/rozliczenia/platnicy/{payerId}` | `{ "target_type": string, "target_id"?: number, "related_issue_key"?: string, "step_type": string, "event_action": "planned" | "completed" | "snoozed", "title": string, "note_text"?: string, "planned_for"?: string }` | Required by active organization context | Form loading; page refreshes after backend response | `_resolve_write_scope`; service validates payer/payment/contact targets by organization; no transaction/charge/match/ledger/balance mutation and no external sending/reminder creation | `test-billing.js`, `tests/test_billing_next_step_events_http.py` |
 
 ## Tenant Isolation Status
 
@@ -103,6 +104,20 @@ No new write action should be added until the existing paths below stay green in
 - Event history records `billing_work_queue_event_id`, issue metadata, action, target metadata, and `note_length`, not the full `note_text`.
 - The endpoint must not change balances, charges, payment matches, transactions, ledger entries, imports, reminders, task manager items, exports, or accounting state.
 - `Obs?u?ona` does not mean settled. `Od?o?ona` does not create a reminder.
+
+### Billing Next Step Events
+
+- Frontend blocks next-step submit without active organization.
+- Backend requires write scope and accepts only `target_type`, optional `target_id`, optional `related_issue_key`, `step_type`, `event_action`, `title`, optional `note_text`, and optional `planned_for`.
+- Allowed target types are `payer`, `payment`, `work_queue_issue`, `contact`, and `billing_summary`.
+- Allowed step types are `call`, `send_manual_message`, `check_payment`, `clarify_payment`, `review_overpayment`, `wait_for_response`, `wait_for_payment`, `review_notes`, and `other`.
+- Allowed event actions are `planned`, `completed`, and `snoozed`.
+- For `target_type=payer`, service fetches the payer by `billing_payer_id` and `organization_id`.
+- For `target_type=payment`, service fetches the incoming transaction by `billing_transaction_id` and `organization_id`.
+- For `target_type=contact`, service verifies that the contact event belongs to the organization.
+- `planned_for` is informational only. It does not create a calendar entry or automatic reminder.
+- Event history records metadata, title length, note length, and planned-for presence, not the full `note_text`.
+- The endpoint must not change balances, charges, payment matches, transactions, ledger entries, imports, reminders, task manager items, messages, exports, or accounting state.
 
 ### Backend-Only Additive Comments/Notes
 

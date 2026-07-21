@@ -934,3 +934,13 @@ Status: implemented as a read-only operational report under `/rozliczenia/raport
 The report aggregates existing organization-scoped billing data: payer balances, charges, transactions, payment matches, payment review statuses, work queue events, and contact events. It is not an accounting document, does not create files, does not send messages, and does not change financial state.
 
 Future PDF, spreadsheet, message sending, or accounting export flows require a separate contract, permissions model, audit trail, and tenant-isolation verification.
+
+### Stage 2i: Manual next billing step
+
+Status: implemented as a narrow append-only write foundation.
+
+The stage adds `billing_next_step_events` and a minimal organization-scoped API for manual next-step planning. Operators can record what should happen next for a payer, payment, work queue issue, contact, or billing summary. The active Next UI exposes adding steps on `/rozliczenia/sprawy` and `/rozliczenia/platnicy/{payerId}`. Payment detail shows related active steps read-only.
+
+This is not a calendar, reminder system, task manager, message sender, payment allocation, accounting action, charge mutation, balance mutation, import flow, AI workflow, PDF export, or spreadsheet export. `planned_for` is informational only.
+
+Future completion/snooze UI and a possible `/rozliczenia/kroki` aggregate view should remain append-only and must not introduce automation without a separate product and security review.

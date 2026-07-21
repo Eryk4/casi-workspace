@@ -1,8 +1,8 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { ArrowLeft, ListChecks, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -24,13 +24,21 @@ import {
   BILLING_ORGANIZATION_REQUIRED_TITLE,
   BILLING_PAYMENTS_ROUTE,
   BILLING_PERIODS_ROUTE,
+  BILLING_NEXT_STEP_HELP_TEXT,
+  BILLING_NEXT_STEP_NOTE_MAX_LENGTH,
+  BILLING_NEXT_STEP_TITLE_MAX_LENGTH,
+  BILLING_NEXT_STEP_TYPE_OPTIONS,
   BILLING_WORK_QUEUE_DECISION_HELP_TEXT,
   buildBillingWorkQueueView,
+  buildBillingNextStepRequest,
+  buildBillingNextStepRows,
   buildBillingWorkQueueDecisionRequest,
   canUseBillingOrganizationScope,
+  createBillingNextStepSubmitter,
   getBillingErrorState,
   readBillingBalances,
   readBillingCharges,
+  readBillingNextStepEvents,
   readBillingPayerNotes,
   readBillingPaymentMatches,
   readBillingPaymentReviewStatuses,
@@ -40,6 +48,9 @@ import {
   readBillingTransactions,
   type BillingCenterSnapshot,
   type BillingErrorState,
+  type BillingNextStepErrorState,
+  type BillingNextStepRow,
+  type BillingNextStepType,
   type BillingStatus,
   type BillingWorkQueueEventAction,
   type BillingWorkQueueIssue,
@@ -124,6 +135,36 @@ function WorkQueueSection({
   );
 }
 
+function NextStepList({ emptyDescription, rows }: { emptyDescription: string; rows: BillingNextStepRow[] }) {
+  return rows.length ? (
+    <div className="module-readiness">
+      {rows.map((row) => (
+        <div className="module-readiness__item" key={row.id}>
+          <ListChecks aria-hidden="true" size={17} />
+          <div>
+            <strong>{row.title}</strong>
+            <span>
+              {row.stepTypeLabel} · {row.eventActionLabel} · {row.dateLabel}
+            </span>
+            <span>
+              {row.targetHref ? (
+                <Link className="module-link" href={row.targetHref}>
+                  {row.targetLabel}
+                </Link>
+              ) : (
+                row.targetLabel
+              )}
+            </span>
+            {row.noteText ? <p>{row.noteText}</p> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <EmptyState title="Brak zapisanych kroków" description={emptyDescription} />
+  );
+}
+
 export function BillingWorkQueuePage() {
   const { selectedOrganizationId, selectedOrganization, status: organizationStatus } = useActiveOrganization();
   const [snapshot, setSnapshot] = useState<BillingCenterSnapshot | null>(null);
@@ -136,6 +177,14 @@ export function BillingWorkQueuePage() {
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [decisionSuccess, setDecisionSuccess] = useState<string | null>(null);
   const [isDecisionSubmitting, setDecisionSubmitting] = useState(false);
+  const [nextStepIssueKey, setNextStepIssueKey] = useState("");
+  const [nextStepType, setNextStepType] = useState<BillingNextStepType>("check_payment");
+  const [nextStepTitle, setNextStepTitle] = useState("");
+  const [nextStepPlannedFor, setNextStepPlannedFor] = useState("");
+  const [nextStepNote, setNextStepNote] = useState("");
+  const [nextStepSubmitting, setNextStepSubmitting] = useState(false);
+  const [nextStepErrorState, setNextStepErrorState] = useState<BillingNextStepErrorState | null>(null);
+  const [nextStepSuccessMessage, setNextStepSuccessMessage] = useState<string | null>(null);
 
   const loadWorkQueue = useCallback(async () => {
     if (organizationStatus === "loading") {
@@ -160,7 +209,7 @@ export function BillingWorkQueuePage() {
 
     try {
       const query = withActiveOrganizationQuery(organizationId);
-      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, matchesPayload, transactionsPayload, statusesPayload, workQueueEventsPayload] = await Promise.all([
+      const [balancesPayload, payersPayload, studentsPayload, chargesPayload, matchesPayload, transactionsPayload, statusesPayload, workQueueEventsPayload, nextStepEventsPayload] = await Promise.all([
         api.ledgerBalances(query),
         api.billingPayers(query),
         api.billingStudents(query),
@@ -169,6 +218,7 @@ export function BillingWorkQueuePage() {
         api.billingTransactions(withActiveOrganizationQuery(organizationId, { limit: 1000 })),
         api.billingPaymentReviewStatuses(withActiveOrganizationQuery(organizationId, { limit: 1000 })),
         api.billingWorkQueueEvents(withActiveOrganizationQuery(organizationId, { limit: 1000 })),
+        api.billingNextStepEvents(withActiveOrganizationQuery(organizationId, { limit: 1000 })),
       ]);
 
       const payers = readBillingPayers(payersPayload);
@@ -189,6 +239,7 @@ export function BillingWorkQueuePage() {
         transactions: readBillingTransactions(transactionsPayload),
         paymentReviewStatuses: readBillingPaymentReviewStatuses(statusesPayload).statuses,
         workQueueEvents: readBillingWorkQueueEvents(workQueueEventsPayload).events,
+        nextStepEvents: readBillingNextStepEvents(nextStepEventsPayload).events,
         payerNotes: notesPayloads.flatMap((payload) => readBillingPayerNotes(payload)),
         invoices: [],
         contractors: [],
@@ -255,6 +306,70 @@ export function BillingWorkQueuePage() {
 
   const snapshotMatchesOrganization = Boolean(snapshot && activeOrganizationKey && loadedOrganizationId === activeOrganizationKey);
   const workQueueView = useMemo(() => (snapshotMatchesOrganization && snapshot ? buildBillingWorkQueueView(snapshot) : null), [snapshot, snapshotMatchesOrganization]);
+  const nextStepRows = useMemo(
+    () => buildBillingNextStepRows(snapshot?.nextStepEvents ?? [], { action: "planned", limit: 8 }),
+    [snapshot?.nextStepEvents],
+  );
+  const completedNextStepRows = useMemo(
+    () => buildBillingNextStepRows(snapshot?.nextStepEvents ?? [], { action: "completed", limit: 6 }),
+    [snapshot?.nextStepEvents],
+  );
+  const availableNextStepIssues = useMemo(() => {
+    if (!workQueueView) {
+      return [];
+    }
+    const rows = [
+      ...workQueueView.firstRows,
+      ...workQueueView.paymentRows,
+      ...workQueueView.contactRows,
+      ...workQueueView.overpaymentRows,
+    ];
+    return Array.from(new Map(rows.map((issue) => [issue.issueKey, issue])).values());
+  }, [workQueueView]);
+  const selectedNextStepIssue = availableNextStepIssues.find((issue) => issue.issueKey === nextStepIssueKey) ?? availableNextStepIssues[0] ?? null;
+  const nextStepSubmitter = useMemo(
+    () =>
+      createBillingNextStepSubmitter({
+        refreshDetail: loadWorkQueue,
+        setSubmitting: setNextStepSubmitting,
+        submitNextStep: (payload) => api.addBillingNextStepEvent(payload, activeOrganizationKey),
+      }),
+    [activeOrganizationKey, loadWorkQueue],
+  );
+
+  const handleNextStepSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setNextStepErrorState(null);
+      setNextStepSuccessMessage(null);
+      const validation = buildBillingNextStepRequest({
+        targetType: "work_queue_issue",
+        relatedIssueKey: selectedNextStepIssue?.issueKey,
+        stepType: nextStepType,
+        eventAction: "planned",
+        title: nextStepTitle,
+        noteText: nextStepNote,
+        plannedFor: nextStepPlannedFor,
+        organizationId: activeOrganizationKey,
+      });
+      const result = await nextStepSubmitter(validation);
+      if (result.status === "blocked") {
+        setNextStepErrorState({ status: "error", title: "Nie zapisano kroku", description: result.message });
+        return;
+      }
+      if (result.status === "error") {
+        setNextStepErrorState(result.errorState);
+        return;
+      }
+      if (result.status === "success") {
+        setNextStepTitle("");
+        setNextStepNote("");
+        setNextStepPlannedFor("");
+        setNextStepSuccessMessage("Następny krok został zapisany.");
+      }
+    },
+    [activeOrganizationKey, nextStepNote, nextStepPlannedFor, nextStepSubmitter, nextStepTitle, nextStepType, selectedNextStepIssue],
+  );
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
   const readyWithoutData =
     status === "ready" &&
@@ -388,6 +503,118 @@ export function BillingWorkQueuePage() {
             )}
             {decisionSuccess ? <p className="module-success">{decisionSuccess}</p> : null}
           </Card>
+
+          <Card
+            action={<StatusBadge status="info">Append-only</StatusBadge>}
+            description="Zapisz ręczny plan pracy przy sprawie. To nie jest przypomnienie, kalendarz ani automatyzacja."
+            title="Dodaj następny krok"
+          >
+            <p className="module-note">{BILLING_NEXT_STEP_HELP_TEXT}</p>
+            <form className="module-form" onSubmit={handleNextStepSubmit}>
+              <div className="module-grid module-grid--two">
+                <label className="module-field">
+                  <span>Sprawa</span>
+                  <select
+                    disabled={nextStepSubmitting || !availableNextStepIssues.length}
+                    onChange={(event) => {
+                      setNextStepIssueKey(event.target.value);
+                      setNextStepErrorState(null);
+                      setNextStepSuccessMessage(null);
+                    }}
+                    value={selectedNextStepIssue?.issueKey ?? ""}
+                  >
+                    {availableNextStepIssues.map((issue) => (
+                      <option key={issue.issueKey} value={issue.issueKey}>
+                        {issue.type} · {issue.payerLabel} · {issue.amountLabel}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="module-field">
+                  <span>Typ kroku</span>
+                  <select
+                    disabled={nextStepSubmitting}
+                    onChange={(event) => {
+                      setNextStepType(event.target.value as BillingNextStepType);
+                      setNextStepErrorState(null);
+                      setNextStepSuccessMessage(null);
+                    }}
+                    value={nextStepType}
+                  >
+                    {BILLING_NEXT_STEP_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label className="module-field">
+                <span>Tytuł</span>
+                <input
+                  disabled={nextStepSubmitting}
+                  maxLength={BILLING_NEXT_STEP_TITLE_MAX_LENGTH}
+                  onChange={(event) => {
+                    setNextStepTitle(event.target.value);
+                    setNextStepErrorState(null);
+                    setNextStepSuccessMessage(null);
+                  }}
+                  placeholder="Np. Sprawdzić, czy wpłata przyszła po piątku"
+                  value={nextStepTitle}
+                />
+              </label>
+              <div className="module-grid module-grid--two">
+                <label className="module-field">
+                  <span>Na kiedy</span>
+                  <input
+                    disabled={nextStepSubmitting}
+                    onChange={(event) => {
+                      setNextStepPlannedFor(event.target.value);
+                      setNextStepErrorState(null);
+                      setNextStepSuccessMessage(null);
+                    }}
+                    type="date"
+                    value={nextStepPlannedFor}
+                  />
+                </label>
+                <label className="module-field">
+                  <span>Notatka opcjonalna</span>
+                  <textarea
+                    disabled={nextStepSubmitting}
+                    maxLength={BILLING_NEXT_STEP_NOTE_MAX_LENGTH}
+                    onChange={(event) => {
+                      setNextStepNote(event.target.value);
+                      setNextStepErrorState(null);
+                      setNextStepSuccessMessage(null);
+                    }}
+                    placeholder="Krótki kontekst dla operatora. Nie tworzy automatycznego przypomnienia."
+                    rows={3}
+                    value={nextStepNote}
+                  />
+                </label>
+              </div>
+              {nextStepErrorState ? <ErrorState description={nextStepErrorState.description} title={nextStepErrorState.title} /> : null}
+              {nextStepSuccessMessage ? <p className="module-success">{nextStepSuccessMessage}</p> : null}
+              <Button disabled={nextStepSubmitting || !availableNextStepIssues.length} size="sm" type="submit">
+                {nextStepSubmitting ? "Zapisywanie..." : "Zapisz krok"}
+              </Button>
+            </form>
+          </Card>
+
+          <div className="module-grid module-grid--two">
+            <Card
+              description="Aktywne ręczne kroki zapisane przez operatora. Nie zmieniają statusów finansowych."
+              title="Następne kroki"
+            >
+              <NextStepList rows={nextStepRows} emptyDescription="Nie ma jeszcze aktywnych ręcznych kroków dla tej organizacji." />
+            </Card>
+            <Card
+              description="Historia kroków oznaczonych jako wykonane przez append-only event. V1 nie usuwa ani nie nadpisuje wpisów."
+              title="Ostatnio wykonane kroki"
+            >
+              <NextStepList rows={completedNextStepRows} emptyDescription="Nie ma jeszcze wykonanych kroków zapisanych w tym widoku." />
+            </Card>
+          </div>
 
           <WorkQueueSection
             title="Najpierw zrób"

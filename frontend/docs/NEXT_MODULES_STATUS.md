@@ -171,3 +171,17 @@ Billing contact events accept only { payer_id, related_payment_id?, related_issu
 ## Rozliczenia â€” raport operacyjny
 
 `/rozliczenia/raport` jest read-only raportem operacyjnym dla wÅ‚aÅ›ciciela firmy. Zbiera zalegÅ‚oÅ›ci, nadpÅ‚aty, wpÅ‚aty, sprawy i kontakty rozliczeniowe z istniejÄ…cych danych organizacji. Nie jest dokumentem ksiÄ™gowym, nie generuje PDF/XLSX, nie wysyÅ‚a wiadomoÅ›ci i nie zmienia finansÃ³w.
+
+## Rozliczenia — plan nastêpnego kroku
+
+`Rozliczenia` maj¹ teraz pi¹ty w¹ski write path: `POST /api/billing/next-step-events?organization_id=...`.
+
+Zakres:
+
+- `/rozliczenia/sprawy` pozwala dodaæ rêczny nastêpny krok przy sprawie rozliczeniowej.
+- `/rozliczenia/platnicy/{payerId}` pozwala dodaæ rêczny nastêpny krok przy p³atniku.
+- `/rozliczenia/wplaty/{paymentId}` pokazuje aktywne kroki powi¹zane z wp³at¹ w trybie read-only.
+
+Ta akcja jest append-only, wymaga aktywnej organizacji, waliduje scope powi¹zanego p³atnika/wp³aty/kontaktu i nie zmienia transakcji, naliczeñ, dopasowañ, sald, importów, wiadomoœci, przypomnieñ, kalendarza ani ksiêgowoœci.
+
+Nie dodano `/rozliczenia/kroki`. Zbiorczy widok kroków pozostaje mo¿liwym osobnym etapem po live-weryfikacji u¿ytecznoœci.

@@ -28,22 +28,30 @@ import {
   BILLING_CONTACT_MESSAGE_MAX_LENGTH,
   BILLING_CONTACT_NOTE_MAX_LENGTH,
   BILLING_CONTACT_NO_SEND_HELP_TEXT,
+  BILLING_NEXT_STEP_HELP_TEXT,
+  BILLING_NEXT_STEP_NOTE_MAX_LENGTH,
+  BILLING_NEXT_STEP_TITLE_MAX_LENGTH,
+  BILLING_NEXT_STEP_TYPE_OPTIONS,
   BILLING_PAYER_NOTE_HELP_TEXT,
   BILLING_PAYER_NOTE_MAX_LENGTH,
   BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION,
   BILLING_PAYER_DETAIL_ORGANIZATION_REQUIRED_TITLE,
   BILLING_READ_ONLY,
   buildBillingContactEventRequest,
+  buildBillingNextStepRequest,
+  buildBillingNextStepRows,
   buildBillingPayerNoteRequest,
   buildBillingPayerDetailView,
   canUseBillingOrganizationScope,
   createBillingContactEventSubmitter,
+  createBillingNextStepSubmitter,
   createBillingPayerNoteSubmitter,
   getBillingErrorState,
   readBillingBalances,
   readBillingCharges,
   readBillingContactEvents,
   readBillingInvoices,
+  readBillingNextStepEvents,
   readBillingPayerNotes,
   readBillingPayers,
   readBillingStudents,
@@ -54,6 +62,9 @@ import {
   type BillingBalanceExplanationRow,
   type BillingCenterSnapshot,
   type BillingErrorState,
+  type BillingNextStepErrorState,
+  type BillingNextStepRow,
+  type BillingNextStepType,
   type BillingPayerChargeRow,
   type BillingPayerDetailView,
   type BillingPayerNoteErrorState,
@@ -165,6 +176,25 @@ const workItemColumns: Array<TableColumn<BillingRelatedWorkItemRow>> = [
   { key: "reason", header: "Kontekst", render: (row) => row.reasonLabel },
 ];
 
+function PayerNextStepList({ rows }: { rows: BillingNextStepRow[] }) {
+  return rows.length ? (
+    <div className="module-readiness">
+      {rows.map((row) => (
+        <div className="module-readiness__item" key={row.id}>
+          <ListChecks aria-hidden="true" size={17} />
+          <div>
+            <strong>{row.title}</strong>
+            <span>{row.stepTypeLabel} · {row.eventActionLabel} · {row.dateLabel}</span>
+            {row.noteText ? <p>{row.noteText}</p> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <EmptyState title="Brak następnych kroków" description="Nie ma jeszcze aktywnego ręcznego planu pracy dla tego płatnika." />
+  );
+}
+
 export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
   const { selectedOrganizationId, selectedOrganization, status: organizationStatus } = useActiveOrganization();
   const [snapshot, setSnapshot] = useState<BillingCenterSnapshot | null>(null);
@@ -181,6 +211,13 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
   const [contactSubmitting, setContactSubmitting] = useState(false);
   const [contactErrorState, setContactErrorState] = useState<BillingContactEventErrorState | null>(null);
   const [contactSuccessMessage, setContactSuccessMessage] = useState<string | null>(null);
+  const [nextStepType, setNextStepType] = useState<BillingNextStepType>("call");
+  const [nextStepTitle, setNextStepTitle] = useState("");
+  const [nextStepPlannedFor, setNextStepPlannedFor] = useState("");
+  const [nextStepNote, setNextStepNote] = useState("");
+  const [nextStepSubmitting, setNextStepSubmitting] = useState(false);
+  const [nextStepErrorState, setNextStepErrorState] = useState<BillingNextStepErrorState | null>(null);
+  const [nextStepSuccessMessage, setNextStepSuccessMessage] = useState<string | null>(null);
 
   const loadPayer = useCallback(async () => {
     if (organizationStatus === "loading") {
@@ -208,6 +245,7 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
         chargesPayload,
         payerNotesPayload,
         contactEventsPayload,
+        nextStepEventsPayload,
         invoicesPayload,
         contractorsPayload,
         workItemsPayload,
@@ -218,6 +256,7 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
         api.billingCharges(withActiveOrganizationQuery(selectedOrganizationId, { limit: 200 })),
         api.billingPayerNotes(payerId, withActiveOrganizationQuery(selectedOrganizationId, { limit: 100 })),
         api.billingContactEvents(withActiveOrganizationQuery(selectedOrganizationId, { payer_id: payerId, limit: 50 })),
+        api.billingNextStepEvents(withActiveOrganizationQuery(selectedOrganizationId, { target_type: "payer", target_id: payerId, limit: 100 })),
         api.invoices(query),
         api.contractors(query),
         api.workItems(withActiveOrganizationQuery(selectedOrganizationId, { limit: 100, only_open: 1 })),
@@ -230,6 +269,7 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
         charges: readBillingCharges(chargesPayload),
         payerNotes: readBillingPayerNotes(payerNotesPayload),
         contactEvents: readBillingContactEvents(contactEventsPayload).events,
+        nextStepEvents: readBillingNextStepEvents(nextStepEventsPayload).events,
         invoices: readBillingInvoices(invoicesPayload),
         contractors: readContractors(contractorsPayload),
         workItems: readWorkItems(workItemsPayload),
@@ -265,6 +305,19 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
         submitContact: (payload) => api.addBillingContactEvent(payload, selectedOrganizationId),
       }),
     [loadPayer, selectedOrganizationId],
+  );
+  const nextStepSubmitter = useMemo(
+    () =>
+      createBillingNextStepSubmitter({
+        refreshDetail: loadPayer,
+        setSubmitting: setNextStepSubmitting,
+        submitNextStep: (payload) => api.addBillingNextStepEvent(payload, selectedOrganizationId),
+      }),
+    [loadPayer, selectedOrganizationId],
+  );
+  const nextStepRows = useMemo(
+    () => buildBillingNextStepRows(snapshot?.nextStepEvents ?? [], { action: "planned", targetType: "payer", targetId: payerId, limit: 6 }),
+    [payerId, snapshot?.nextStepEvents],
   );
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
   const notFound = status === "ready" && snapshot && !detail;
@@ -338,6 +391,41 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
       }
     },
     [contactAction, contactChannel, contactMessageText, contactNoteText, contactSubmitter, payerId, selectedOrganizationId],
+  );
+
+  const handleNextStepSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setNextStepErrorState(null);
+      setNextStepSuccessMessage(null);
+      const validation = buildBillingNextStepRequest({
+        targetType: "payer",
+        targetId: payerId,
+        stepType: nextStepType,
+        eventAction: "planned",
+        title: nextStepTitle,
+        noteText: nextStepNote,
+        plannedFor: nextStepPlannedFor,
+        organizationId: selectedOrganizationId,
+      });
+      const result = await nextStepSubmitter(validation);
+
+      if (result.status === "blocked") {
+        setNextStepErrorState({ status: "error", title: "Nie zapisano kroku", description: result.message });
+        return;
+      }
+      if (result.status === "error") {
+        setNextStepErrorState(result.errorState);
+        return;
+      }
+      if (result.status === "success") {
+        setNextStepTitle("");
+        setNextStepNote("");
+        setNextStepPlannedFor("");
+        setNextStepSuccessMessage("Następny krok został zapisany.");
+      }
+    },
+    [nextStepNote, nextStepPlannedFor, nextStepSubmitter, nextStepTitle, nextStepType, payerId, selectedOrganizationId],
   );
 
   return (
@@ -442,6 +530,105 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
 
               <Card description="Wpłaty widoczne w obecnym read-only modelu. Jeśli brak listy transakcji, pokazujemy ostatnią znaną wpłatę." title="Widoczne wpłaty">
                 <Table columns={paymentColumns} data={detail.paymentRows} emptyMessage="Brak widocznych wpłat dla tego płatnika." getRowKey={(row) => row.id} />
+              </Card>
+
+              <Card
+                action={<Badge tone="success">Append-only</Badge>}
+                description="Ręczny plan pracy przy płatniku. Nie wysyła wiadomości i nie tworzy automatycznego przypomnienia."
+                title="Następny krok"
+              >
+                <p className="module-note">{BILLING_NEXT_STEP_HELP_TEXT}</p>
+                <form className="invoice-comment-form" onSubmit={handleNextStepSubmit}>
+                  <div className="module-grid module-grid--two">
+                    <label className="invoice-comment-form__label" htmlFor="billing-payer-next-step-type">
+                      Typ kroku
+                      <select
+                        className="module-filter__select"
+                        disabled={nextStepSubmitting}
+                        id="billing-payer-next-step-type"
+                        onChange={(event) => {
+                          setNextStepType(event.target.value as BillingNextStepType);
+                          setNextStepErrorState(null);
+                          setNextStepSuccessMessage(null);
+                        }}
+                        value={nextStepType}
+                      >
+                        {BILLING_NEXT_STEP_TYPE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="invoice-comment-form__label" htmlFor="billing-payer-next-step-date">
+                      Na kiedy
+                      <input
+                        className="module-filter__select"
+                        disabled={nextStepSubmitting}
+                        id="billing-payer-next-step-date"
+                        onChange={(event) => {
+                          setNextStepPlannedFor(event.target.value);
+                          setNextStepErrorState(null);
+                          setNextStepSuccessMessage(null);
+                        }}
+                        type="date"
+                        value={nextStepPlannedFor}
+                      />
+                    </label>
+                  </div>
+                  <label className="invoice-comment-form__label" htmlFor="billing-payer-next-step-title">
+                    Tytuł
+                  </label>
+                  <input
+                    className="module-filter__select"
+                    disabled={nextStepSubmitting}
+                    id="billing-payer-next-step-title"
+                    maxLength={BILLING_NEXT_STEP_TITLE_MAX_LENGTH}
+                    onChange={(event) => {
+                      setNextStepTitle(event.target.value);
+                      setNextStepErrorState(null);
+                      setNextStepSuccessMessage(null);
+                    }}
+                    placeholder="Np. Zadzwonić w sprawie rozliczenia"
+                    value={nextStepTitle}
+                  />
+                  <label className="invoice-comment-form__label" htmlFor="billing-payer-next-step-note">
+                    Notatka opcjonalna
+                  </label>
+                  <textarea
+                    className="invoice-comment-form__textarea"
+                    disabled={nextStepSubmitting}
+                    id="billing-payer-next-step-note"
+                    maxLength={BILLING_NEXT_STEP_NOTE_MAX_LENGTH}
+                    onChange={(event) => {
+                      setNextStepNote(event.target.value);
+                      setNextStepErrorState(null);
+                      setNextStepSuccessMessage(null);
+                    }}
+                    placeholder="Krótki kontekst dla osoby, która wróci do tej sprawy."
+                    rows={3}
+                    value={nextStepNote}
+                  />
+                  <div className="invoice-comment-form__meta">
+                    <span>Nie tworzy kalendarza ani automatycznego przypomnienia.</span>
+                    <span>{nextStepNote.trim().length}/{BILLING_NEXT_STEP_NOTE_MAX_LENGTH}</span>
+                  </div>
+                  {nextStepErrorState ? (
+                    <div className="invoice-comment-form__message invoice-comment-form__message--error" role="alert">
+                      <strong>{nextStepErrorState.title}</strong>
+                      <span>{nextStepErrorState.description}</span>
+                    </div>
+                  ) : null}
+                  {nextStepSuccessMessage ? (
+                    <div className="invoice-comment-form__message invoice-comment-form__message--success" role="status">
+                      {nextStepSuccessMessage}
+                    </div>
+                  ) : null}
+                  <Button disabled={nextStepSubmitting || !nextStepTitle.trim()} size="sm" type="submit">
+                    {nextStepSubmitting ? "Zapisywanie..." : "Zapisz krok"}
+                  </Button>
+                </form>
+                <PayerNextStepList rows={nextStepRows} />
               </Card>
 
               <Card

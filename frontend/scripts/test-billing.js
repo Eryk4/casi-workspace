@@ -47,6 +47,11 @@ const {
   BILLING_CONTACT_MESSAGE_MAX_LENGTH,
   BILLING_CONTACT_NO_SEND_HELP_TEXT,
   BILLING_CONTACT_NOTE_MAX_LENGTH,
+  BILLING_NEXT_STEP_EVENTS_ENDPOINT,
+  BILLING_NEXT_STEP_HELP_TEXT,
+  BILLING_NEXT_STEP_NOTE_MAX_LENGTH,
+  BILLING_NEXT_STEP_TITLE_MAX_LENGTH,
+  BILLING_NEXT_STEP_TYPE_OPTIONS,
   BILLING_DEBTS_ROUTE,
   BILLING_FORBIDDEN_WRITE_ACTIONS,
   BILLING_LEGACY_ROUTE,
@@ -73,13 +78,17 @@ const {
   billingPaymentReviewStatusEndpoint,
   buildBillingContactEventRequest,
   buildBillingContactCenterView,
+  buildBillingNextStepRequest,
+  buildBillingNextStepRows,
   buildBillingPaymentReviewStatusRequest,
   buildBillingWorkQueueDecisionRequest,
   createBillingContactEventSubmitter,
+  createBillingNextStepSubmitter,
   createBillingPaymentReviewStatusSubmitter,
   getBillingContactEventErrorState,
   getBillingPaymentReviewStatusErrorState,
   readBillingContactEvents,
+  readBillingNextStepEvents,
   readBillingPaymentReviewStatus,
   BILLING_CHARGES_ENDPOINT,
   BILLING_PAYERS_ENDPOINT,
@@ -1024,6 +1033,155 @@ assert.equal(buildBillingWorkQueueDecisionRequest(issueToHandle, "handled", "x".
 assert.equal(buildBillingWorkQueueDecisionRequest(issueToHandle, "handled", "", null).ok, false);
 assert.throws(() => readBillingWorkQueueEvents({ organization_id: 42 }), ApiContractError);
 
+const nextStepEventsPayload = {
+  organization_id: 42,
+  events: [
+    {
+      billing_next_step_event_id: 1001,
+      organization_id: 42,
+      target_type: "work_queue_issue",
+      related_issue_key: issueToHandle.issueKey,
+      step_type: "check_payment",
+      event_action: "planned",
+      title: "Sprawdzić, czy wpłata przyszła po piątku",
+      note_text: "Test live: ręczny krok bez przypomnienia.",
+      planned_for: "2099-05-12",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2099-05-10T10:00:00",
+    },
+    {
+      billing_next_step_event_id: 1002,
+      organization_id: 42,
+      target_type: "payer",
+      target_id: 14,
+      step_type: "call",
+      event_action: "completed",
+      title: "Zadzwonić w sprawie rozliczenia",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2099-05-11T10:00:00",
+    },
+    {
+      billing_next_step_event_id: 1003,
+      organization_id: 42,
+      target_type: "payment",
+      target_id: 61,
+      step_type: "clarify_payment",
+      event_action: "snoozed",
+      title: "Poczekać na opis wpłaty",
+      note_text: "C:\\Users\\secret\\payment.txt",
+      created_by_user_id: 1,
+      created_by_user_name: "Operator",
+      created_at: "2099-05-12T10:00:00",
+    },
+  ],
+};
+const nextStepEvents = readBillingNextStepEvents(nextStepEventsPayload);
+assert.equal(nextStepEvents.organization_id, 42);
+assert.equal(nextStepEvents.events.length, 3);
+assert.equal(nextStepEvents.events[2].note_text, "Ukryto techniczną lub wrażliwą treść notatki.");
+assert.equal(BILLING_NEXT_STEP_EVENTS_ENDPOINT, "/billing/next-step-events");
+assert.equal(BILLING_NEXT_STEP_TITLE_MAX_LENGTH, 200);
+assert.equal(BILLING_NEXT_STEP_NOTE_MAX_LENGTH, 1000);
+assert.match(BILLING_NEXT_STEP_HELP_TEXT, /nie zmienia salda/i);
+assert.match(BILLING_NEXT_STEP_HELP_TEXT, /Nie tworzy automatycznego przypomnienia/i);
+assert.equal(BILLING_NEXT_STEP_TYPE_OPTIONS.some((option) => option.value === "check_payment" && option.label === "Sprawdzić wpłatę"), true);
+const plannedNextStepRows = buildBillingNextStepRows(nextStepEvents.events, { action: "planned" });
+assert.equal(plannedNextStepRows.length, 1);
+assert.equal(plannedNextStepRows[0].title, "Sprawdzić, czy wpłata przyszła po piątku");
+assert.equal(plannedNextStepRows[0].targetHref, "/rozliczenia/sprawy");
+assert.equal(plannedNextStepRows[0].noteText, "Test live: ręczny krok bez przypomnienia.");
+assert.equal(buildBillingNextStepRows(nextStepEvents.events, { action: "completed" }).length, 1);
+assert.equal(buildBillingNextStepRows(nextStepEvents.events, { action: "snoozed" }).length, 1);
+assert.equal(buildBillingNextStepRows(nextStepEvents.events, { targetType: "payer", targetId: 14 })[0].targetHref, "/rozliczenia/platnicy/14");
+assert.deepEqual(buildBillingNextStepRequest({
+  targetType: "work_queue_issue",
+  relatedIssueKey: issueToHandle.issueKey,
+  stepType: "check_payment",
+  eventAction: "planned",
+  title: "  Sprawdzić wpłatę  ",
+  noteText: "  Bez automatyzacji.  ",
+  plannedFor: "2099-05-12",
+  organizationId: "42",
+}), {
+  ok: true,
+  payload: {
+    target_type: "work_queue_issue",
+    related_issue_key: issueToHandle.issueKey,
+    step_type: "check_payment",
+    event_action: "planned",
+    title: "Sprawdzić wpłatę",
+    note_text: "Bez automatyzacji.",
+    planned_for: "2099-05-12",
+  },
+});
+assert.equal(buildBillingNextStepRequest({
+  targetType: "payer",
+  targetId: 14,
+  stepType: "call",
+  title: "Zadzwonić",
+  noteText: "",
+  organizationId: "42",
+}).ok, true);
+assert.equal(buildBillingNextStepRequest({
+  targetType: "payer",
+  stepType: "call",
+  title: "Zadzwonić",
+  noteText: "",
+  organizationId: "42",
+}).ok, false);
+assert.equal(buildBillingNextStepRequest({
+  targetType: "work_queue_issue",
+  stepType: "check_payment",
+  title: "Sprawdzić",
+  noteText: "",
+  organizationId: "42",
+}).ok, false);
+assert.equal(buildBillingNextStepRequest({
+  targetType: "payer",
+  targetId: 14,
+  stepType: "call",
+  title: " ",
+  noteText: "",
+  organizationId: "42",
+}).ok, false);
+assert.equal(buildBillingNextStepRequest({
+  targetType: "payer",
+  targetId: 14,
+  stepType: "call",
+  title: "x".repeat(BILLING_NEXT_STEP_TITLE_MAX_LENGTH + 1),
+  noteText: "",
+  organizationId: "42",
+}).ok, false);
+assert.equal(buildBillingNextStepRequest({
+  targetType: "payer",
+  targetId: 14,
+  stepType: "call",
+  title: "Zadzwonić",
+  noteText: "x".repeat(BILLING_NEXT_STEP_NOTE_MAX_LENGTH + 1),
+  organizationId: "42",
+}).ok, false);
+assert.equal(buildBillingNextStepRequest({
+  targetType: "payer",
+  targetId: 14,
+  stepType: "call",
+  title: "Zadzwonić",
+  noteText: "",
+  plannedFor: "jutro",
+  organizationId: "42",
+}).ok, false);
+assert.equal(buildBillingNextStepRequest({
+  targetType: "payer",
+  targetId: 14,
+  stepType: "call",
+  title: "Zadzwonić",
+  noteText: "",
+  organizationId: null,
+}).ok, false);
+assert.throws(() => readBillingNextStepEvents({ organization_id: 42 }), ApiContractError);
+assert.throws(() => readBillingNextStepEvents({ organization_id: 42, events: [{ title: "Brak ID" }] }), ApiContractError);
+
 const relatedWorkItems = buildBillingRelatedWorkItemRows(snapshot.workItems, snapshot.invoices, snapshot.contractors);
 assert.equal(relatedWorkItems[0].href, "/work-items/44");
 assert.match(relatedWorkItems[0].reasonLabel, /rozliczenie faktury/);
@@ -1142,7 +1300,11 @@ assert.match(workQueuePageSource, /Przygotuj kontakt/);
 assert.match(workQueuePageSource, /Kontakty rozliczeniowe/);
 assert.match(workQueuePageSource, /BILLING_OPERATIONAL_REPORT_ROUTE/);
 assert.match(workQueuePageSource, /BILLING_WORK_QUEUE_DECISION_HELP_TEXT/);
-assert.doesNotMatch(workQueuePageSource, /zaksięguj|rozlicz nadpłatę|dopasuj|wyślij przypomnienie/i);
+assert.match(workQueuePageSource, /Dodaj następny krok/);
+assert.match(workQueuePageSource, /Następne kroki/);
+assert.match(workQueuePageSource, /Ostatnio wykonane kroki/);
+assert.match(workQueuePageSource, /BILLING_NEXT_STEP_HELP_TEXT/);
+assert.doesNotMatch(workQueuePageSource, /zaksięguj|rozlicz nadpłatę|dopasuj|wyślij przypomnienie|wyślij SMS|wyślij e-mail|dodaj do kalendarza/i);
 const billingCenterReportLinkSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingLedgerOverview.tsx"), "utf8");
 const debtsReportLinkSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingDebtsOverpaymentsPage.tsx"), "utf8");
 const contactCenterReportLinkSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingContactCenterPage.tsx"), "utf8");
@@ -1162,7 +1324,14 @@ assert.match(payerDetailPageSource, /Kontakt rozliczeniowy/);
 assert.match(payerDetailPageSource, /Zapisz kontakt/);
 assert.match(payerDetailPageSource, /Zobacz wszystkie kontakty rozliczeniowe/);
 assert.match(payerDetailPageSource, /BILLING_CONTACT_NO_SEND_HELP_TEXT/);
-assert.doesNotMatch(payerDetailPageSource, /Wyślij SMS|Wyślij e-mail|Wyślij przypomnienie|Dodaj płatność|Dopasuj wpłatę/i);
+assert.match(payerDetailPageSource, /Następny krok/);
+assert.match(payerDetailPageSource, /Zapisz krok/);
+assert.match(payerDetailPageSource, /BILLING_NEXT_STEP_HELP_TEXT/);
+assert.doesNotMatch(payerDetailPageSource, /Wyślij SMS|Wyślij e-mail|Wyślij przypomnienie|Dodaj płatność|Dopasuj wpłatę|Dodaj do kalendarza/i);
+const paymentDetailPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingPaymentDetailPage.tsx"), "utf8");
+assert.match(paymentDetailPageSource, /Następny krok/);
+assert.match(paymentDetailPageSource, /BILLING_NEXT_STEP_HELP_TEXT/);
+assert.doesNotMatch(paymentDetailPageSource, /Wyślij SMS|Wyślij e-mail|Wyślij przypomnienie|Dodaj płatność|Dopasuj wpłatę|Dodaj do kalendarza/i);
 const contactCenterPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingContactCenterPage.tsx"), "utf8");
 assert.match(contactCenterPageSource, /Kontakty rozliczeniowe/);
 assert.match(contactCenterPageSource, /Przygotowane treści/);
@@ -1394,6 +1563,15 @@ const screenStrings = [
   ...workQueueView.overpaymentRows.flatMap((row) => [row.type, row.priority, row.payerLabel, row.amountLabel, row.reason, row.nextStep, row.href, row.paymentHref, row.payerHref]),
   ...workQueueView.checkedRows.flatMap((row) => [row.type, row.priority, row.payerLabel, row.amountLabel, row.reason, row.nextStep, row.href, row.paymentHref, row.payerHref]),
   ...workQueueView.contextItems.flatMap((item) => [item.label, item.value]),
+  ...buildBillingNextStepRows(nextStepEvents.events).flatMap((row) => [
+    row.title,
+    row.stepTypeLabel,
+    row.eventActionLabel,
+    row.targetLabel,
+    row.targetHref,
+    row.dateLabel,
+    row.noteText,
+  ]),
   ...(chargeAssignedPaymentDetail
     ? [
         chargeAssignedPaymentDetail.title,
@@ -1552,6 +1730,53 @@ async function main() {
         "42",
       );
       assert.equal(readBillingContactEvents({ organization_id: 42, events: [payload] }).events[0].contact_action, "draft_prepared");
+    },
+  );
+
+  await withMockedFetch(
+    async (url, options) => {
+      assert.ok(url.startsWith("/api/billing/next-step-events?"));
+      assert.match(url, /organization_id=42/);
+      assert.match(url, /target_type=payer/);
+      assert.match(url, /target_id=14/);
+      assert.equal(options.method, "GET");
+      assert.equal(options.body, undefined);
+      return jsonResponse(200, nextStepEventsPayload);
+    },
+    async () => {
+      const payload = await api.billingNextStepEvents(withActiveOrganizationQuery("42", { target_type: "payer", target_id: 14, limit: 50 }));
+      const events = readBillingNextStepEvents(payload);
+      assert.equal(events.events.length, 3);
+    },
+  );
+
+  await withMockedFetch(
+    async (url, options) => {
+      assert.equal(url, "/api/billing/next-step-events?organization_id=42");
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body), {
+        target_type: "work_queue_issue",
+        related_issue_key: issueToHandle.issueKey,
+        step_type: "check_payment",
+        event_action: "planned",
+        title: "Sprawdzić wpłatę",
+        note_text: "Bez automatyzacji.",
+      });
+      return jsonResponse(201, nextStepEventsPayload.events[0]);
+    },
+    async () => {
+      const validation = buildBillingNextStepRequest({
+        targetType: "work_queue_issue",
+        relatedIssueKey: issueToHandle.issueKey,
+        stepType: "check_payment",
+        eventAction: "planned",
+        title: "Sprawdzić wpłatę",
+        noteText: "Bez automatyzacji.",
+        organizationId: "42",
+      });
+      assert.equal(validation.ok, true);
+      const payload = await api.addBillingNextStepEvent(validation.payload, "42");
+      assert.equal(readBillingNextStepEvents({ organization_id: 42, events: [payload] }).events[0].event_action, "planned");
     },
   );
 
@@ -1728,6 +1953,65 @@ async function main() {
   refreshCount = 0;
   submittingStates = [];
   submittedPayload = null;
+  const nextStepSubmitter = createBillingNextStepSubmitter({
+    refreshDetail: async () => {
+      refreshCount += 1;
+    },
+    setSubmitting: (isSubmitting) => {
+      submittingStates.push(isSubmitting);
+    },
+    submitNextStep: async (payload) => {
+      submittedPayload = payload;
+    },
+  });
+  const nextStepSubmitResult = await nextStepSubmitter(
+    buildBillingNextStepRequest({
+      targetType: "payer",
+      targetId: 14,
+      stepType: "call",
+      eventAction: "planned",
+      title: "  Zadzwonić w sprawie rozliczenia  ",
+      noteText: "",
+      organizationId: "42",
+    }),
+  );
+  assert.equal(nextStepSubmitResult.status, "success");
+  assert.deepEqual(submittedPayload, {
+    target_type: "payer",
+    target_id: 14,
+    step_type: "call",
+    event_action: "planned",
+    title: "Zadzwonić w sprawie rozliczenia",
+  });
+  assert.equal(refreshCount, 1);
+  assert.deepEqual(submittingStates, [true, false]);
+
+  const failingNextStepSubmitter = createBillingNextStepSubmitter({
+    refreshDetail: async () => {
+      throw new Error("Refresh should not run after failed next step submit.");
+    },
+    setSubmitting: () => {},
+    submitNextStep: async () => {
+      throw new ApiError("Backend odmówił", 500);
+    },
+  });
+  const failingNextStepResult = await failingNextStepSubmitter(
+    buildBillingNextStepRequest({
+      targetType: "payer",
+      targetId: 14,
+      stepType: "call",
+      eventAction: "planned",
+      title: "Zadzwonić",
+      noteText: "",
+      organizationId: "42",
+    }),
+  );
+  assert.equal(failingNextStepResult.status, "error");
+  assert.equal(failingNextStepResult.errorState.title, "Backend nie zapisał kroku");
+
+  refreshCount = 0;
+  submittingStates = [];
+  submittedPayload = null;
   const reviewSubmitter = createBillingPaymentReviewStatusSubmitter({
     refreshStatus: async () => {
       refreshCount += 1;
@@ -1793,6 +2077,9 @@ async function main() {
       if (url.startsWith(`/api${BILLING_WORK_QUEUE_EVENTS_ENDPOINT}`)) {
         return jsonResponse(200, workQueueEventsPayload);
       }
+      if (url.startsWith(`/api${BILLING_NEXT_STEP_EVENTS_ENDPOINT}`)) {
+        return jsonResponse(200, nextStepEventsPayload);
+      }
       if (url.startsWith("/api/invoices")) {
         return jsonResponse(200, [makeInvoice()]);
       }
@@ -1818,6 +2105,7 @@ async function main() {
         transactionsPayload,
         reviewStatusesPayload,
         workQueueEventsListPayload,
+        nextStepEventsListPayload,
         invoicesPayload,
         contractorsPayload,
         workItemsPayload,
@@ -1832,6 +2120,7 @@ async function main() {
         api.billingTransactions(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.billingPaymentReviewStatuses(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.billingWorkQueueEvents(withActiveOrganizationQuery("42", { limit: 1000 })),
+        api.billingNextStepEvents(withActiveOrganizationQuery("42", { limit: 1000 })),
         api.invoices(query),
         api.contractors(query),
         api.workItems(workItemsQuery),
@@ -1846,6 +2135,7 @@ async function main() {
       assert.equal(readBillingTransactions(transactionsPayload).length, 1);
       assert.equal(readBillingPaymentReviewStatuses(reviewStatusesPayload).statuses.length, 2);
       assert.equal(readBillingWorkQueueEvents(workQueueEventsListPayload).events.length, 1);
+      assert.equal(readBillingNextStepEvents(nextStepEventsListPayload).events.length, 3);
       assert.equal(readBillingInvoices(invoicesPayload).length, 1);
       assert.equal(Array.isArray(contractorsPayload), true);
       assert.equal(Array.isArray(workItemsPayload), true);
@@ -1860,6 +2150,7 @@ async function main() {
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/transactions") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/payment-review-statuses") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/billing/work-queue/events") && url.includes("limit=1000")));
+  assert.ok(requestedUrls.some((url) => url.includes("/api/billing/next-step-events") && url.includes("limit=1000")));
   assert.ok(requestedUrls.some((url) => url.includes("/api/work-items") && url.includes("only_open=1") && url.includes("limit=100")));
 
   console.log("Billing regression tests passed.");

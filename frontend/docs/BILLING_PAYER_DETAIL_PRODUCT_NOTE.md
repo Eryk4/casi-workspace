@@ -95,3 +95,9 @@ Ten etap nie zmienia salda, naliczeÅ„, wpÅ‚at, dopasowaÅ„, statusÃ³w, importÃ³w,
 ## Powiazanie z centrum kontaktow
 
 Szczegol platnika prowadzi do `/rozliczenia/kontakty`, gdzie mozna przejrzec wszystkie kontakty rozliczeniowe w aktywnej organizacji. Szczegol platnika pozostaje miejscem zapisu pojedynczego kontaktu, a centrum kontaktow jest tylko read-only przegladem.
+
+## Plan nastêpnego kroku
+
+Szczegó³ p³atnika ma sekcjê `Nastêpny krok`. Formularz zapisuje append-only event planu pracy przy p³atniku. Ten krok nie zmienia salda, wp³at ani naliczeñ i nie tworzy automatycznego przypomnienia.
+
+To jest plan cz³owieka, nie kalendarz, wysy³ka wiadomoœci, windykacja ani automatyzacja. Przysz³e oznaczanie kroków jako wykonane lub od³o¿one powinno równie¿ pozostaæ append-only.

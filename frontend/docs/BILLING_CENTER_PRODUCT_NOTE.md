@@ -168,3 +168,9 @@ Trasa `/rozliczenia/kontakty` porzadkuje istniejace kontakty rozliczeniowe w jed
 Trasa `/rozliczenia/raport` dodaje operacyjny raport właściciela firmy. Raport zbiera zaległości, nadpłaty, wpłaty wymagające wyjaśnienia, sprawy rozliczeniowe i kontakty z płatnikami z istniejących read-only danych organizacji.
 
 Raport nie jest dokumentem księgowym, nie generuje plików, nie wysyła wiadomości i nie zmienia finansów. Zawiera tekst `Raport do skopiowania`, który użytkownik może ręcznie wykorzystać w swoich notatkach.
+
+## Następne kroki rozliczeniowe
+
+`Rozliczenia` mają teraz dodatkowy wąski write path: append-only plan następnego kroku. Oficjalny opis etapu znajduje się w `frontend/docs/BILLING_NEXT_STEPS_PRODUCT_NOTE.md`.
+
+Ta akcja nie zmienia danych finansowych, nie wysyła wiadomości, nie tworzy kalendarza i nie dodaje automatycznych przypomnień. Służy wyłącznie do ręcznego planowania pracy przy płatniku, wpłacie albo sprawie rozliczeniowej.

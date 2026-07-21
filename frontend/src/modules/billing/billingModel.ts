@@ -629,6 +629,55 @@ export type BillingContactCenterView = {
   contextItems: Array<{ label: string; value: string }>;
 };
 
+export type BillingNextStepTargetType = "payer" | "payment" | "work_queue_issue" | "contact" | "billing_summary";
+
+export type BillingNextStepType =
+  | "call"
+  | "send_manual_message"
+  | "check_payment"
+  | "clarify_payment"
+  | "review_overpayment"
+  | "wait_for_response"
+  | "wait_for_payment"
+  | "review_notes"
+  | "other";
+
+export type BillingNextStepEventAction = "planned" | "completed" | "snoozed";
+
+export type BillingNextStepEventRecord = {
+  billing_next_step_event_id: number;
+  organization_id?: number;
+  target_type: BillingNextStepTargetType;
+  target_id?: number | null;
+  related_issue_key?: string | null;
+  step_type: BillingNextStepType;
+  event_action: BillingNextStepEventAction;
+  title: string;
+  note_text?: string | null;
+  planned_for?: string | null;
+  created_by_user_id?: number;
+  created_by_user_name?: string | null;
+  created_by_user_role?: string | null;
+  created_at?: string | null;
+};
+
+export type BillingNextStepEventsResponse = {
+  organization_id?: number;
+  events: BillingNextStepEventRecord[];
+};
+
+export type BillingNextStepRow = {
+  id: string;
+  title: string;
+  stepTypeLabel: string;
+  eventActionLabel: string;
+  targetLabel: string;
+  targetHref?: string;
+  dateLabel: string;
+  noteText?: string;
+  relatedIssueKey?: string;
+};
+
 export type BillingOperationalReportSummary = {
   debtTotalLabel: string;
   debtPayerCount: number;
@@ -720,6 +769,7 @@ export type BillingCenterSnapshot = {
   paymentReviewStatuses?: BillingPaymentReviewStatusRecord[];
   workQueueEvents?: BillingWorkQueueEventRecord[];
   contactEvents?: BillingContactEventRecord[];
+  nextStepEvents?: BillingNextStepEventRecord[];
   payerNotes?: BillingPayerNoteRecord[];
   invoices: InvoiceRecord[];
   contractors: ContractorRecord[];
@@ -809,6 +859,58 @@ export type BillingContactEventSubmitterDeps = {
     contact_action: BillingContactAction;
     message_text?: string;
     note_text?: string;
+  }) => Promise<unknown>;
+};
+
+export type BillingNextStepValidationResult =
+  | {
+      ok: true;
+      payload: {
+        target_type: BillingNextStepTargetType;
+        target_id?: number;
+        related_issue_key?: string;
+        step_type: BillingNextStepType;
+        event_action: BillingNextStepEventAction;
+        title: string;
+        note_text?: string;
+        planned_for?: string;
+      };
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
+export type BillingNextStepErrorState = BillingErrorState;
+
+export type BillingNextStepSubmitResult =
+  | {
+      status: "success";
+    }
+  | {
+      status: "blocked";
+      message: string;
+    }
+  | {
+      status: "ignored";
+    }
+  | {
+      status: "error";
+      errorState: BillingNextStepErrorState;
+    };
+
+export type BillingNextStepSubmitterDeps = {
+  refreshDetail: () => Promise<void>;
+  setSubmitting: (isSubmitting: boolean) => void;
+  submitNextStep: (payload: {
+    target_type: BillingNextStepTargetType;
+    target_id?: number;
+    related_issue_key?: string;
+    step_type: BillingNextStepType;
+    event_action: BillingNextStepEventAction;
+    title: string;
+    note_text?: string;
+    planned_for?: string;
   }) => Promise<unknown>;
 };
 
@@ -1008,6 +1110,27 @@ export const BILLING_CONTACT_NO_SEND_HELP_TEXT =
   "CASI Workspace nie wysyła tej wiadomości. Skopiuj treść i wyślij ją samodzielnie wybranym kanałem.";
 export const BILLING_CONTACT_EVENT_HELP_TEXT =
   "Kontakt rozliczeniowy zapisuje tylko roboczą treść albo ślad kontaktu. Nie zmienia salda, naliczeń, wpłat ani przypisań.";
+export const BILLING_NEXT_STEP_EVENTS_ENDPOINT = "/billing/next-step-events";
+export const BILLING_NEXT_STEP_TITLE_MAX_LENGTH = 200;
+export const BILLING_NEXT_STEP_NOTE_MAX_LENGTH = 1000;
+export const BILLING_NEXT_STEP_HELP_TEXT =
+  "Ten krok nie zmienia salda, wpłat ani naliczeń. Nie tworzy automatycznego przypomnienia.";
+export const BILLING_NEXT_STEP_TYPE_OPTIONS: Array<{ value: BillingNextStepType; label: string }> = [
+  { value: "call", label: "Zadzwonić" },
+  { value: "send_manual_message", label: "Napisać ręcznie" },
+  { value: "check_payment", label: "Sprawdzić wpłatę" },
+  { value: "clarify_payment", label: "Wyjaśnić wpłatę" },
+  { value: "review_overpayment", label: "Sprawdzić nadpłatę" },
+  { value: "wait_for_response", label: "Poczekać na odpowiedź" },
+  { value: "wait_for_payment", label: "Poczekać na wpłatę" },
+  { value: "review_notes", label: "Sprawdzić notatki" },
+  { value: "other", label: "Inne" },
+];
+export const BILLING_NEXT_STEP_ACTION_OPTIONS: Array<{ value: BillingNextStepEventAction; label: string }> = [
+  { value: "planned", label: "Zaplanowano" },
+  { value: "completed", label: "Wykonano" },
+  { value: "snoozed", label: "Odłożono" },
+];
 export const BILLING_CONTACT_CHANNEL_OPTIONS: Array<{ value: BillingContactChannel; label: string }> = [
   { value: "sms", label: "SMS" },
   { value: "email", label: "E-mail" },
@@ -1395,6 +1518,18 @@ function isBillingContactAction(value: unknown): value is BillingContactAction {
   return BILLING_CONTACT_ACTION_OPTIONS.some((option) => option.value === value);
 }
 
+function isBillingNextStepTargetType(value: unknown): value is BillingNextStepTargetType {
+  return value === "payer" || value === "payment" || value === "work_queue_issue" || value === "contact" || value === "billing_summary";
+}
+
+function isBillingNextStepType(value: unknown): value is BillingNextStepType {
+  return BILLING_NEXT_STEP_TYPE_OPTIONS.some((option) => option.value === value);
+}
+
+function isBillingNextStepEventAction(value: unknown): value is BillingNextStepEventAction {
+  return BILLING_NEXT_STEP_ACTION_OPTIONS.some((option) => option.value === value);
+}
+
 function readBillingContactEventRecord(payload: unknown): BillingContactEventRecord {
   if (!isRecord(payload)) {
     throw new ApiContractError(BILLING_CONTACT_EVENTS_ENDPOINT, payload);
@@ -1437,6 +1572,55 @@ export function readBillingContactEvents(payload: unknown): BillingContactEvents
   return {
     organization_id: payload.organization_id === undefined || payload.organization_id === null ? undefined : readNumber(payload.organization_id),
     events: payload.events.map(readBillingContactEventRecord),
+  };
+}
+
+function readBillingNextStepEventRecord(payload: unknown): BillingNextStepEventRecord {
+  if (!isRecord(payload)) {
+    throw new ApiContractError(BILLING_NEXT_STEP_EVENTS_ENDPOINT, payload);
+  }
+  const eventId = readNumber(payload.billing_next_step_event_id);
+  const targetType = readOptionalString(payload.target_type);
+  const stepType = readOptionalString(payload.step_type);
+  const eventAction = readOptionalString(payload.event_action);
+  const title = safeBillingText(payload.title, "");
+  if (
+    !eventId ||
+    !isBillingNextStepTargetType(targetType) ||
+    !isBillingNextStepType(stepType) ||
+    !isBillingNextStepEventAction(eventAction) ||
+    !title
+  ) {
+    throw new ApiContractError(BILLING_NEXT_STEP_EVENTS_ENDPOINT, payload);
+  }
+  return {
+    billing_next_step_event_id: eventId,
+    organization_id: readNumber(payload.organization_id),
+    target_type: targetType,
+    target_id: readNumber(payload.target_id) ?? null,
+    related_issue_key: safeBillingText(payload.related_issue_key, "") || null,
+    step_type: stepType,
+    event_action: eventAction,
+    title,
+    note_text:
+      payload.note_text === null || payload.note_text === undefined
+        ? null
+        : safeBillingText(payload.note_text, "Ukryto techniczną lub wrażliwą treść notatki."),
+    planned_for: readOptionalString(payload.planned_for) ?? null,
+    created_by_user_id: readNumber(payload.created_by_user_id),
+    created_by_user_name: safeBillingText(payload.created_by_user_name, "") || null,
+    created_by_user_role: safeBillingText(payload.created_by_user_role, "") || null,
+    created_at: readOptionalString(payload.created_at) ?? null,
+  };
+}
+
+export function readBillingNextStepEvents(payload: unknown): BillingNextStepEventsResponse {
+  if (!isRecord(payload) || !Array.isArray(payload.events)) {
+    throw new ApiContractError(BILLING_NEXT_STEP_EVENTS_ENDPOINT, payload);
+  }
+  return {
+    organization_id: payload.organization_id === undefined || payload.organization_id === null ? undefined : readNumber(payload.organization_id),
+    events: payload.events.map(readBillingNextStepEventRecord),
   };
 }
 
@@ -3785,6 +3969,79 @@ function buildBillingContactEventRows(events: BillingContactEventRecord[], payer
     }));
 }
 
+export function getBillingNextStepTypeLabel(stepType: BillingNextStepType): string {
+  return BILLING_NEXT_STEP_TYPE_OPTIONS.find((option) => option.value === stepType)?.label ?? "Inny krok";
+}
+
+export function getBillingNextStepActionLabel(action: BillingNextStepEventAction): string {
+  return BILLING_NEXT_STEP_ACTION_OPTIONS.find((option) => option.value === action)?.label ?? "Krok";
+}
+
+function nextStepTargetHref(event: BillingNextStepEventRecord): string | undefined {
+  if (event.target_type === "payer" && event.target_id) {
+    return billingPayerDetailPath(event.target_id);
+  }
+  if (event.target_type === "payment" && event.target_id) {
+    return billingPaymentDetailPath(event.target_id);
+  }
+  if (event.target_type === "work_queue_issue") {
+    return BILLING_WORK_QUEUE_ROUTE;
+  }
+  return undefined;
+}
+
+function nextStepTargetLabel(event: BillingNextStepEventRecord): string {
+  if (event.target_type === "payer") {
+    return event.target_id ? `Płatnik #${event.target_id}` : "Płatnik";
+  }
+  if (event.target_type === "payment") {
+    return event.target_id ? `Wpłata #${event.target_id}` : "Wpłata";
+  }
+  if (event.target_type === "work_queue_issue") {
+    return "Sprawa rozliczeniowa";
+  }
+  if (event.target_type === "contact") {
+    return event.target_id ? `Kontakt #${event.target_id}` : "Kontakt rozliczeniowy";
+  }
+  return "Rozliczenia";
+}
+
+export function buildBillingNextStepRows(
+  events: BillingNextStepEventRecord[],
+  options: {
+    action?: BillingNextStepEventAction;
+    targetType?: BillingNextStepTargetType;
+    targetId?: number;
+    relatedIssueKey?: string;
+    limit?: number;
+  } = {},
+): BillingNextStepRow[] {
+  const normalizedIssueKey = options.relatedIssueKey?.trim();
+  return events
+    .filter((event) => (options.action ? event.event_action === options.action : true))
+    .filter((event) => (options.targetType ? event.target_type === options.targetType : true))
+    .filter((event) => (options.targetId ? event.target_id === options.targetId : true))
+    .filter((event) => (normalizedIssueKey ? event.related_issue_key === normalizedIssueKey : true))
+    .slice()
+    .sort(
+      (a, b) =>
+        String(b.created_at ?? b.planned_for ?? "").localeCompare(String(a.created_at ?? a.planned_for ?? "")) ||
+        b.billing_next_step_event_id - a.billing_next_step_event_id,
+    )
+    .slice(0, options.limit ?? 8)
+    .map((event) => ({
+      id: String(event.billing_next_step_event_id),
+      title: safeBillingText(event.title, "Następny krok"),
+      stepTypeLabel: getBillingNextStepTypeLabel(event.step_type),
+      eventActionLabel: getBillingNextStepActionLabel(event.event_action),
+      targetLabel: nextStepTargetLabel(event),
+      targetHref: nextStepTargetHref(event),
+      dateLabel: event.planned_for ? `Na ${formatDateLabel(event.planned_for)}` : formatDateLabel(event.created_at, "Bez daty"),
+      noteText: event.note_text ? safeBillingText(event.note_text, "Ukryto techniczną lub wrażliwą treść notatki.") : undefined,
+      relatedIssueKey: event.related_issue_key ?? undefined,
+    }));
+}
+
 function contactTextExcerpt(value: string | null | undefined, fallback = "Brak treści w danych"): string {
   const text = safeBillingText(value, "").trim();
   if (!text) {
@@ -4445,6 +4702,115 @@ export function buildBillingContactEventRequest({
   };
 }
 
+export function buildBillingNextStepRequest({
+  targetType,
+  targetId,
+  relatedIssueKey,
+  stepType,
+  eventAction = "planned",
+  title,
+  noteText,
+  plannedFor,
+  organizationId,
+}: {
+  targetType: BillingNextStepTargetType;
+  targetId?: number;
+  relatedIssueKey?: string;
+  stepType: BillingNextStepType;
+  eventAction?: BillingNextStepEventAction;
+  title: string;
+  noteText: string;
+  plannedFor?: string;
+  organizationId: string | number | null | undefined;
+}): BillingNextStepValidationResult {
+  if (!canUseBillingOrganizationScope(organizationId)) {
+    return {
+      ok: false,
+      message: BILLING_ORGANIZATION_REQUIRED_TITLE,
+    };
+  }
+
+  if (!isBillingNextStepTargetType(targetType)) {
+    return {
+      ok: false,
+      message: "Wybierz poprawny typ miejsca, którego dotyczy krok.",
+    };
+  }
+
+  if (!isBillingNextStepType(stepType)) {
+    return {
+      ok: false,
+      message: "Wybierz poprawny typ kroku.",
+    };
+  }
+
+  if (!isBillingNextStepEventAction(eventAction)) {
+    return {
+      ok: false,
+      message: "Wybierz poprawny stan kroku.",
+    };
+  }
+
+  if (["payer", "payment", "contact"].includes(targetType) && (!targetId || !Number.isFinite(targetId))) {
+    return {
+      ok: false,
+      message: "Ten typ kroku wymaga poprawnego powiązanego rekordu.",
+    };
+  }
+
+  const trimmedIssueKey = relatedIssueKey?.trim();
+  if (targetType === "work_queue_issue" && !trimmedIssueKey) {
+    return {
+      ok: false,
+      message: "Krok przy sprawie wymaga wskazania sprawy rozliczeniowej.",
+    };
+  }
+
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle) {
+    return {
+      ok: false,
+      message: "Tytuł następnego kroku nie może być pusty.",
+    };
+  }
+  if (trimmedTitle.length > BILLING_NEXT_STEP_TITLE_MAX_LENGTH) {
+    return {
+      ok: false,
+      message: `Tytuł następnego kroku może mieć maksymalnie ${BILLING_NEXT_STEP_TITLE_MAX_LENGTH} znaków.`,
+    };
+  }
+
+  const trimmedNote = noteText.trim();
+  if (trimmedNote.length > BILLING_NEXT_STEP_NOTE_MAX_LENGTH) {
+    return {
+      ok: false,
+      message: `Notatka kroku może mieć maksymalnie ${BILLING_NEXT_STEP_NOTE_MAX_LENGTH} znaków.`,
+    };
+  }
+
+  const trimmedPlannedFor = plannedFor?.trim();
+  if (trimmedPlannedFor && !/^\d{4}-\d{2}-\d{2}$/.test(trimmedPlannedFor)) {
+    return {
+      ok: false,
+      message: "Data kroku powinna mieć format RRRR-MM-DD.",
+    };
+  }
+
+  return {
+    ok: true,
+    payload: {
+      target_type: targetType,
+      ...(targetId ? { target_id: targetId } : {}),
+      ...(trimmedIssueKey ? { related_issue_key: trimmedIssueKey } : {}),
+      step_type: stepType,
+      event_action: eventAction,
+      title: trimmedTitle,
+      ...(trimmedNote ? { note_text: trimmedNote } : {}),
+      ...(trimmedPlannedFor ? { planned_for: trimmedPlannedFor } : {}),
+    },
+  };
+}
+
 export function buildBillingPaymentReviewStatusRequest(
   status: string,
   noteText: string,
@@ -4705,6 +5071,66 @@ export function getBillingContactEventErrorState(error: unknown): BillingContact
   };
 }
 
+export function getBillingNextStepErrorState(error: unknown): BillingNextStepErrorState {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return {
+        status: "unauthenticated",
+        title: "Sesja wygasła",
+        description: "Zaloguj się ponownie, aby zapisać następny krok.",
+      };
+    }
+    if (error.status === 403) {
+      return {
+        status: "forbidden",
+        title: "Brak uprawnień do kroku",
+        description: "Twoje konto nie ma uprawnień do zapisywania kroków w tej organizacji.",
+      };
+    }
+    if (error.status === 404) {
+      return {
+        status: "error",
+        title: "Nie znaleziono powiązanego rekordu",
+        description: "Krok nie został zapisany, bo backend nie znalazł powiązanego płatnika, wpłaty albo kontaktu w wybranej organizacji.",
+      };
+    }
+    if (error.status >= 500) {
+      return {
+        status: "server-error",
+        title: "Backend nie zapisał kroku",
+        description: "Wystąpił błąd serwera. Krok nie jest traktowany jako zapisany bez potwierdzenia backendu.",
+      };
+    }
+    return {
+      status: "error",
+      title: `Błąd API (${error.status})`,
+      description: error.message,
+    };
+  }
+
+  if (error instanceof ApiContractError) {
+    return {
+      status: "error",
+      title: "Niepoprawny format kroku",
+      description: "Backend odpowiedział, ale zapisany krok nie pasuje do oczekiwanego kontraktu.",
+    };
+  }
+
+  if (error instanceof TypeError) {
+    return {
+      status: "error",
+      title: "Problem z połączeniem z API",
+      description: "Nie udało się połączyć z backendem. Krok nie został potwierdzony.",
+    };
+  }
+
+  return {
+    status: "error",
+    title: "Nie udało się zapisać kroku",
+    description: error instanceof Error ? error.message : "Wystąpił nieznany błąd zapisu następnego kroku.",
+  };
+}
+
 export function createBillingPayerNoteSubmitter(deps: BillingPayerNoteSubmitterDeps) {
   let inFlight = false;
 
@@ -4769,6 +5195,42 @@ export function createBillingContactEventSubmitter(deps: BillingContactEventSubm
       return {
         status: "error",
         errorState: getBillingContactEventErrorState(error),
+      };
+    } finally {
+      inFlight = false;
+      deps.setSubmitting(false);
+    }
+  };
+}
+
+export function createBillingNextStepSubmitter(deps: BillingNextStepSubmitterDeps) {
+  let inFlight = false;
+
+  return async function submitBillingNextStep(
+    validation: BillingNextStepValidationResult,
+  ): Promise<BillingNextStepSubmitResult> {
+    if (!validation.ok) {
+      return {
+        status: "blocked",
+        message: validation.message,
+      };
+    }
+
+    if (inFlight) {
+      return { status: "ignored" };
+    }
+
+    inFlight = true;
+    deps.setSubmitting(true);
+
+    try {
+      await deps.submitNextStep(validation.payload);
+      await deps.refreshDetail();
+      return { status: "success" };
+    } catch (error) {
+      return {
+        status: "error",
+        errorState: getBillingNextStepErrorState(error),
       };
     } finally {
       inFlight = false;

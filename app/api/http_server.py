@@ -1273,6 +1273,27 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         return self._send_json({"error": str(error)}, status=404)
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(contact_events)
+            if path == "/api/billing/next-step-events":
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 100
+                target_type = str(self._query_one(query, "target_type") or "").strip() or None
+                target_id = self._parse_optional_int(self._query_one(query, "target_id"))
+                issue_key = str(self._query_one(query, "issue_key") or "").strip() or None
+                try:
+                    next_step_events = self.billing_service.list_next_step_events(
+                        organization_id=organization_id,
+                        target_type=target_type,
+                        target_id=target_id,
+                        related_issue_key=issue_key,
+                        limit=min(max(limit, 1), 500),
+                    )
+                except ValueError as error:
+                    if "Nie znaleziono" in str(error):
+                        return self._send_json({"error": str(error)}, status=404)
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(next_step_events)
             if path == "/api/billing/schools":
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:
@@ -3525,6 +3546,44 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         return self._send_json({"error": str(error)}, status=404)
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(contact_event, status=201)
+
+            if path == "/api/billing/next-step-events":
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                payload = self._read_json()
+                allowed_fields = {
+                    "target_type",
+                    "target_id",
+                    "related_issue_key",
+                    "step_type",
+                    "event_action",
+                    "title",
+                    "note_text",
+                    "planned_for",
+                }
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {
+                            "error": (
+                                "Endpoint przyjmuje tylko pola target_type, target_id, related_issue_key, "
+                                "step_type, event_action, title, note_text i planned_for."
+                            )
+                        },
+                        status=400,
+                    )
+                try:
+                    next_step_event = self.billing_service.add_next_step_event(
+                        payload,
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    if "Nie znaleziono" in str(error):
+                        return self._send_json({"error": str(error)}, status=404)
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(next_step_event, status=201)
 
             if path == "/api/billing/students":
                 organization_id = self._resolve_write_scope(user, query)

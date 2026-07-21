@@ -43,6 +43,20 @@ BILLING_CONTACT_ACTIONS = {
     "needs_followup",
 }
 
+BILLING_NEXT_STEP_TARGET_TYPES = {"payer", "payment", "work_queue_issue", "contact", "billing_summary"}
+BILLING_NEXT_STEP_TYPES = {
+    "call",
+    "send_manual_message",
+    "check_payment",
+    "clarify_payment",
+    "review_overpayment",
+    "wait_for_response",
+    "wait_for_payment",
+    "review_notes",
+    "other",
+}
+BILLING_NEXT_STEP_EVENT_ACTIONS = {"planned", "completed", "snoozed"}
+
 
 class BillingService:
     HEADER_ALIASES = {
@@ -672,6 +686,155 @@ class BillingService:
                 "contact_action": contact_action,
                 "message_text": message_text or None,
                 "note_text": note_text or None,
+                "created_by_user_id": int(actor_user["user_id"]),
+                "created_by_user_name": actor_user.get("display_name") or actor_user.get("login"),
+            },
+        )
+
+    def list_next_step_events(
+        self,
+        *,
+        organization_id: int | None = None,
+        target_type: str | None = None,
+        target_id: int | None = None,
+        related_issue_key: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed sprawdzeniem nastepnych krokow.")
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+
+        normalized_target_type = str(target_type or "").strip() or None
+        if normalized_target_type and normalized_target_type not in BILLING_NEXT_STEP_TARGET_TYPES:
+            raise ValueError("Nieprawidlowy typ celu nastepnego kroku.")
+        normalized_issue_key = str(related_issue_key or "").strip() or None
+        if normalized_issue_key and len(normalized_issue_key) > 300:
+            raise ValueError("Klucz sprawy nastepnego kroku musi byc krotki.")
+
+        if normalized_target_type in {"payer", "payment", "contact"} and target_id is not None:
+            self._validate_next_step_target(
+                normalized_target_type,
+                int(target_id),
+                organization_id=organization_id,
+            )
+
+        events = self.billing_repository.list_next_step_events(
+            organization_id=organization_id,
+            target_type=normalized_target_type,
+            target_id=target_id,
+            related_issue_key=normalized_issue_key,
+            limit=limit,
+        )
+        return {
+            "organization_id": organization_id,
+            "events": events,
+        }
+
+    def add_next_step_event(
+        self,
+        payload: dict[str, Any],
+        *,
+        actor_user: dict[str, Any] | None,
+        actor: str,
+        organization_id: int | None = None,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed zapisaniem nastepnego kroku.")
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+        if not actor_user or not actor_user.get("user_id"):
+            raise ValueError("Nie mozna zapisac nastepnego kroku bez zalogowanego uzytkownika.")
+
+        target_type = str(payload.get("target_type") or "").strip()
+        step_type = str(payload.get("step_type") or "").strip()
+        event_action = str(payload.get("event_action") or "").strip()
+        if target_type not in BILLING_NEXT_STEP_TARGET_TYPES:
+            raise ValueError("Nieprawidlowy typ celu nastepnego kroku.")
+        if step_type not in BILLING_NEXT_STEP_TYPES:
+            raise ValueError("Nieprawidlowy typ nastepnego kroku.")
+        if event_action not in BILLING_NEXT_STEP_EVENT_ACTIONS:
+            raise ValueError("Nieprawidlowa akcja nastepnego kroku.")
+
+        target_id = self._normalize_next_step_target_id(target_type, payload.get("target_id"))
+        if target_id is not None:
+            self._validate_next_step_target(target_type, target_id, organization_id=organization_id)
+
+        related_issue_key = str(payload.get("related_issue_key") or "").strip()
+        if len(related_issue_key) > 300:
+            raise ValueError("Klucz sprawy nastepnego kroku musi byc krotki.")
+
+        title = str(payload.get("title") or "").strip()
+        if not title:
+            raise ValueError("Tytul nastepnego kroku jest wymagany.")
+        if len(title) > 200:
+            raise ValueError("Tytul nastepnego kroku moze miec maksymalnie 200 znakow.")
+
+        note_text = str(payload.get("note_text") or "").strip()
+        if len(note_text) > 1000:
+            raise ValueError("Notatka nastepnego kroku moze miec maksymalnie 1000 znakow.")
+
+        planned_for = str(payload.get("planned_for") or "").strip()
+        if planned_for and not re.match(r"^\d{4}-\d{2}-\d{2}$", planned_for):
+            raise ValueError("Data nastepnego kroku musi miec format RRRR-MM-DD.")
+
+        event_id = self.billing_repository.add_next_step_event(
+            {
+                "organization_id": organization_id,
+                "target_type": target_type,
+                "target_id": target_id,
+                "related_issue_key": related_issue_key or None,
+                "step_type": step_type,
+                "event_action": event_action,
+                "title": title,
+                "note_text": note_text or None,
+                "planned_for": planned_for or None,
+                "created_by_user_id": int(actor_user["user_id"]),
+            }
+        )
+        self.event_repository.log(
+            event_type="billing_next_step_event_added",
+            invoice_id=None,
+            organization_id=organization_id,
+            source="BILLING",
+            status_before=None,
+            status_after=event_action,
+            decision_reason="Dodano reczny nastepny krok rozliczeniowy.",
+            actor=actor,
+            details={
+                "billing_next_step_event_id": event_id,
+                "target_type": target_type,
+                "target_id": target_id,
+                "step_type": step_type,
+                "event_action": event_action,
+                "title_length": len(title),
+                "note_length": len(note_text),
+                "planned_for_present": bool(planned_for),
+            },
+        )
+        events = self.billing_repository.list_next_step_events(
+            organization_id=organization_id,
+            limit=500,
+        )
+        return next(
+            (
+                item
+                for item in events
+                if int(item.get("billing_next_step_event_id") or 0) == int(event_id)
+            ),
+            {
+                "billing_next_step_event_id": event_id,
+                "organization_id": organization_id,
+                "target_type": target_type,
+                "target_id": target_id,
+                "related_issue_key": related_issue_key or None,
+                "step_type": step_type,
+                "event_action": event_action,
+                "title": title,
+                "note_text": note_text or None,
+                "planned_for": planned_for or None,
                 "created_by_user_id": int(actor_user["user_id"]),
                 "created_by_user_name": actor_user.get("display_name") or actor_user.get("login"),
             },
@@ -1669,6 +1832,37 @@ class BillingService:
 
     def _normalize_boolean_flag(self, value: Any) -> int:
         return 1 if value in {True, 1, "1", "true", "tak", "on"} else 0
+
+    def _normalize_next_step_target_id(self, target_type: str, raw_value: Any) -> int | None:
+        if target_type in {"payer", "payment", "contact"}:
+            try:
+                target_id = int(raw_value)
+            except (TypeError, ValueError):
+                raise ValueError("Identyfikator celu nastepnego kroku jest wymagany.") from None
+            if target_id <= 0:
+                raise ValueError("Identyfikator celu nastepnego kroku jest wymagany.")
+            return target_id
+        if raw_value in {None, ""}:
+            return None
+        try:
+            target_id = int(raw_value)
+        except (TypeError, ValueError):
+            return None
+        return target_id if target_id > 0 else None
+
+    def _validate_next_step_target(self, target_type: str, target_id: int, *, organization_id: int) -> None:
+        if target_type == "payer":
+            payer = self.billing_repository.get_payer_by_id(target_id, organization_id=organization_id)
+            if not payer:
+                raise ValueError("Nie znaleziono platnika w wybranej organizacji.")
+        elif target_type == "payment":
+            transaction = self.billing_repository.get_transaction_by_id(target_id, organization_id=organization_id)
+            if not transaction:
+                raise ValueError("Nie znaleziono wplaty w wybranej organizacji.")
+        elif target_type == "contact":
+            events = self.billing_repository.list_contact_events(organization_id=organization_id, limit=500)
+            if not any(int(item.get("billing_contact_event_id") or 0) == int(target_id) for item in events):
+                raise ValueError("Nie znaleziono kontaktu rozliczeniowego w wybranej organizacji.")
 
     def _resolve_charge_unit_rate(self, model: dict[str, Any]) -> float:
         settlement_mode = str(model.get("settlement_mode") or "").strip().lower()

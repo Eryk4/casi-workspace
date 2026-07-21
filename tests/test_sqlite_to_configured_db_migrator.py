@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sqlite3
 import tempfile
@@ -57,6 +57,7 @@ BILLING_CORE_TABLES = (
     "billing_payment_review_events",
     "billing_work_queue_events",
     "billing_contact_events",
+            "billing_next_step_events",
     "billing_payment_matches",
     "billing_payer_ledger_entries",
     "billing_notes",
@@ -159,6 +160,7 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
             "billing_payment_matches": "billing_payment_match_id",
             "billing_payer_ledger_entries": "billing_payer_ledger_entry_id",
             "billing_notes": "billing_note_id",
+            "billing_next_step_events": "billing_next_step_event_id",
             "knowledge_documents": "knowledge_document_id",
             "knowledge_document_versions": "knowledge_document_version_id",
             "knowledge_processing_jobs": "knowledge_processing_job_id",
@@ -335,7 +337,7 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
 
         for table_name in ACCESS_CORE_TABLES:
             self.assertNotIn(table_name, report["tables_missing_from_migrator"])
-        self.assertEqual(len(report["migrator_tables"]), 62)
+        self.assertEqual(len(report["migrator_tables"]), 63)
         self.assertEqual(len(report["tables_missing_from_migrator"]), 10)
         self.assertEqual(report["blocker_count"], 0)
 

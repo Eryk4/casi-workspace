@@ -64,3 +64,9 @@ To jest mapa obecnych danych z jedną bezpieczną adnotacją operacyjną, a nie 
 - Wpłata przypisana tylko do płatnika nie jest automatycznie przypisywana do okresu.
 - Jedna wpłata może mieć kilka przypisań, jeśli obecne dane zawierają kilka matchy.
 - Pełne przypisywanie wpłat, podział kwot, korekty i importy bankowe wymagają osobnego etapu.
+
+## Następny krok przy wpłacie
+
+Szczegół wpłaty pokazuje małą read-only sekcję `Następny krok` z aktywnymi krokami powiązanymi z wpłatą. W tym etapie formularz dodawania kroku jest priorytetowo dostępny na `/rozliczenia/sprawy` i `/rozliczenia/platnicy/{payerId}`.
+
+Widok wpłaty nadal nie dopasowuje płatności, nie zmienia salda i nie tworzy przypomnień. Kroki są tylko ręcznym planem pracy operatora.

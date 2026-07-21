@@ -86,3 +86,9 @@ Widok `/rozliczenia/sprawy` linkuje do `/rozliczenia/kontakty`, zeby operator mo
 ## Powiązanie z raportem rozliczeniowym
 
 `/rozliczenia/sprawy` linkuje do `/rozliczenia/raport`, żeby aktywne, odłożone i obsłużone sprawy mogły być widoczne w zbiorczym podsumowaniu. Raport pozostaje read-only i nie zastępuje decyzji operacyjnych spraw.
+
+## Plan następnego kroku rozliczeniowego
+
+`/rozliczenia/sprawy` ma teraz wąską akcję `Dodaj następny krok`. Zapis tworzy append-only event w `billing_next_step_events` dla sprawy rozliczeniowej. Nie zastępuje decyzji `Obsłużona` / `Odłożona`, nie zmienia statusu wpłaty, nie tworzy zadania, nie wysyła przypomnienia i nie zmienia finansów.
+
+Ekran pokazuje `Następne kroki` i `Ostatnio wykonane kroki`, żeby operator widział ręczny plan pracy bez budowania osobnego task managera. Zbiorczy widok `/rozliczenia/kroki` nie został dodany w tym etapie.

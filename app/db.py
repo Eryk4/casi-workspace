@@ -1086,6 +1086,29 @@ CREATE INDEX IF NOT EXISTS idx_billing_contact_events_payment
 CREATE INDEX IF NOT EXISTS idx_billing_contact_events_issue
     ON billing_contact_events(organization_id, related_issue_key, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS billing_next_step_events (
+    billing_next_step_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id INTEGER,
+    related_issue_key TEXT,
+    step_type TEXT NOT NULL,
+    event_action TEXT NOT NULL,
+    title TEXT NOT NULL,
+    note_text TEXT,
+    planned_for TEXT,
+    created_by_user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_org
+    ON billing_next_step_events(organization_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_target
+    ON billing_next_step_events(organization_id, target_type, target_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_issue
+    ON billing_next_step_events(organization_id, related_issue_key, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_id INTEGER NOT NULL,
@@ -2512,6 +2535,31 @@ CREATE INDEX IF NOT EXISTS idx_billing_contact_events_payment
 CREATE INDEX IF NOT EXISTS idx_billing_contact_events_issue
     ON billing_contact_events(organization_id, related_issue_key, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS billing_next_step_events (
+    billing_next_step_event_id BIGSERIAL PRIMARY KEY,
+    organization_id BIGINT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id BIGINT,
+    related_issue_key TEXT,
+    step_type TEXT NOT NULL,
+    event_action TEXT NOT NULL,
+    title TEXT NOT NULL,
+    note_text TEXT,
+    planned_for TEXT,
+    created_by_user_id BIGINT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_billing_next_step_events_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    CONSTRAINT fk_billing_next_step_events_user
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_org
+    ON billing_next_step_events(organization_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_target
+    ON billing_next_step_events(organization_id, target_type, target_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_issue
+    ON billing_next_step_events(organization_id, related_issue_key, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id BIGSERIAL PRIMARY KEY,
     invoice_id BIGINT NOT NULL,
@@ -2818,6 +2866,7 @@ PRAGMA foreign_keys = OFF;
   DROP TABLE IF EXISTS user_module_inbox_state;
   DROP TABLE IF EXISTS billing_payer_charge_state;
 DROP TABLE IF EXISTS billing_payer_ledger_entries;
+DROP TABLE IF EXISTS billing_next_step_events;
 DROP TABLE IF EXISTS billing_contact_events;
 DROP TABLE IF EXISTS billing_work_queue_events;
 DROP TABLE IF EXISTS billing_payment_review_events;
@@ -2878,6 +2927,7 @@ POSTGRES_RESET_SCRIPT = """
   DROP TABLE IF EXISTS user_module_inbox_state CASCADE;
   DROP TABLE IF EXISTS billing_payer_charge_state CASCADE;
 DROP TABLE IF EXISTS billing_payer_ledger_entries CASCADE;
+DROP TABLE IF EXISTS billing_next_step_events CASCADE;
 DROP TABLE IF EXISTS billing_contact_events CASCADE;
 DROP TABLE IF EXISTS billing_work_queue_events CASCADE;
 DROP TABLE IF EXISTS billing_payment_review_events CASCADE;

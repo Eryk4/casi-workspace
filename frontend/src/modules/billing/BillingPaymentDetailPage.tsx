@@ -24,12 +24,15 @@ import {
   BILLING_PAYMENT_REVIEW_STATUS_OPTIONS,
   BILLING_PAYMENTS_ROUTE,
   BILLING_PERIODS_ROUTE,
+  BILLING_NEXT_STEP_HELP_TEXT,
   buildBillingPaymentDetailView,
+  buildBillingNextStepRows,
   buildBillingPaymentReviewStatusRequest,
   canUseBillingOrganizationScope,
   createBillingPaymentReviewStatusSubmitter,
   getBillingErrorState,
   readBillingCharges,
+  readBillingNextStepEvents,
   readBillingPaymentMatches,
   readBillingPaymentReviewStatus,
   readBillingPayers,
@@ -37,6 +40,7 @@ import {
   readBillingTransactions,
   type BillingCenterSnapshot,
   type BillingErrorState,
+  type BillingNextStepRow,
   type BillingPaymentDetailAssignmentRow,
   type BillingPaymentDetailChargeRow,
   type BillingPaymentDetailView,
@@ -86,6 +90,28 @@ const chargeColumns: Array<TableColumn<BillingPaymentDetailChargeRow>> = [
   { key: "status", header: "Status naliczenia", render: (row) => row.statusLabel },
 ];
 
+function PaymentNextStepList({ rows }: { rows: BillingNextStepRow[] }) {
+  return rows.length ? (
+    <div className="module-readiness">
+      {rows.map((row) => (
+        <div className="module-readiness__item" key={row.id}>
+          <WalletCards aria-hidden="true" size={17} />
+          <div>
+            <strong>{row.title}</strong>
+            <span>{row.stepTypeLabel} · {row.eventActionLabel} · {row.dateLabel}</span>
+            {row.noteText ? <p>{row.noteText}</p> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <EmptyState
+      title="Brak następnych kroków"
+      description="Nie ma aktywnego ręcznego planu pracy przy tej wpłacie."
+    />
+  );
+}
+
 export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
   const { selectedOrganizationId, selectedOrganization, status: organizationStatus } = useActiveOrganization();
   const [snapshot, setSnapshot] = useState<BillingCenterSnapshot | null>(null);
@@ -117,13 +143,14 @@ export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
     setErrorState(null);
 
     try {
-      const [payersPayload, studentsPayload, chargesPayload, matchesPayload, transactionsPayload, reviewStatusPayload] = await Promise.all([
+      const [payersPayload, studentsPayload, chargesPayload, matchesPayload, transactionsPayload, reviewStatusPayload, nextStepEventsPayload] = await Promise.all([
         api.billingPayers(withActiveOrganizationQuery(selectedOrganizationId)),
         api.billingStudents(withActiveOrganizationQuery(selectedOrganizationId)),
         api.billingCharges(withActiveOrganizationQuery(selectedOrganizationId, { limit: 1000 })),
         api.billingLedgerMatches(withActiveOrganizationQuery(selectedOrganizationId, { limit: 1000 })),
         api.billingTransactions(withActiveOrganizationQuery(selectedOrganizationId, { limit: 1000 })),
         api.billingPaymentReviewStatus(paymentId, withActiveOrganizationQuery(selectedOrganizationId, { limit: 10 })),
+        api.billingNextStepEvents(withActiveOrganizationQuery(selectedOrganizationId, { target_type: "payment", target_id: paymentId, limit: 50 })),
       ]);
 
       setSnapshot({
@@ -133,6 +160,7 @@ export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
         charges: readBillingCharges(chargesPayload),
         paymentMatches: readBillingPaymentMatches(matchesPayload),
         transactions: readBillingTransactions(transactionsPayload),
+        nextStepEvents: readBillingNextStepEvents(nextStepEventsPayload).events,
         invoices: [],
         contractors: [],
         workItems: [],
@@ -157,6 +185,10 @@ export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
   }, [loadPayment]);
 
   const detail = useMemo<BillingPaymentDetailView | null>(() => (snapshot ? buildBillingPaymentDetailView(snapshot, paymentId) : null), [paymentId, snapshot]);
+  const nextStepRows = useMemo(
+    () => buildBillingNextStepRows(snapshot?.nextStepEvents ?? [], { action: "planned", targetType: "payment", targetId: paymentId, limit: 5 }),
+    [paymentId, snapshot?.nextStepEvents],
+  );
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
   const notFound = status === "ready" && snapshot && !detail;
   const headerBadgeTone = detail?.statusTone === "ok" ? "success" : detail?.statusTone ?? (status === "error" ? "warning" : "info");
@@ -295,6 +327,19 @@ export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
             </div>
 
             <aside className="module-stack">
+              <Card
+                description="Ręczne kroki powiązane z tą wpłatą. Widok nie dopasowuje płatności i niczego nie wysyła."
+                title="Następny krok"
+              >
+                <p className="module-note">{BILLING_NEXT_STEP_HELP_TEXT}</p>
+                <PaymentNextStepList rows={nextStepRows} />
+                {detail.payerHref ? (
+                  <div className="billing-inline-links">
+                    <Link className="module-link" href={detail.payerHref}>Przejdź do płatnika</Link>
+                  </div>
+                ) : null}
+              </Card>
+
               <Card
                 description={BILLING_PAYMENT_REVIEW_STATUS_HELP_TEXT}
                 title="Status operacyjny"

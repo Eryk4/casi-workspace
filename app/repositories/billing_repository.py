@@ -419,6 +419,67 @@ class BillingRepository:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def add_next_step_event(self, payload: dict[str, Any]) -> int:
+        with get_connection() as connection:
+            return execute_insert_returning_id(
+                connection,
+                """
+                INSERT INTO billing_next_step_events (
+                    organization_id, target_type, target_id, related_issue_key,
+                    step_type, event_action, title, note_text, planned_for,
+                    created_by_user_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["organization_id"],
+                    payload["target_type"],
+                    payload.get("target_id"),
+                    payload.get("related_issue_key"),
+                    payload["step_type"],
+                    payload["event_action"],
+                    payload["title"],
+                    payload.get("note_text"),
+                    payload.get("planned_for"),
+                    payload["created_by_user_id"],
+                    now_iso(),
+                ),
+                "billing_next_step_event_id",
+            )
+
+    def list_next_step_events(
+        self,
+        *,
+        organization_id: int,
+        target_type: str | None = None,
+        target_id: int | None = None,
+        related_issue_key: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        params: list[Any] = [organization_id]
+        query = """
+            SELECT
+                e.*,
+                COALESCE(u.display_name, u.login) AS created_by_user_name,
+                u.role AS created_by_user_role
+            FROM billing_next_step_events e
+            LEFT JOIN users u ON u.user_id = e.created_by_user_id
+            WHERE e.organization_id = ?
+        """
+        if target_type:
+            query += " AND e.target_type = ?"
+            params.append(target_type)
+        if target_id is not None:
+            query += " AND e.target_id = ?"
+            params.append(target_id)
+        if related_issue_key:
+            query += " AND e.related_issue_key = ?"
+            params.append(related_issue_key)
+        query += " ORDER BY e.created_at DESC, e.billing_next_step_event_id DESC LIMIT ?"
+        params.append(max(1, int(limit)))
+        with get_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
     def create_payer(self, payload: dict[str, Any]) -> int:
         timestamp = now_iso()
         with get_connection() as connection:
