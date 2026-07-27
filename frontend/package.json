@@ -12,6 +12,8 @@
     "test:documents": "node scripts/test-documents.js",
     "test:document-detail": "node scripts/test-document-detail.js",
     "test:billing": "node scripts/test-billing.js",
+    "test:billing-work-queue-date": "node scripts/test-billing-work-queue-date.js",
+    "test:billing-payer-date": "node scripts/test-billing-payer-date.js",
     "test:boss-assistant": "node scripts/test-boss-assistant.js",
     "test:company-assistant": "node scripts/test-company-assistant.js",
     "test:crm": "node scripts/test-crm.js",
@@ -34,6 +36,7 @@
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.15.0",
     "eslint-config-next": "^15.0.3",
+    "jsdom": "^30.0.0",
     "typescript": "^5.6.3"
   }
 }
