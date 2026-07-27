@@ -758,6 +758,20 @@ class BillingService:
         if event_action not in BILLING_NEXT_STEP_EVENT_ACTIONS:
             raise ValueError("Nieprawidlowa akcja nastepnego kroku.")
 
+        raw_parent_event_id = payload.get("parent_event_id")
+        parent_event_id: int | None = None
+        if raw_parent_event_id not in (None, ""):
+            try:
+                parent_event_id = int(raw_parent_event_id)
+            except (TypeError, ValueError):
+                raise ValueError("Powiazany krok bazowy jest nieprawidlowy.") from None
+            if parent_event_id <= 0:
+                raise ValueError("Powiazany krok bazowy jest nieprawidlowy.")
+        if event_action == "completed" and parent_event_id is None:
+            raise ValueError("Zakonczony krok wymaga wskazania kroku planned.")
+        if event_action != "completed" and parent_event_id is not None:
+            raise ValueError("Tylko zakonczony krok moze wskazywac krok bazowy.")
+
         target_id = self._normalize_next_step_target_id(target_type, payload.get("target_id"))
         if target_id is not None:
             self._validate_next_step_target(target_type, target_id, organization_id=organization_id)
@@ -765,6 +779,30 @@ class BillingService:
         related_issue_key = str(payload.get("related_issue_key") or "").strip()
         if len(related_issue_key) > 300:
             raise ValueError("Klucz sprawy nastepnego kroku musi byc krotki.")
+
+        if parent_event_id is not None:
+            parent_event = self.billing_repository.get_next_step_event_by_id(
+                parent_event_id,
+                organization_id=organization_id,
+            )
+            if not parent_event:
+                raise ValueError("Nie znaleziono wskazanego kroku planned.")
+            if str(parent_event.get("event_action") or "") != "planned":
+                raise ValueError("Krokiem bazowym moze byc tylko event planned.")
+            parent_target_id = parent_event.get("target_id")
+            normalized_parent_target_id = int(parent_target_id) if parent_target_id is not None else None
+            parent_issue_key = str(parent_event.get("related_issue_key") or "").strip()
+            if (
+                str(parent_event.get("target_type") or "") != target_type
+                or normalized_parent_target_id != target_id
+                or parent_issue_key != related_issue_key
+            ):
+                raise ValueError("Krok completed musi dotyczyc tego samego celu co krok planned.")
+            if self.billing_repository.get_next_step_completion_by_parent(
+                parent_event_id,
+                organization_id=organization_id,
+            ):
+                raise ValueError("Ten krok zostal juz oznaczony jako wykonany.")
 
         title = str(payload.get("title") or "").strip()
         if not title:
@@ -780,20 +818,30 @@ class BillingService:
         if planned_for and not re.match(r"^\d{4}-\d{2}-\d{2}$", planned_for):
             raise ValueError("Data nastepnego kroku musi miec format RRRR-MM-DD.")
 
-        event_id = self.billing_repository.add_next_step_event(
-            {
-                "organization_id": organization_id,
-                "target_type": target_type,
-                "target_id": target_id,
-                "related_issue_key": related_issue_key or None,
-                "step_type": step_type,
-                "event_action": event_action,
-                "title": title,
-                "note_text": note_text or None,
-                "planned_for": planned_for or None,
-                "created_by_user_id": int(actor_user["user_id"]),
-            }
-        )
+        try:
+            event_id = self.billing_repository.add_next_step_event(
+                {
+                    "parent_event_id": parent_event_id,
+                    "organization_id": organization_id,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "related_issue_key": related_issue_key or None,
+                    "step_type": step_type,
+                    "event_action": event_action,
+                    "title": title,
+                    "note_text": note_text or None,
+                    "planned_for": planned_for or None,
+                    "created_by_user_id": int(actor_user["user_id"]),
+                }
+            )
+        except Exception as error:
+            message = str(error).lower()
+            if parent_event_id is not None and (
+                "idx_billing_next_step_events_parent_unique" in message
+                or "billing_next_step_events.parent_event_id" in message
+            ):
+                raise ValueError("Ten krok zostal juz oznaczony jako wykonany.") from None
+            raise
         self.event_repository.log(
             event_type="billing_next_step_event_added",
             invoice_id=None,
@@ -805,6 +853,7 @@ class BillingService:
             actor=actor,
             details={
                 "billing_next_step_event_id": event_id,
+                "parent_event_id": parent_event_id,
                 "target_type": target_type,
                 "target_id": target_id,
                 "step_type": step_type,
@@ -826,6 +875,7 @@ class BillingService:
             ),
             {
                 "billing_next_step_event_id": event_id,
+                "parent_event_id": parent_event_id,
                 "organization_id": organization_id,
                 "target_type": target_type,
                 "target_id": target_id,

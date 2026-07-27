@@ -1088,6 +1088,7 @@ CREATE INDEX IF NOT EXISTS idx_billing_contact_events_issue
 
 CREATE TABLE IF NOT EXISTS billing_next_step_events (
     billing_next_step_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_event_id INTEGER,
     organization_id INTEGER NOT NULL,
     target_type TEXT NOT NULL,
     target_id INTEGER,
@@ -1108,6 +1109,8 @@ CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_target
     ON billing_next_step_events(organization_id, target_type, target_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_issue
     ON billing_next_step_events(organization_id, related_issue_key, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_next_step_events_parent_unique
+    ON billing_next_step_events(parent_event_id);
 
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2537,6 +2540,7 @@ CREATE INDEX IF NOT EXISTS idx_billing_contact_events_issue
 
 CREATE TABLE IF NOT EXISTS billing_next_step_events (
     billing_next_step_event_id BIGSERIAL PRIMARY KEY,
+    parent_event_id BIGINT,
     organization_id BIGINT NOT NULL,
     target_type TEXT NOT NULL,
     target_id BIGINT,
@@ -2559,6 +2563,8 @@ CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_target
     ON billing_next_step_events(organization_id, target_type, target_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_issue
     ON billing_next_step_events(organization_id, related_issue_key, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_next_step_events_parent_unique
+    ON billing_next_step_events(parent_event_id);
 
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id BIGSERIAL PRIMARY KEY,
@@ -4213,6 +4219,18 @@ def _ensure_additive_columns(connection: DatabaseConnection) -> None:
             connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
 
 
+def _ensure_billing_next_step_parent_schema(connection: DatabaseConnection) -> None:
+    columns = _list_table_columns(connection, "billing_next_step_events")
+    if "parent_event_id" not in columns:
+        connection.execute("ALTER TABLE billing_next_step_events ADD COLUMN parent_event_id BIGINT")
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_next_step_events_parent_unique
+        ON billing_next_step_events(parent_event_id)
+        """
+    )
+
+
 def _ensure_additive_indexes(connection: DatabaseConnection) -> None:
     for statement in ADDITIVE_INDEXES:
         uses_savepoint = connection.backend != "sqlite"
@@ -5279,6 +5297,7 @@ def _apply_database_schema_bootstrap(connection: DatabaseConnection) -> None:
     _ensure_system_email_oauth_schema(connection)
     _ensure_system_settings_schema(connection)
     _ensure_invoice_handoff_schema(connection)
+    _ensure_billing_next_step_parent_schema(connection)
     _ensure_additive_columns(connection)
     _ensure_sqlite_multi_org_contractors(connection)
     _ensure_additive_indexes(connection)

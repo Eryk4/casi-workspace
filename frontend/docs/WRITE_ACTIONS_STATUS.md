@@ -38,7 +38,7 @@ No new write action should be added until the existing paths below stay green in
 | Rozliczenia | `POST /api/billing/payments/{paymentId}/review-status?organization_id=...` | `/rozliczenia/wplaty/{paymentId}` | `{ "status": string, "note_text"?: string }` | Required by active organization context | Form loading; detail refreshes after backend response | `_resolve_write_scope`; service reads incoming transaction by `billing_transaction_id` and `organization_id`; no transaction/charge/match/ledger/balance mutation | `test-billing.js`, `tests/test_billing_payment_review_status_http.py` |
 | Rozliczenia | `POST /api/billing/work-queue/events?organization_id=...` | `/rozliczenia/sprawy` | `{ "issue_key": string, "issue_type": string, "target_type": string, "target_id"?: number, "action": "handled" | "snoozed", "note_text"?: string }` | Required by active organization context | Form loading; queue refreshes after backend response | `_resolve_write_scope`; service validates `payment` and `payer` targets by organization; no transaction/charge/match/ledger/balance mutation | `test-billing.js`, `tests/test_billing_work_queue_events_http.py` |
 | Rozliczenia | `POST /api/billing/contact-events?organization_id=...` | `/rozliczenia/platnicy/{payerId}` | `{ "payer_id": number, "related_payment_id"?: number, "related_issue_key"?: string, "channel": string, "contact_action": string, "message_text"?: string, "note_text"?: string }` | Required by active organization context | Form loading; payer detail refreshes after backend response | `_resolve_write_scope`; service validates payer and optional payment by organization; no transaction/charge/match/ledger/balance mutation and no external sending | `test-billing.js`, `tests/test_billing_contact_events_http.py` |
-| Rozliczenia | `POST /api/billing/next-step-events?organization_id=...` | `/rozliczenia/sprawy`, `/rozliczenia/platnicy/{payerId}` | `{ "target_type": string, "target_id"?: number, "related_issue_key"?: string, "step_type": string, "event_action": "planned" | "completed" | "snoozed", "title": string, "note_text"?: string, "planned_for"?: string }` | Required by active organization context | Form loading; page refreshes after backend response | `_resolve_write_scope`; service validates payer/payment/contact targets by organization; no transaction/charge/match/ledger/balance mutation and no external sending/reminder creation | `test-billing.js`, `tests/test_billing_next_step_events_http.py` |
+| Rozliczenia | `POST /api/billing/next-step-events?organization_id=...` | `/rozliczenia/sprawy`, `/rozliczenia/platnicy/{payerId}` | `{ "parent_event_id"?: number, "target_type": string, "target_id"?: number, "related_issue_key"?: string, "step_type": string, "event_action": "planned" | "completed" | "snoozed", "title": string, "note_text"?: string, "planned_for"?: string }`; `parent_event_id` is required only for `completed` | Required by active organization context | Form loading; page refreshes after backend response | `_resolve_write_scope`; service validates the parent, payer/payment/contact targets and organization; no transaction/charge/match/ledger/balance mutation and no external sending/reminder creation | `test-billing.js`, `tests/test_billing_next_step_events_http.py`, `tests/test_billing_next_step_parent_migration.py` |
 
 ## Tenant Isolation Status
 
@@ -108,19 +108,22 @@ No new write action should be added until the existing paths below stay green in
 ### Billing Next Step Events
 
 - Frontend blocks next-step submit without active organization.
-- Backend requires write scope and accepts only `target_type`, optional `target_id`, optional `related_issue_key`, `step_type`, `event_action`, `title`, optional `note_text`, and optional `planned_for`.
+- Backend requires write scope and accepts only optional `parent_event_id`, `target_type`, optional `target_id`, optional `related_issue_key`, `step_type`, `event_action`, `title`, optional `note_text`, and optional `planned_for`.
 - Allowed target types are `payer`, `payment`, `work_queue_issue`, `contact`, and `billing_summary`.
 - Allowed step types are `call`, `send_manual_message`, `check_payment`, `clarify_payment`, `review_overpayment`, `wait_for_response`, `wait_for_payment`, `review_notes`, and `other`.
 - Allowed event actions are `planned`, `completed`, and `snoozed`.
 - `/rozliczenia/sprawy` and `/rozliczenia/platnicy/{payerId}` expose `planned` creation and a single `completed` action for active steps; `snoozed` is not exposed in UI.
-- Completing a step appends a new event with the same target and step metadata. It does not update or delete the earlier `planned` event.
-- The frontend treats the newest event with the same target, step type, title, and `planned_for` as the current state; `completed` does not duplicate the optional note.
+- Completing a step appends a new event whose required `parent_event_id` identifies one concrete `planned` event. It does not update or delete the parent.
+- Backend resolves the parent inside the active organization, requires the same target and `event_action=planned`, and rejects a second completion of the same parent.
+- The frontend never infers identity from target, step type, title, note, or `planned_for`. Two identical planned events remain independent.
+- Legacy `completed` events with no `parent_event_id` remain historical and do not close any planned event.
 - `/rozliczenia/wplaty/{paymentId}` remains read-only and has no completed write action.
 - For `target_type=payer`, service fetches the payer by `billing_payer_id` and `organization_id`.
 - For `target_type=payment`, service fetches the incoming transaction by `billing_transaction_id` and `organization_id`.
 - For `target_type=contact`, service verifies that the contact event belongs to the organization.
 - `planned_for` is informational only. It does not create a calendar entry or automatic reminder.
-- Event history records metadata, title length, note length, and planned-for presence, not the full `note_text`.
+- Event history records metadata, `parent_event_id`, title length, note length, and planned-for presence, not the full `note_text`.
+- The only intended table writes are the append-only row in `billing_next_step_events` and the sanitized audit row in `event_logs`.
 - The endpoint must not change balances, charges, payment matches, transactions, ledger entries, imports, reminders, task manager items, messages, exports, or accounting state.
 
 ### Backend-Only Additive Comments/Notes

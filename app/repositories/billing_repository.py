@@ -425,12 +425,13 @@ class BillingRepository:
                 connection,
                 """
                 INSERT INTO billing_next_step_events (
-                    organization_id, target_type, target_id, related_issue_key,
+                    parent_event_id, organization_id, target_type, target_id, related_issue_key,
                     step_type, event_action, title, note_text, planned_for,
                     created_by_user_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
+                    payload.get("parent_event_id"),
                     payload["organization_id"],
                     payload["target_type"],
                     payload.get("target_id"),
@@ -445,6 +446,45 @@ class BillingRepository:
                 ),
                 "billing_next_step_event_id",
             )
+
+    def get_next_step_event_by_id(
+        self,
+        event_id: int,
+        *,
+        organization_id: int,
+    ) -> dict[str, Any] | None:
+        with get_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT e.*
+                FROM billing_next_step_events e
+                WHERE e.billing_next_step_event_id = ?
+                  AND e.organization_id = ?
+                """,
+                (event_id, organization_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_next_step_completion_by_parent(
+        self,
+        parent_event_id: int,
+        *,
+        organization_id: int,
+    ) -> dict[str, Any] | None:
+        with get_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT e.*
+                FROM billing_next_step_events e
+                WHERE e.parent_event_id = ?
+                  AND e.organization_id = ?
+                  AND e.event_action = 'completed'
+                ORDER BY e.billing_next_step_event_id DESC
+                LIMIT 1
+                """,
+                (parent_event_id, organization_id),
+            ).fetchone()
+        return dict(row) if row else None
 
     def list_next_step_events(
         self,

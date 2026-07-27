@@ -185,25 +185,144 @@ class BillingNextStepEventsHttpTests(HttpServerTestCase):
     def test_can_add_completed_and_snoozed_append_only_events(self) -> None:
         organization_id = int(self.organization["organization_id"])
         financial_before = self._financial_state(organization_id)
-        for action in ("completed", "snoozed"):
+        response, payload = self._request(
+            "POST",
+            f"/api/billing/next-step-events?organization_id={organization_id}",
+            body=json.dumps(
+                {
+                    "target_type": "payer",
+                    "target_id": self.payer["billing_payer_id"],
+                    "step_type": "wait_for_response",
+                    "event_action": "planned",
+                    "title": "Krok do zakonczenia",
+                }
+            ),
+            headers={"Content-Type": "application/json", "Cookie": self.cookie},
+        )
+        self.assertEqual(response.status, 201, payload.decode("utf-8"))
+        planned_event = json.loads(payload)
+
+        response, payload = self._request(
+            "POST",
+            f"/api/billing/next-step-events?organization_id={organization_id}",
+            body=json.dumps(
+                {
+                    "parent_event_id": planned_event["billing_next_step_event_id"],
+                    "target_type": "payer",
+                    "target_id": self.payer["billing_payer_id"],
+                    "step_type": "wait_for_response",
+                    "event_action": "completed",
+                    "title": "Krok do zakonczenia",
+                }
+            ),
+            headers={"Content-Type": "application/json", "Cookie": self.cookie},
+        )
+        self.assertEqual(response.status, 201, payload.decode("utf-8"))
+        completed_event = json.loads(payload)
+        self.assertEqual(completed_event["event_action"], "completed")
+        self.assertEqual(
+            int(completed_event["parent_event_id"]),
+            int(planned_event["billing_next_step_event_id"]),
+        )
+
+        response, payload = self._request(
+            "POST",
+            f"/api/billing/next-step-events?organization_id={organization_id}",
+            body=json.dumps(
+                {
+                    "target_type": "payer",
+                    "target_id": self.payer["billing_payer_id"],
+                    "step_type": "wait_for_response",
+                    "event_action": "snoozed",
+                    "title": "Historyczny krok snoozed",
+                }
+            ),
+            headers={"Content-Type": "application/json", "Cookie": self.cookie},
+        )
+        self.assertEqual(response.status, 201, payload.decode("utf-8"))
+        self.assertEqual(json.loads(payload)["event_action"], "snoozed")
+        self.assertEqual(self._next_step_count(), 3)
+        self.assertEqual(financial_before, self._financial_state(organization_id))
+
+        logs = self.services["event_repository"].list_logs(organization_id=organization_id)
+        completion_logs = [item for item in logs if item["event_type"] == "billing_next_step_event_added"]
+        completion_details = [
+            json.loads(item.get("details") or "{}") if isinstance(item.get("details"), str) else (item.get("details") or {})
+            for item in completion_logs
+        ]
+        self.assertTrue(
+            any(
+                details.get("event_action") == "completed"
+                and int(details.get("parent_event_id") or 0) == int(planned_event["billing_next_step_event_id"])
+                and "note_text" not in details
+                for details in completion_details
+            )
+        )
+
+    def test_rejects_invalid_completed_parent_relationships_without_extra_writes(self) -> None:
+        organization_id = int(self.organization["organization_id"])
+        base = {
+            "target_type": "payer",
+            "target_id": self.payer["billing_payer_id"],
+            "step_type": "call",
+            "event_action": "planned",
+            "title": "Jednoznaczny krok",
+        }
+        response, payload = self._request(
+            "POST",
+            f"/api/billing/next-step-events?organization_id={organization_id}",
+            body=json.dumps(base),
+            headers={"Content-Type": "application/json", "Cookie": self.cookie},
+        )
+        self.assertEqual(response.status, 201, payload.decode("utf-8"))
+        planned_event_id = int(json.loads(payload)["billing_next_step_event_id"])
+
+        completed = {**base, "event_action": "completed"}
+        invalid_requests = (
+            (completed, 400),
+            ({**completed, "parent_event_id": 999999}, 404),
+            (
+                {
+                    **completed,
+                    "parent_event_id": planned_event_id,
+                    "target_type": "payment",
+                    "target_id": self.transaction_id,
+                },
+                400,
+            ),
+            ({**base, "parent_event_id": planned_event_id}, 400),
+        )
+        for body, expected_status in invalid_requests:
             response, payload = self._request(
                 "POST",
                 f"/api/billing/next-step-events?organization_id={organization_id}",
-                body=json.dumps(
-                    {
-                        "target_type": "payer",
-                        "target_id": self.payer["billing_payer_id"],
-                        "step_type": "wait_for_response",
-                        "event_action": action,
-                        "title": f"Krok {action}",
-                    }
-                ),
+                body=json.dumps(body),
                 headers={"Content-Type": "application/json", "Cookie": self.cookie},
             )
-            self.assertEqual(response.status, 201, payload.decode("utf-8"))
-            self.assertEqual(json.loads(payload)["event_action"], action)
+            self.assertEqual(response.status, expected_status, payload.decode("utf-8"))
+
+        valid_completed = {**completed, "parent_event_id": planned_event_id}
+        response, payload = self._request(
+            "POST",
+            f"/api/billing/next-step-events?organization_id={organization_id}",
+            body=json.dumps(valid_completed),
+            headers={"Content-Type": "application/json", "Cookie": self.cookie},
+        )
+        self.assertEqual(response.status, 201, payload.decode("utf-8"))
+        completed_event_id = int(json.loads(payload)["billing_next_step_event_id"])
+
+        for body in (
+            valid_completed,
+            {**completed, "parent_event_id": completed_event_id},
+        ):
+            response, payload = self._request(
+                "POST",
+                f"/api/billing/next-step-events?organization_id={organization_id}",
+                body=json.dumps(body),
+                headers={"Content-Type": "application/json", "Cookie": self.cookie},
+            )
+            self.assertEqual(response.status, 400, payload.decode("utf-8"))
         self.assertEqual(self._next_step_count(), 2)
-        self.assertEqual(financial_before, self._financial_state(organization_id))
 
     def test_rejects_invalid_payloads_without_writing_event(self) -> None:
         organization_id = int(self.organization["organization_id"])
@@ -255,14 +374,16 @@ class BillingNextStepEventsHttpTests(HttpServerTestCase):
             headers={"Content-Type": "application/json", "Cookie": self.cookie},
         )
         self.assertEqual(response.status, 201, payload.decode("utf-8"))
+        local_planned_event_id = int(json.loads(payload)["billing_next_step_event_id"])
 
         response, payload = self._request(
             "POST",
             f"/api/billing/next-step-events?organization_id={wrong_organization_id}",
             body=json.dumps(
                 {
+                    "parent_event_id": local_planned_event_id,
                     "target_type": "payer",
-                    "target_id": self.payer["billing_payer_id"],
+                    "target_id": self.other_payer["billing_payer_id"],
                     "step_type": "call",
                     "event_action": "completed",
                     "title": "Nie powinna sie zapisac",

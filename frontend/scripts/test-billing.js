@@ -1101,12 +1101,36 @@ assert.equal(buildBillingNextStepRows(nextStepEvents.events, { targetType: "paye
 const completedWorkQueueEvent = {
   ...nextStepEvents.events[0],
   billing_next_step_event_id: 1004,
+  parent_event_id: 1001,
   event_action: "completed",
   created_at: "2099-05-13T10:00:00",
 };
-const completedWorkQueueHistory = [nextStepEvents.events[0], completedWorkQueueEvent];
-assert.equal(buildBillingNextStepRows(completedWorkQueueHistory, { action: "planned" }).length, 0);
+const duplicatePlannedWorkQueueEvent = {
+  ...nextStepEvents.events[0],
+  billing_next_step_event_id: 1005,
+  created_at: "2099-05-12T11:00:00",
+};
+const duplicateRowsBeforeCompletion = buildBillingNextStepRows(
+  [nextStepEvents.events[0], duplicatePlannedWorkQueueEvent],
+  { action: "planned" },
+);
+assert.equal(duplicateRowsBeforeCompletion.length, 2);
+assert.deepEqual(duplicateRowsBeforeCompletion.map((row) => row.eventId), [1005, 1001]);
+const completedWorkQueueHistory = [nextStepEvents.events[0], duplicatePlannedWorkQueueEvent, completedWorkQueueEvent];
+const activeDuplicateRows = buildBillingNextStepRows(completedWorkQueueHistory, { action: "planned" });
+assert.equal(activeDuplicateRows.length, 1);
+assert.equal(activeDuplicateRows[0].eventId, 1005);
 assert.equal(buildBillingNextStepRows(completedWorkQueueHistory, { action: "completed" }).length, 1);
+const legacyUnlinkedCompletion = {
+  ...completedWorkQueueEvent,
+  billing_next_step_event_id: 1006,
+  parent_event_id: null,
+  created_at: "2099-05-14T10:00:00",
+};
+assert.equal(
+  buildBillingNextStepRows([nextStepEvents.events[0], legacyUnlinkedCompletion], { action: "planned" }).length,
+  1,
+);
 assert.deepEqual(buildBillingNextStepRequest({
   targetType: "work_queue_issue",
   relatedIssueKey: issueToHandle.issueKey,
@@ -1129,6 +1153,7 @@ assert.deepEqual(buildBillingNextStepRequest({
   },
 });
 assert.deepEqual(buildBillingNextStepRequest({
+  parentEventId: plannedNextStepRows[0].eventId,
   targetType: plannedNextStepRows[0].targetType,
   targetId: plannedNextStepRows[0].targetId,
   relatedIssueKey: plannedNextStepRows[0].relatedIssueKey,
@@ -1141,6 +1166,7 @@ assert.deepEqual(buildBillingNextStepRequest({
 }), {
   ok: true,
   payload: {
+    parent_event_id: 1001,
     target_type: "work_queue_issue",
     related_issue_key: issueToHandle.issueKey,
     step_type: "check_payment",
@@ -1149,6 +1175,25 @@ assert.deepEqual(buildBillingNextStepRequest({
     planned_for: "2099-05-12",
   },
 });
+assert.equal(buildBillingNextStepRequest({
+  targetType: "payer",
+  targetId: 14,
+  stepType: "call",
+  eventAction: "completed",
+  title: "Zadzwonić",
+  noteText: "",
+  organizationId: "42",
+}).ok, false);
+assert.equal(buildBillingNextStepRequest({
+  parentEventId: 1001,
+  targetType: "payer",
+  targetId: 14,
+  stepType: "call",
+  eventAction: "planned",
+  title: "Zadzwonić",
+  noteText: "",
+  organizationId: "42",
+}).ok, false);
 assert.equal(buildBillingNextStepRequest({
   targetType: "payer",
   targetId: 14,

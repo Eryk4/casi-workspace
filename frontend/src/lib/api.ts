@@ -292,6 +292,7 @@ export const api = {
     }),
   addBillingNextStepEvent: (
     payload: {
+      parent_event_id?: number;
       target_type: string;
       target_id?: number;
       related_issue_key?: string;

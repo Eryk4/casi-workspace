@@ -3553,6 +3553,7 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     return
                 payload = self._read_json()
                 allowed_fields = {
+                    "parent_event_id",
                     "target_type",
                     "target_id",
                     "related_issue_key",
@@ -3566,8 +3567,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     return self._send_json(
                         {
                             "error": (
-                                "Endpoint przyjmuje tylko pola target_type, target_id, related_issue_key, "
-                                "step_type, event_action, title, note_text i planned_for."
+                                "Endpoint przyjmuje tylko pola parent_event_id, target_type, target_id, "
+                                "related_issue_key, step_type, event_action, title, note_text i planned_for."
                             )
                         },
                         status=400,

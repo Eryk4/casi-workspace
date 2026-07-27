@@ -26,7 +26,7 @@ Przykłady:
 - Model append-only: każdy wpis jest osobnym eventem.
 - UI pozwala dodać krok przy sprawie rozliczeniowej i przy płatniku.
 - UI pozwala oznaczyć aktywny krok przy sprawie albo płatniku jako wykonany.
-- Zakończenie dopisuje osobny event `completed`; nie edytuje ani nie usuwa wcześniejszego `planned`.
+- Zakończenie dopisuje osobny event `completed` z `parent_event_id` wskazującym konkretny `planned`; nie edytuje ani nie usuwa wcześniejszego wpisu.
 - Szczegół wpłaty pokazuje aktywne kroki powiązane z wpłatą.
 
 ## Czego ten etap nie robi
@@ -51,7 +51,8 @@ Pole `planned_for` jest tylko informacją dla człowieka. Nie uruchamia harmonog
 - Backend waliduje scope organizacji dla płatnika, wpłaty i kontaktu.
 - Cross-org POST dla płatnika lub wpłaty z innej organizacji jest odrzucany.
 - Cross-org GET zwraca tylko kroki aktywnej organizacji.
-- Event audytowy zapisuje metadane i długości tekstów, nie pełne `note_text`.
+- Event audytowy zapisuje metadane, `parent_event_id` i długości tekstów, nie pełne `note_text`.
+- Dozwolony zapis obejmuje wyłącznie `billing_next_step_events` oraz sanitarny wpis w `event_logs`.
 - Akcja nie zmienia `billing_transactions`, `billing_charges`, `billing_payment_matches`, `billing_payer_ledger_entries` ani sald.
 
 ## UI
@@ -78,7 +79,11 @@ Pole `planned_for` jest tylko informacją dla człowieka. Nie uruchamia harmonog
 
 ## Bieżący stan kroku
 
-Historia pozostaje append-only. Frontend grupuje eventy po istniejących polach celu, typu kroku, tytułu i `planned_for`, a jako bieżący stan przyjmuje najnowszy event w grupie. Dzięki temu nowszy `completed` usuwa odpowiadający mu `planned` z listy aktywnej, ale oba rekordy pozostają w historii. Event `completed` nie duplikuje opcjonalnej notatki z wcześniejszego wpisu.
+Historia pozostaje append-only. Każdy nowy `completed` musi wskazywać dokładnie jeden wcześniejszy `planned` przez `parent_event_id`. Frontend uznaje `planned` za zakończony wyłącznie wtedy, gdy istnieje event `completed` wskazujący jego ID.
+
+Nie wolno wnioskować relacji na podstawie celu, typu, tytułu, notatki ani `planned_for`. Dwa identyczne kroki pozostają osobnymi historiami. Starsze eventy `completed` bez `parent_event_id` są pokazywane wyłącznie jako historyczne, niepowiązane wpisy i nie zamykają automatycznie żadnego `planned`.
+
+Backend wymaga rodzica z tej samej organizacji i tego samego celu, odrzuca rodzica innego niż `planned` oraz drugie zakończenie tego samego eventu. Unikalny indeks na `parent_event_id` zabezpiecza także równoczesną próbę podwójnego zakończenia.
 
 Ten etap nie dodaje `snoozed` do UI i nie wprowadza dziedziczenia `work_queue_issue → payment`.
 

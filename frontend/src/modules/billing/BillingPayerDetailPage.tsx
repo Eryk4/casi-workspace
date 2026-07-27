@@ -468,6 +468,7 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
       setCompleteNextStepErrorState(null);
       setCompleteNextStepSuccessMessage(null);
       const validation = buildBillingNextStepRequest({
+        parentEventId: row.eventId,
         targetType: row.targetType,
         targetId: row.targetId,
         relatedIssueKey: row.relatedIssueKey,

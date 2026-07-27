@@ -241,6 +241,7 @@ async function run() {
   const completedPayloads = submittedPayloads.filter((payload) => payload.event_action === "completed");
   assert.equal(completedPayloads.length, 1, "Podwojne klikniecie nie powinno wyslac drugiego zadania");
   assert.deepEqual(completedPayloads[0], {
+    parent_event_id: 8001,
     target_type: "payer",
     target_id: payerId,
     step_type: "call",

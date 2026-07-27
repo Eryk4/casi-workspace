@@ -646,6 +646,7 @@ export type BillingNextStepEventAction = "planned" | "completed" | "snoozed";
 
 export type BillingNextStepEventRecord = {
   billing_next_step_event_id: number;
+  parent_event_id?: number | null;
   organization_id?: number;
   target_type: BillingNextStepTargetType;
   target_id?: number | null;
@@ -668,6 +669,8 @@ export type BillingNextStepEventsResponse = {
 
 export type BillingNextStepRow = {
   id: string;
+  eventId: number;
+  parentEventId?: number;
   title: string;
   targetType: BillingNextStepTargetType;
   targetId?: number;
@@ -870,6 +873,7 @@ export type BillingNextStepValidationResult =
   | {
       ok: true;
       payload: {
+        parent_event_id?: number;
         target_type: BillingNextStepTargetType;
         target_id?: number;
         related_issue_key?: string;
@@ -907,6 +911,7 @@ export type BillingNextStepSubmitterDeps = {
   refreshDetail: () => Promise<void>;
   setSubmitting: (isSubmitting: boolean) => void;
   submitNextStep: (payload: {
+    parent_event_id?: number;
     target_type: BillingNextStepTargetType;
     target_id?: number;
     related_issue_key?: string;
@@ -1599,6 +1604,7 @@ function readBillingNextStepEventRecord(payload: unknown): BillingNextStepEventR
   }
   return {
     billing_next_step_event_id: eventId,
+    parent_event_id: readNumber(payload.parent_event_id) ?? null,
     organization_id: readNumber(payload.organization_id),
     target_type: targetType,
     target_id: readNumber(payload.target_id) ?? null,
@@ -4021,38 +4027,32 @@ export function buildBillingNextStepRows(
   } = {},
 ): BillingNextStepRow[] {
   const normalizedIssueKey = options.relatedIssueKey?.trim();
-  const sortedEvents = events
+  const completedParentIds = new Set(
+    events
+      .filter((event) => event.event_action === "completed" && event.parent_event_id)
+      .map((event) => Number(event.parent_event_id)),
+  );
+  return events
     .filter((event) => (options.targetType ? event.target_type === options.targetType : true))
     .filter((event) => (options.targetId ? event.target_id === options.targetId : true))
     .filter((event) => (normalizedIssueKey ? event.related_issue_key === normalizedIssueKey : true))
+    .filter((event) => {
+      if (options.action === "planned") {
+        return event.event_action === "planned" && !completedParentIds.has(event.billing_next_step_event_id);
+      }
+      return options.action ? event.event_action === options.action : true;
+    })
     .slice()
     .sort(
       (a, b) =>
         String(b.created_at ?? b.planned_for ?? "").localeCompare(String(a.created_at ?? a.planned_for ?? "")) ||
         b.billing_next_step_event_id - a.billing_next_step_event_id,
-    );
-  const seenIdentities = new Set<string>();
-  const latestEvents = sortedEvents.filter((event) => {
-    const identity = JSON.stringify([
-      event.target_type,
-      event.target_id ?? null,
-      event.related_issue_key?.trim() || null,
-      event.step_type,
-      event.title.trim(),
-      event.planned_for?.trim() || null,
-    ]);
-    if (seenIdentities.has(identity)) {
-      return false;
-    }
-    seenIdentities.add(identity);
-    return true;
-  });
-
-  return latestEvents
-    .filter((event) => (options.action ? event.event_action === options.action : true))
+    )
     .slice(0, options.limit ?? 8)
     .map((event) => ({
       id: String(event.billing_next_step_event_id),
+      eventId: event.billing_next_step_event_id,
+      parentEventId: event.parent_event_id ?? undefined,
       title: safeBillingText(event.title, "Następny krok"),
       targetType: event.target_type,
       targetId: event.target_id ?? undefined,
@@ -4729,6 +4729,7 @@ export function buildBillingContactEventRequest({
 }
 
 export function buildBillingNextStepRequest({
+  parentEventId,
   targetType,
   targetId,
   relatedIssueKey,
@@ -4739,6 +4740,7 @@ export function buildBillingNextStepRequest({
   plannedFor,
   organizationId,
 }: {
+  parentEventId?: number;
   targetType: BillingNextStepTargetType;
   targetId?: number;
   relatedIssueKey?: string;
@@ -4774,6 +4776,19 @@ export function buildBillingNextStepRequest({
     return {
       ok: false,
       message: "Wybierz poprawny stan kroku.",
+    };
+  }
+
+  if (eventAction === "completed" && (!parentEventId || !Number.isFinite(parentEventId))) {
+    return {
+      ok: false,
+      message: "Zakończony krok wymaga wskazania konkretnego kroku planned.",
+    };
+  }
+  if (eventAction !== "completed" && parentEventId !== undefined) {
+    return {
+      ok: false,
+      message: "Tylko zakończony krok może wskazywać krok bazowy.",
     };
   }
 
@@ -4825,6 +4840,7 @@ export function buildBillingNextStepRequest({
   return {
     ok: true,
     payload: {
+      ...(parentEventId ? { parent_event_id: parentEventId } : {}),
       target_type: targetType,
       ...(targetId ? { target_id: targetId } : {}),
       ...(trimmedIssueKey ? { related_issue_key: trimmedIssueKey } : {}),
