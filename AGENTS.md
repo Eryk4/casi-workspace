@@ -10,9 +10,9 @@ The application should be built with long-term scalability, maintainability, mod
 
 # 1. Workspace Rule — Hard Rule
 
-Always use the following directory as the default working directory for this project:
+Always use the root directory of the currently opened CASI Workspace Git repository as the default working directory for this project.
 
-`C:\Users\erykl\OneDrive\Dokumenty\CASI Workspace`
+Do not rely on a laptop-specific or absolute filesystem path.
 
 Rules:
 
