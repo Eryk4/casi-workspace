@@ -1,4 +1,4 @@
-# Plan następnego kroku rozliczeniowego — write v1
+# Plan następnego kroku rozliczeniowego — planned i completed v1
 
 Trasy:
 
@@ -25,6 +25,8 @@ Przykłady:
 - Endpoint `POST /api/billing/next-step-events?organization_id=...`.
 - Model append-only: każdy wpis jest osobnym eventem.
 - UI pozwala dodać krok przy sprawie rozliczeniowej i przy płatniku.
+- UI pozwala oznaczyć aktywny krok przy sprawie albo płatniku jako wykonany.
+- Zakończenie dopisuje osobny event `completed`; nie edytuje ani nie usuwa wcześniejszego `planned`.
 - Szczegół wpłaty pokazuje aktywne kroki powiązane z wpłatą.
 
 ## Czego ten etap nie robi
@@ -59,20 +61,29 @@ Pole `planned_for` jest tylko informacją dla człowieka. Nie uruchamia harmonog
 - formularz `Dodaj następny krok`,
 - sekcja `Następne kroki`,
 - sekcja `Ostatnio wykonane kroki`.
+- aktywny krok ma pojedynczą akcję `Oznacz jako wykonany` z blokadą ponownego wysłania podczas zapisu.
 
 `/rozliczenia/platnicy/{payerId}`:
 
 - sekcja `Następny krok`,
 - aktywne kroki płatnika,
 - formularz dodania kroku,
+- akcja `Oznacz jako wykonany` przy aktywnym kroku,
 - copy: `Ten krok nie zmienia salda, wpłat ani naliczeń. Nie tworzy automatycznego przypomnienia.`
 
 `/rozliczenia/wplaty/{paymentId}`:
 
 - mała read-only sekcja aktywnych kroków powiązanych z wpłatą.
+- brak przycisku zakończenia i innych write actions.
+
+## Bieżący stan kroku
+
+Historia pozostaje append-only. Frontend grupuje eventy po istniejących polach celu, typu kroku, tytułu i `planned_for`, a jako bieżący stan przyjmuje najnowszy event w grupie. Dzięki temu nowszy `completed` usuwa odpowiadający mu `planned` z listy aktywnej, ale oba rekordy pozostają w historii. Event `completed` nie duplikuje opcjonalnej notatki z wcześniejszego wpisu.
+
+Ten etap nie dodaje `snoozed` do UI i nie wprowadza dziedziczenia `work_queue_issue → payment`.
 
 Nie dodano `/rozliczenia/kroki`. Zbiorczy widok kroków może być osobnym etapem, jeśli workflow będzie używany wystarczająco często.
 
 ## Następny bezpieczny krok
 
-Po live-weryfikacji warto rozważyć append-only eventy `completed` i `snoozed` w UI albo osobny read-only widok zbiorczy `/rozliczenia/kroki`. Nie należy jeszcze dodawać kalendarza, przypomnień, wysyłki wiadomości ani automatyzacji.
+Po live-weryfikacji `completed` warto osobno rozważyć `snoozed` w UI albo read-only widok zbiorczy `/rozliczenia/kroki`. Nie należy jeszcze dodawać kalendarza, przypomnień, wysyłki wiadomości ani automatyzacji.

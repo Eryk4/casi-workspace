@@ -1092,9 +1092,21 @@ assert.equal(plannedNextStepRows.length, 1);
 assert.equal(plannedNextStepRows[0].title, "Sprawdzić, czy wpłata przyszła po piątku");
 assert.equal(plannedNextStepRows[0].targetHref, "/rozliczenia/sprawy");
 assert.equal(plannedNextStepRows[0].noteText, "Test live: ręczny krok bez przypomnienia.");
+assert.equal(plannedNextStepRows[0].targetType, "work_queue_issue");
+assert.equal(plannedNextStepRows[0].stepType, "check_payment");
+assert.equal(plannedNextStepRows[0].plannedFor, "2099-05-12");
 assert.equal(buildBillingNextStepRows(nextStepEvents.events, { action: "completed" }).length, 1);
 assert.equal(buildBillingNextStepRows(nextStepEvents.events, { action: "snoozed" }).length, 1);
 assert.equal(buildBillingNextStepRows(nextStepEvents.events, { targetType: "payer", targetId: 14 })[0].targetHref, "/rozliczenia/platnicy/14");
+const completedWorkQueueEvent = {
+  ...nextStepEvents.events[0],
+  billing_next_step_event_id: 1004,
+  event_action: "completed",
+  created_at: "2099-05-13T10:00:00",
+};
+const completedWorkQueueHistory = [nextStepEvents.events[0], completedWorkQueueEvent];
+assert.equal(buildBillingNextStepRows(completedWorkQueueHistory, { action: "planned" }).length, 0);
+assert.equal(buildBillingNextStepRows(completedWorkQueueHistory, { action: "completed" }).length, 1);
 assert.deepEqual(buildBillingNextStepRequest({
   targetType: "work_queue_issue",
   relatedIssueKey: issueToHandle.issueKey,
@@ -1113,6 +1125,27 @@ assert.deepEqual(buildBillingNextStepRequest({
     event_action: "planned",
     title: "Sprawdzić wpłatę",
     note_text: "Bez automatyzacji.",
+    planned_for: "2099-05-12",
+  },
+});
+assert.deepEqual(buildBillingNextStepRequest({
+  targetType: plannedNextStepRows[0].targetType,
+  targetId: plannedNextStepRows[0].targetId,
+  relatedIssueKey: plannedNextStepRows[0].relatedIssueKey,
+  stepType: plannedNextStepRows[0].stepType,
+  eventAction: "completed",
+  title: plannedNextStepRows[0].title,
+  noteText: "",
+  plannedFor: plannedNextStepRows[0].plannedFor,
+  organizationId: "42",
+}), {
+  ok: true,
+  payload: {
+    target_type: "work_queue_issue",
+    related_issue_key: issueToHandle.issueKey,
+    step_type: "check_payment",
+    event_action: "completed",
+    title: "Sprawdzić, czy wpłata przyszła po piątku",
     planned_for: "2099-05-12",
   },
 });
@@ -1331,6 +1364,7 @@ assert.doesNotMatch(payerDetailPageSource, /Wyślij SMS|Wyślij e-mail|Wyślij p
 const paymentDetailPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingPaymentDetailPage.tsx"), "utf8");
 assert.match(paymentDetailPageSource, /Następny krok/);
 assert.match(paymentDetailPageSource, /BILLING_NEXT_STEP_HELP_TEXT/);
+assert.doesNotMatch(paymentDetailPageSource, /Oznacz jako wykonany|addBillingNextStepEvent/);
 assert.doesNotMatch(paymentDetailPageSource, /Wyślij SMS|Wyślij e-mail|Wyślij przypomnienie|Dodaj płatność|Dopasuj wpłatę|Dodaj do kalendarza/i);
 const contactCenterPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingContactCenterPage.tsx"), "utf8");
 assert.match(contactCenterPageSource, /Kontakty rozliczeniowe/);

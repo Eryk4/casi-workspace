@@ -112,6 +112,10 @@ No new write action should be added until the existing paths below stay green in
 - Allowed target types are `payer`, `payment`, `work_queue_issue`, `contact`, and `billing_summary`.
 - Allowed step types are `call`, `send_manual_message`, `check_payment`, `clarify_payment`, `review_overpayment`, `wait_for_response`, `wait_for_payment`, `review_notes`, and `other`.
 - Allowed event actions are `planned`, `completed`, and `snoozed`.
+- `/rozliczenia/sprawy` and `/rozliczenia/platnicy/{payerId}` expose `planned` creation and a single `completed` action for active steps; `snoozed` is not exposed in UI.
+- Completing a step appends a new event with the same target and step metadata. It does not update or delete the earlier `planned` event.
+- The frontend treats the newest event with the same target, step type, title, and `planned_for` as the current state; `completed` does not duplicate the optional note.
+- `/rozliczenia/wplaty/{paymentId}` remains read-only and has no completed write action.
 - For `target_type=payer`, service fetches the payer by `billing_payer_id` and `organization_id`.
 - For `target_type=payment`, service fetches the incoming transaction by `billing_transaction_id` and `organization_id`.
 - For `target_type=contact`, service verifies that the contact event belongs to the organization.

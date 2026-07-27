@@ -43,16 +43,39 @@ const originalLoad = Module._load;
 const payerId = 14;
 let submittedPayload = null;
 let submittedOrganizationId = null;
+const submittedPayloads = [];
+const nextStepEvents = [
+  {
+    billing_next_step_event_id: 8001,
+    organization_id: 42,
+    target_type: "payer",
+    target_id: payerId,
+    step_type: "call",
+    event_action: "planned",
+    title: "Zadzwonic do istniejacego platnika",
+    note_text: "Kontekst platnika",
+    planned_for: "2026-12-20",
+    created_at: "2026-12-01T10:00:00",
+  },
+];
 
 const api = {
   addBillingNextStepEvent: async (payload, organizationId) => {
     submittedPayload = payload;
     submittedOrganizationId = organizationId;
-    return {};
+    submittedPayloads.push(payload);
+    const event = {
+      billing_next_step_event_id: 8001 + nextStepEvents.length,
+      organization_id: Number(organizationId),
+      created_at: `2026-12-${String(nextStepEvents.length + 1).padStart(2, "0")}T11:00:00`,
+      ...payload,
+    };
+    nextStepEvents.push(event);
+    return event;
   },
   billingCharges: async () => [],
   billingContactEvents: async () => ({ organization_id: 42, events: [] }),
-  billingNextStepEvents: async () => ({ organization_id: 42, events: [] }),
+  billingNextStepEvents: async () => ({ organization_id: 42, events: nextStepEvents }),
   billingPayerNotes: async () => [],
   billingPayers: async () => [],
   billingStudents: async () => [],
@@ -130,7 +153,7 @@ Module._load = function loadWithComponentDependencies(request, parent, isMain) {
       readBillingCharges: () => [],
       readBillingContactEvents: () => ({ organization_id: 42, events: [] }),
       readBillingInvoices: () => [],
-      readBillingNextStepEvents: () => ({ organization_id: 42, events: [] }),
+      readBillingNextStepEvents: (payload) => billingModel.readBillingNextStepEvents(payload),
       readBillingPayerNotes: () => [],
       readBillingPayers: () => [],
       readBillingStudents: () => [],
@@ -201,11 +224,44 @@ async function run() {
   });
   assert.equal(submittedOrganizationId, "42");
 
+  const plannedRow = Array.from(container.querySelectorAll(".module-readiness__item")).find((candidate) =>
+    candidate.textContent.includes("Zadzwonic do istniejacego platnika"),
+  );
+  assert.ok(plannedRow, "Aktywny krok platnika powinien byc wyrenderowany");
+  const completeButton = Array.from(plannedRow.querySelectorAll("button")).find((button) =>
+    button.textContent.includes("Oznacz jako wykonany"),
+  );
+  assert.ok(completeButton, "Aktywny krok platnika powinien miec akcje completed");
+
+  await act(async () => {
+    completeButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    completeButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  });
+
+  const completedPayloads = submittedPayloads.filter((payload) => payload.event_action === "completed");
+  assert.equal(completedPayloads.length, 1, "Podwojne klikniecie nie powinno wyslac drugiego zadania");
+  assert.deepEqual(completedPayloads[0], {
+    target_type: "payer",
+    target_id: payerId,
+    step_type: "call",
+    event_action: "completed",
+    title: "Zadzwonic do istniejacego platnika",
+    planned_for: "2026-12-20",
+  });
+  assert.match(container.textContent, /Krok został oznaczony jako wykonany/);
+  assert.equal(
+    Array.from(container.querySelectorAll("button")).some((button) =>
+      button.closest(".module-readiness__item")?.textContent.includes("Zadzwonic do istniejacego platnika") &&
+      button.textContent.includes("Oznacz jako wykonany"),
+    ),
+    false,
+  );
+
   await act(async () => {
     root.unmount();
   });
   dom.window.close();
-  console.log("BillingPayerDetailPage planned_for DOM regression test passed.");
+  console.log("BillingPayerDetailPage planned_for and completed DOM regression tests passed.");
 }
 
 run().catch((error) => {

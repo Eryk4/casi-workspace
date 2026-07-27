@@ -669,12 +669,16 @@ export type BillingNextStepEventsResponse = {
 export type BillingNextStepRow = {
   id: string;
   title: string;
+  targetType: BillingNextStepTargetType;
+  targetId?: number;
+  stepType: BillingNextStepType;
   stepTypeLabel: string;
   eventActionLabel: string;
   targetLabel: string;
   targetHref?: string;
   dateLabel: string;
   noteText?: string;
+  plannedFor?: string;
   relatedIssueKey?: string;
 };
 
@@ -4017,8 +4021,7 @@ export function buildBillingNextStepRows(
   } = {},
 ): BillingNextStepRow[] {
   const normalizedIssueKey = options.relatedIssueKey?.trim();
-  return events
-    .filter((event) => (options.action ? event.event_action === options.action : true))
+  const sortedEvents = events
     .filter((event) => (options.targetType ? event.target_type === options.targetType : true))
     .filter((event) => (options.targetId ? event.target_id === options.targetId : true))
     .filter((event) => (normalizedIssueKey ? event.related_issue_key === normalizedIssueKey : true))
@@ -4027,17 +4030,40 @@ export function buildBillingNextStepRows(
       (a, b) =>
         String(b.created_at ?? b.planned_for ?? "").localeCompare(String(a.created_at ?? a.planned_for ?? "")) ||
         b.billing_next_step_event_id - a.billing_next_step_event_id,
-    )
+    );
+  const seenIdentities = new Set<string>();
+  const latestEvents = sortedEvents.filter((event) => {
+    const identity = JSON.stringify([
+      event.target_type,
+      event.target_id ?? null,
+      event.related_issue_key?.trim() || null,
+      event.step_type,
+      event.title.trim(),
+      event.planned_for?.trim() || null,
+    ]);
+    if (seenIdentities.has(identity)) {
+      return false;
+    }
+    seenIdentities.add(identity);
+    return true;
+  });
+
+  return latestEvents
+    .filter((event) => (options.action ? event.event_action === options.action : true))
     .slice(0, options.limit ?? 8)
     .map((event) => ({
       id: String(event.billing_next_step_event_id),
       title: safeBillingText(event.title, "Następny krok"),
+      targetType: event.target_type,
+      targetId: event.target_id ?? undefined,
+      stepType: event.step_type,
       stepTypeLabel: getBillingNextStepTypeLabel(event.step_type),
       eventActionLabel: getBillingNextStepActionLabel(event.event_action),
       targetLabel: nextStepTargetLabel(event),
       targetHref: nextStepTargetHref(event),
       dateLabel: event.planned_for ? `Na ${formatDateLabel(event.planned_for)}` : formatDateLabel(event.created_at, "Bez daty"),
       noteText: event.note_text ? safeBillingText(event.note_text, "Ukryto techniczną lub wrażliwą treść notatki.") : undefined,
+      plannedFor: event.planned_for ?? undefined,
       relatedIssueKey: event.related_issue_key ?? undefined,
     }));
 }

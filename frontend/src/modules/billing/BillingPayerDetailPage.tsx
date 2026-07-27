@@ -176,7 +176,15 @@ const workItemColumns: Array<TableColumn<BillingRelatedWorkItemRow>> = [
   { key: "reason", header: "Kontekst", render: (row) => row.reasonLabel },
 ];
 
-function PayerNextStepList({ rows }: { rows: BillingNextStepRow[] }) {
+function PayerNextStepList({
+  completingId,
+  onComplete,
+  rows,
+}: {
+  completingId?: string | null;
+  onComplete?: (row: BillingNextStepRow) => void;
+  rows: BillingNextStepRow[];
+}) {
   return rows.length ? (
     <div className="module-readiness">
       {rows.map((row) => (
@@ -186,6 +194,17 @@ function PayerNextStepList({ rows }: { rows: BillingNextStepRow[] }) {
             <strong>{row.title}</strong>
             <span>{row.stepTypeLabel} · {row.eventActionLabel} · {row.dateLabel}</span>
             {row.noteText ? <p>{row.noteText}</p> : null}
+            {onComplete ? (
+              <Button
+                disabled={Boolean(completingId)}
+                onClick={() => onComplete(row)}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                {completingId === row.id ? "Zapisywanie..." : "Oznacz jako wykonany"}
+              </Button>
+            ) : null}
           </div>
         </div>
       ))}
@@ -218,6 +237,9 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
   const [nextStepSubmitting, setNextStepSubmitting] = useState(false);
   const [nextStepErrorState, setNextStepErrorState] = useState<BillingNextStepErrorState | null>(null);
   const [nextStepSuccessMessage, setNextStepSuccessMessage] = useState<string | null>(null);
+  const [completingNextStepId, setCompletingNextStepId] = useState<string | null>(null);
+  const [completeNextStepErrorState, setCompleteNextStepErrorState] = useState<BillingNextStepErrorState | null>(null);
+  const [completeNextStepSuccessMessage, setCompleteNextStepSuccessMessage] = useState<string | null>(null);
 
   const loadPayer = useCallback(async () => {
     if (organizationStatus === "loading") {
@@ -311,6 +333,19 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
       createBillingNextStepSubmitter({
         refreshDetail: loadPayer,
         setSubmitting: setNextStepSubmitting,
+        submitNextStep: (payload) => api.addBillingNextStepEvent(payload, selectedOrganizationId),
+      }),
+    [loadPayer, selectedOrganizationId],
+  );
+  const completeNextStepSubmitter = useMemo(
+    () =>
+      createBillingNextStepSubmitter({
+        refreshDetail: loadPayer,
+        setSubmitting: (isSubmitting) => {
+          if (!isSubmitting) {
+            setCompletingNextStepId(null);
+          }
+        },
         submitNextStep: (payload) => api.addBillingNextStepEvent(payload, selectedOrganizationId),
       }),
     [loadPayer, selectedOrganizationId],
@@ -426,6 +461,38 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
       }
     },
     [nextStepNote, nextStepPlannedFor, nextStepSubmitter, nextStepTitle, nextStepType, payerId, selectedOrganizationId],
+  );
+  const handleNextStepComplete = useCallback(
+    async (row: BillingNextStepRow) => {
+      setCompletingNextStepId(row.id);
+      setCompleteNextStepErrorState(null);
+      setCompleteNextStepSuccessMessage(null);
+      const validation = buildBillingNextStepRequest({
+        targetType: row.targetType,
+        targetId: row.targetId,
+        relatedIssueKey: row.relatedIssueKey,
+        stepType: row.stepType,
+        eventAction: "completed",
+        title: row.title,
+        noteText: "",
+        plannedFor: row.plannedFor,
+        organizationId: selectedOrganizationId,
+      });
+      const result = await completeNextStepSubmitter(validation);
+      if (result.status === "blocked") {
+        setCompletingNextStepId(null);
+        setCompleteNextStepErrorState({ status: "error", title: "Nie zakończono kroku", description: result.message });
+        return;
+      }
+      if (result.status === "error") {
+        setCompleteNextStepErrorState(result.errorState);
+        return;
+      }
+      if (result.status === "success") {
+        setCompleteNextStepSuccessMessage("Krok został oznaczony jako wykonany.");
+      }
+    },
+    [completeNextStepSubmitter, selectedOrganizationId],
   );
 
   return (
@@ -628,7 +695,18 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
                     {nextStepSubmitting ? "Zapisywanie..." : "Zapisz krok"}
                   </Button>
                 </form>
-                <PayerNextStepList rows={nextStepRows} />
+                <PayerNextStepList completingId={completingNextStepId} onComplete={handleNextStepComplete} rows={nextStepRows} />
+                {completeNextStepErrorState ? (
+                  <div className="invoice-comment-form__message invoice-comment-form__message--error" role="alert">
+                    <strong>{completeNextStepErrorState.title}</strong>
+                    <span>{completeNextStepErrorState.description}</span>
+                  </div>
+                ) : null}
+                {completeNextStepSuccessMessage ? (
+                  <div className="invoice-comment-form__message invoice-comment-form__message--success" role="status">
+                    {completeNextStepSuccessMessage}
+                  </div>
+                ) : null}
               </Card>
 
               <Card

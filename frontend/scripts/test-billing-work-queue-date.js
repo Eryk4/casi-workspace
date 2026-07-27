@@ -43,16 +43,39 @@ const originalLoad = Module._load;
 const issueKey = "payment:61:payer-only:wplata-do-wyjasnienia";
 let submittedPayload = null;
 let submittedOrganizationId = null;
+const submittedPayloads = [];
+const nextStepEvents = [
+  {
+    billing_next_step_event_id: 7001,
+    organization_id: 42,
+    target_type: "work_queue_issue",
+    related_issue_key: issueKey,
+    step_type: "check_payment",
+    event_action: "planned",
+    title: "Sprawdzic istniejacy krok",
+    note_text: "Kontekst testowy",
+    planned_for: "2026-12-20",
+    created_at: "2026-12-01T10:00:00",
+  },
+];
 
 const api = {
   addBillingNextStepEvent: async (payload, organizationId) => {
     submittedPayload = payload;
     submittedOrganizationId = organizationId;
-    return {};
+    submittedPayloads.push(payload);
+    const event = {
+      billing_next_step_event_id: 7001 + nextStepEvents.length,
+      organization_id: Number(organizationId),
+      created_at: `2026-12-${String(nextStepEvents.length + 1).padStart(2, "0")}T11:00:00`,
+      ...payload,
+    };
+    nextStepEvents.push(event);
+    return event;
   },
   billingCharges: async () => [],
   billingLedgerMatches: async () => [],
-  billingNextStepEvents: async () => ({ organization_id: 42, events: [] }),
+  billingNextStepEvents: async () => ({ organization_id: 42, events: nextStepEvents }),
   billingPayerNotes: async () => [],
   billingPayers: async () => [],
   billingPaymentReviewStatuses: async () => ({ organization_id: 42, statuses: [] }),
@@ -129,7 +152,7 @@ Module._load = function loadWithComponentDependencies(request, parent, isMain) {
       }),
       readBillingBalances: () => [],
       readBillingCharges: () => [],
-      readBillingNextStepEvents: () => ({ organization_id: 42, events: [] }),
+      readBillingNextStepEvents: (payload) => billingModel.readBillingNextStepEvents(payload),
       readBillingPayerNotes: () => [],
       readBillingPaymentMatches: () => [],
       readBillingPaymentReviewStatuses: () => ({ organization_id: 42, statuses: [] }),
@@ -206,11 +229,44 @@ async function run() {
   });
   assert.equal(submittedOrganizationId, "42");
 
+  const plannedRow = Array.from(container.querySelectorAll(".module-readiness__item")).find((candidate) =>
+    candidate.textContent.includes("Sprawdzic istniejacy krok"),
+  );
+  assert.ok(plannedRow, "Aktywny krok powinien byc wyrenderowany");
+  const completeButton = Array.from(plannedRow.querySelectorAll("button")).find((button) =>
+    button.textContent.includes("Oznacz jako wykonany"),
+  );
+  assert.ok(completeButton, "Aktywny krok powinien miec akcje completed");
+
+  await act(async () => {
+    completeButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    completeButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  });
+
+  const completedPayloads = submittedPayloads.filter((payload) => payload.event_action === "completed");
+  assert.equal(completedPayloads.length, 1, "Podwojne klikniecie nie powinno wyslac drugiego zadania");
+  assert.deepEqual(completedPayloads[0], {
+    target_type: "work_queue_issue",
+    related_issue_key: issueKey,
+    step_type: "check_payment",
+    event_action: "completed",
+    title: "Sprawdzic istniejacy krok",
+    planned_for: "2026-12-20",
+  });
+  assert.match(container.textContent, /Wykonano/);
+  assert.equal(
+    Array.from(container.querySelectorAll("button")).some((button) =>
+      button.closest(".module-readiness__item")?.textContent.includes("Sprawdzic istniejacy krok") &&
+      button.textContent.includes("Oznacz jako wykonany"),
+    ),
+    false,
+  );
+
   await act(async () => {
     root.unmount();
   });
   dom.window.close();
-  console.log("BillingWorkQueuePage planned_for DOM regression test passed.");
+  console.log("BillingWorkQueuePage planned_for and completed DOM regression tests passed.");
 }
 
 run().catch((error) => {

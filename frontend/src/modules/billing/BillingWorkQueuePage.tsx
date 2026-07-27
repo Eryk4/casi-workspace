@@ -135,7 +135,17 @@ function WorkQueueSection({
   );
 }
 
-function NextStepList({ emptyDescription, rows }: { emptyDescription: string; rows: BillingNextStepRow[] }) {
+function NextStepList({
+  completingId,
+  emptyDescription,
+  onComplete,
+  rows,
+}: {
+  completingId?: string | null;
+  emptyDescription: string;
+  onComplete?: (row: BillingNextStepRow) => void;
+  rows: BillingNextStepRow[];
+}) {
   return rows.length ? (
     <div className="module-readiness">
       {rows.map((row) => (
@@ -156,6 +166,17 @@ function NextStepList({ emptyDescription, rows }: { emptyDescription: string; ro
               )}
             </span>
             {row.noteText ? <p>{row.noteText}</p> : null}
+            {onComplete ? (
+              <Button
+                disabled={Boolean(completingId)}
+                onClick={() => onComplete(row)}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                {completingId === row.id ? "Zapisywanie..." : "Oznacz jako wykonany"}
+              </Button>
+            ) : null}
           </div>
         </div>
       ))}
@@ -185,6 +206,9 @@ export function BillingWorkQueuePage() {
   const [nextStepSubmitting, setNextStepSubmitting] = useState(false);
   const [nextStepErrorState, setNextStepErrorState] = useState<BillingNextStepErrorState | null>(null);
   const [nextStepSuccessMessage, setNextStepSuccessMessage] = useState<string | null>(null);
+  const [completingNextStepId, setCompletingNextStepId] = useState<string | null>(null);
+  const [completeNextStepErrorState, setCompleteNextStepErrorState] = useState<BillingNextStepErrorState | null>(null);
+  const [completeNextStepSuccessMessage, setCompleteNextStepSuccessMessage] = useState<string | null>(null);
 
   const loadWorkQueue = useCallback(async () => {
     if (organizationStatus === "loading") {
@@ -336,6 +360,19 @@ export function BillingWorkQueuePage() {
       }),
     [activeOrganizationKey, loadWorkQueue],
   );
+  const completeNextStepSubmitter = useMemo(
+    () =>
+      createBillingNextStepSubmitter({
+        refreshDetail: loadWorkQueue,
+        setSubmitting: (isSubmitting) => {
+          if (!isSubmitting) {
+            setCompletingNextStepId(null);
+          }
+        },
+        submitNextStep: (payload) => api.addBillingNextStepEvent(payload, activeOrganizationKey),
+      }),
+    [activeOrganizationKey, loadWorkQueue],
+  );
 
   const handleNextStepSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -369,6 +406,38 @@ export function BillingWorkQueuePage() {
       }
     },
     [activeOrganizationKey, nextStepNote, nextStepPlannedFor, nextStepSubmitter, nextStepTitle, nextStepType, selectedNextStepIssue],
+  );
+  const handleNextStepComplete = useCallback(
+    async (row: BillingNextStepRow) => {
+      setCompletingNextStepId(row.id);
+      setCompleteNextStepErrorState(null);
+      setCompleteNextStepSuccessMessage(null);
+      const validation = buildBillingNextStepRequest({
+        targetType: row.targetType,
+        targetId: row.targetId,
+        relatedIssueKey: row.relatedIssueKey,
+        stepType: row.stepType,
+        eventAction: "completed",
+        title: row.title,
+        noteText: "",
+        plannedFor: row.plannedFor,
+        organizationId: activeOrganizationKey,
+      });
+      const result = await completeNextStepSubmitter(validation);
+      if (result.status === "blocked") {
+        setCompletingNextStepId(null);
+        setCompleteNextStepErrorState({ status: "error", title: "Nie zakończono kroku", description: result.message });
+        return;
+      }
+      if (result.status === "error") {
+        setCompleteNextStepErrorState(result.errorState);
+        return;
+      }
+      if (result.status === "success") {
+        setCompleteNextStepSuccessMessage("Krok został oznaczony jako wykonany.");
+      }
+    },
+    [activeOrganizationKey, completeNextStepSubmitter],
   );
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
   const readyWithoutData =
@@ -606,7 +675,16 @@ export function BillingWorkQueuePage() {
               description="Aktywne ręczne kroki zapisane przez operatora. Nie zmieniają statusów finansowych."
               title="Następne kroki"
             >
-              <NextStepList rows={nextStepRows} emptyDescription="Nie ma jeszcze aktywnych ręcznych kroków dla tej organizacji." />
+              <NextStepList
+                completingId={completingNextStepId}
+                rows={nextStepRows}
+                emptyDescription="Nie ma jeszcze aktywnych ręcznych kroków dla tej organizacji."
+                onComplete={handleNextStepComplete}
+              />
+              {completeNextStepErrorState ? (
+                <ErrorState description={completeNextStepErrorState.description} title={completeNextStepErrorState.title} />
+              ) : null}
+              {completeNextStepSuccessMessage ? <p className="module-success">{completeNextStepSuccessMessage}</p> : null}
             </Card>
             <Card
               description="Historia kroków oznaczonych jako wykonane przez append-only event. V1 nie usuwa ani nie nadpisuje wpisów."
