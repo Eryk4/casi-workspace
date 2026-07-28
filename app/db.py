@@ -1109,8 +1109,6 @@ CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_target
     ON billing_next_step_events(organization_id, target_type, target_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_issue
     ON billing_next_step_events(organization_id, related_issue_key, created_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_next_step_events_parent_unique
-    ON billing_next_step_events(parent_event_id);
 
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2563,8 +2561,6 @@ CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_target
     ON billing_next_step_events(organization_id, target_type, target_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_issue
     ON billing_next_step_events(organization_id, related_issue_key, created_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_next_step_events_parent_unique
-    ON billing_next_step_events(parent_event_id);
 
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id BIGSERIAL PRIMARY KEY,
