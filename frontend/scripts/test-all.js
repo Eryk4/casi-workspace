@@ -12,6 +12,8 @@ const tests = [
   "test-documents.js",
   "test-document-detail.js",
   "test-billing.js",
+  "test-billing-next-steps-overview.js",
+  "test-billing-next-steps-overview-dom.js",
   "test-boss-assistant.js",
   "test-company-assistant.js",
   "test-crm.js",

@@ -943,4 +943,14 @@ The stage adds `billing_next_step_events` and a minimal organization-scoped API 
 
 This is not a calendar, reminder system, task manager, message sender, payment allocation, accounting action, charge mutation, balance mutation, import flow, AI workflow, PDF export, or spreadsheet export. `planned_for` is informational only.
 
-Future completion/snooze UI and a possible `/rozliczenia/kroki` aggregate view should remain append-only and must not introduce automation without a separate product and security review.
+The append-only `completed` action is available on the work queue, payer detail, and aggregate next-steps view. `snoozed` UI and any automation still require a separate product and security review.
+
+### Stage 2j: Aggregate next billing steps
+
+Status: implemented at `/rozliczenia/kroki` as an organization-scoped operational view.
+
+The view answers which billing actions are currently active. An active item is one concrete `planned` event without a `completed` event linked to it by `parent_event_id`. The planned event ID is the identity of the item: events are never grouped or deduplicated by title, date, step type, target, or any combination of text fields. A legacy `completed` event without `parent_event_id` remains history and closes no planned item.
+
+The read-only endpoint returns active events for exactly one selected organization in one bounded query. The UI classifies the calendar-only `planned_for` value as overdue, today, within the next seven days, later, or without a date. Dated items are sorted ascending; missing dates are last, with `created_at` and event ID providing deterministic tie-breaking. Known payer, payment, work queue issue, and billing summary targets receive stable links where such routes exist. Missing or historical targets use a safe fallback and do not break the list.
+
+The page does not create steps and introduces no new write path. It only reuses the existing append-only `completed` contract with the exact planned event ID as `parent_event_id`. Completing one of two identical items removes only that item. The page does not expose `snoozed`, editing, deletion, bulk actions, reminders, automation, calendar integration, notifications, or message sending. Opening and filtering the page do not change financial tables or event logs.

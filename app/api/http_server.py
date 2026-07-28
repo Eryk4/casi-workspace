@@ -1294,6 +1294,19 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         return self._send_json({"error": str(error)}, status=404)
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(next_step_events)
+            if path == "/api/billing/next-step-events/active":
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 1000
+                try:
+                    next_step_events = self.billing_service.list_active_next_step_events(
+                        organization_id=organization_id,
+                        limit=min(max(limit, 1), 2000),
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(next_step_events)
             if path == "/api/billing/schools":
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:

@@ -12,6 +12,8 @@
     "test:documents": "node scripts/test-documents.js",
     "test:document-detail": "node scripts/test-document-detail.js",
     "test:billing": "node scripts/test-billing.js",
+    "test:billing-next-steps-overview": "node scripts/test-billing-next-steps-overview.js",
+    "test:billing-next-steps-overview-dom": "node scripts/test-billing-next-steps-overview-dom.js",
     "test:billing-work-queue-date": "node scripts/test-billing-work-queue-date.js",
     "test:billing-payer-date": "node scripts/test-billing-payer-date.js",
     "test:boss-assistant": "node scripts/test-boss-assistant.js",

@@ -732,6 +732,27 @@ class BillingService:
             "events": events,
         }
 
+    def list_active_next_step_events(
+        self,
+        *,
+        organization_id: int | None = None,
+        limit: int = 1000,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed sprawdzeniem aktywnych nastepnych krokow.")
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+
+        events = self.billing_repository.list_active_next_step_events(
+            organization_id=organization_id,
+            limit=limit,
+        )
+        return {
+            "organization_id": organization_id,
+            "events": events,
+        }
+
     def add_next_step_event(
         self,
         payload: dict[str, Any],

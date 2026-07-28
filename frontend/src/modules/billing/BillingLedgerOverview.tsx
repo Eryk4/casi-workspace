@@ -21,6 +21,7 @@ import {
   BILLING_CANONICAL_ROUTE,
   BILLING_CONTACT_CENTER_ROUTE,
   BILLING_DEBTS_ROUTE,
+  BILLING_NEXT_STEPS_OVERVIEW_ROUTE,
   BILLING_OPERATIONAL_REPORT_ROUTE,
   BILLING_WORK_QUEUE_ROUTE,
   BILLING_ORGANIZATION_REQUIRED_DESCRIPTION,
@@ -677,6 +678,10 @@ export function BillingLedgerOverview({ title, eyebrow, description }: BillingLe
               </Card>
 
               <Card className="module-quick-actions" title="Przejdź do modułów">
+                <Link className="module-quick-action" href={BILLING_NEXT_STEPS_OVERVIEW_ROUTE}>
+                  <span>Następne kroki</span>
+                  <ListChecks aria-hidden="true" size={15} />
+                </Link>
                 <Link className="module-quick-action" href={BILLING_WORK_QUEUE_ROUTE}>
                   <span>Sprawy rozliczeniowe</span>
                   <ListChecks aria-hidden="true" size={15} />

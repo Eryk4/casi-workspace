@@ -520,6 +520,41 @@ class BillingRepository:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def list_active_next_step_events(
+        self,
+        *,
+        organization_id: int,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    planned.*,
+                    COALESCE(u.display_name, u.login) AS created_by_user_name,
+                    u.role AS created_by_user_role
+                FROM billing_next_step_events planned
+                LEFT JOIN users u ON u.user_id = planned.created_by_user_id
+                WHERE planned.organization_id = ?
+                  AND planned.event_action = 'planned'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM billing_next_step_events completed
+                      WHERE completed.organization_id = planned.organization_id
+                        AND completed.event_action = 'completed'
+                        AND completed.parent_event_id = planned.billing_next_step_event_id
+                  )
+                ORDER BY
+                    CASE WHEN planned.planned_for IS NULL OR planned.planned_for = '' THEN 1 ELSE 0 END,
+                    planned.planned_for ASC,
+                    planned.created_at ASC,
+                    planned.billing_next_step_event_id ASC
+                LIMIT ?
+                """,
+                (organization_id, max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def create_payer(self, payload: dict[str, Any]) -> int:
         timestamp = now_iso()
         with get_connection() as connection:

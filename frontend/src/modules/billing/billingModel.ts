@@ -685,6 +685,52 @@ export type BillingNextStepRow = {
   relatedIssueKey?: string;
 };
 
+export type BillingNextStepsOverviewFilter = "all" | "overdue" | "today" | "next-7-days" | "later" | "no-date";
+export type BillingNextStepsOverviewDateStatus = Exclude<BillingNextStepsOverviewFilter, "all">;
+
+export type BillingNextStepsOverviewEvent = {
+  eventId: number;
+  parentEventId?: number;
+  organizationId?: number;
+  targetType: string;
+  targetId?: number;
+  relatedIssueKey?: string;
+  stepType: BillingNextStepType;
+  eventAction: BillingNextStepEventAction;
+  title: string;
+  noteText?: string;
+  plannedFor?: string;
+  createdAt?: string;
+};
+
+export type BillingNextStepsOverviewRow = {
+  id: string;
+  eventId: number;
+  title: string;
+  stepType: BillingNextStepType;
+  stepTypeLabel: string;
+  targetType: string;
+  completionTargetType?: BillingNextStepTargetType;
+  targetId?: number;
+  relatedIssueKey?: string;
+  targetTypeLabel: string;
+  targetLabel: string;
+  targetHref?: string;
+  plannedFor?: string;
+  dateStatus: BillingNextStepsOverviewDateStatus;
+  dateLabel: string;
+  dateStatusLabel: string;
+  dateTone: "danger" | "warning" | "info" | "neutral";
+  noteText?: string;
+  createdAt?: string;
+};
+
+export type BillingNextStepsOverviewView = {
+  allRows: BillingNextStepsOverviewRow[];
+  filteredRows: BillingNextStepsOverviewRow[];
+  counts: Record<BillingNextStepsOverviewFilter, number>;
+};
+
 export type BillingOperationalReportSummary = {
   debtTotalLabel: string;
   debtPayerCount: number;
@@ -1120,6 +1166,7 @@ export const BILLING_CONTACT_NO_SEND_HELP_TEXT =
 export const BILLING_CONTACT_EVENT_HELP_TEXT =
   "Kontakt rozliczeniowy zapisuje tylko roboczą treść albo ślad kontaktu. Nie zmienia salda, naliczeń, wpłat ani przypisań.";
 export const BILLING_NEXT_STEP_EVENTS_ENDPOINT = "/billing/next-step-events";
+export const BILLING_ACTIVE_NEXT_STEP_EVENTS_ENDPOINT = "/billing/next-step-events/active";
 export const BILLING_NEXT_STEP_TITLE_MAX_LENGTH = 200;
 export const BILLING_NEXT_STEP_NOTE_MAX_LENGTH = 1000;
 export const BILLING_NEXT_STEP_HELP_TEXT =
@@ -1180,6 +1227,7 @@ export const BILLING_DEBTS_ROUTE = `${BILLING_CANONICAL_ROUTE}/zaleglosci`;
 export const BILLING_WORK_QUEUE_ROUTE = `${BILLING_CANONICAL_ROUTE}/sprawy`;
 export const BILLING_CONTACT_CENTER_ROUTE = `${BILLING_CANONICAL_ROUTE}/kontakty`;
 export const BILLING_OPERATIONAL_REPORT_ROUTE = `${BILLING_CANONICAL_ROUTE}/raport`;
+export const BILLING_NEXT_STEPS_OVERVIEW_ROUTE = `${BILLING_CANONICAL_ROUTE}/kroki`;
 export const BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_TITLE = "Wybierz organizację, aby zobaczyć wpłatę";
 export const BILLING_PAYMENT_DETAIL_ORGANIZATION_REQUIRED_DESCRIPTION =
   "Najpierw wskaż organizację w topbarze. Szczegół wpłaty pokazuje tylko dane z wybranej organizacji.";
@@ -1631,6 +1679,46 @@ export function readBillingNextStepEvents(payload: unknown): BillingNextStepEven
   return {
     organization_id: payload.organization_id === undefined || payload.organization_id === null ? undefined : readNumber(payload.organization_id),
     events: payload.events.map(readBillingNextStepEventRecord),
+  };
+}
+
+export function readBillingActiveNextStepEvents(payload: unknown): {
+  organization_id?: number;
+  events: BillingNextStepsOverviewEvent[];
+} {
+  if (!isRecord(payload) || !Array.isArray(payload.events)) {
+    throw new ApiContractError(BILLING_ACTIVE_NEXT_STEP_EVENTS_ENDPOINT, payload);
+  }
+  const events = payload.events.map((item) => {
+    if (!isRecord(item)) {
+      throw new ApiContractError(BILLING_ACTIVE_NEXT_STEP_EVENTS_ENDPOINT, item);
+    }
+    const eventId = readNumber(item.billing_next_step_event_id);
+    const targetType = readOptionalString(item.target_type);
+    const stepType = readOptionalString(item.step_type);
+    const eventAction = readOptionalString(item.event_action);
+    const title = safeBillingText(item.title, "");
+    if (!eventId || !targetType || !isBillingNextStepType(stepType) || !isBillingNextStepEventAction(eventAction) || !title) {
+      throw new ApiContractError(BILLING_ACTIVE_NEXT_STEP_EVENTS_ENDPOINT, item);
+    }
+    return {
+      eventId,
+      parentEventId: readNumber(item.parent_event_id),
+      organizationId: readNumber(item.organization_id),
+      targetType: safeBillingText(targetType, "unknown"),
+      targetId: readNumber(item.target_id),
+      relatedIssueKey: safeBillingText(item.related_issue_key, "") || undefined,
+      stepType,
+      eventAction,
+      title,
+      noteText: item.note_text ? safeBillingText(item.note_text, "Ukryto techniczną lub wrażliwą treść notatki.") : undefined,
+      plannedFor: readOptionalString(item.planned_for),
+      createdAt: readOptionalString(item.created_at),
+    } satisfies BillingNextStepsOverviewEvent;
+  });
+  return {
+    organization_id: payload.organization_id === undefined || payload.organization_id === null ? undefined : readNumber(payload.organization_id),
+    events,
   };
 }
 
@@ -4066,6 +4154,177 @@ export function buildBillingNextStepRows(
       plannedFor: event.planned_for ?? undefined,
       relatedIssueKey: event.related_issue_key ?? undefined,
     }));
+}
+
+export const BILLING_NEXT_STEPS_OVERVIEW_FILTERS: Array<{ value: BillingNextStepsOverviewFilter; label: string }> = [
+  { value: "all", label: "Wszystkie" },
+  { value: "overdue", label: "Zaległe" },
+  { value: "today", label: "Dzisiaj" },
+  { value: "next-7-days", label: "Najbliższe 7 dni" },
+  { value: "later", label: "Później" },
+  { value: "no-date", label: "Bez daty" },
+];
+
+export function formatLocalCalendarDate(value = new Date()): string {
+  const year = String(value.getFullYear()).padStart(4, "0");
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalCalendarDate(value: string | undefined): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+  return date;
+}
+
+function addLocalCalendarDays(value: string, days: number): string {
+  const date = parseLocalCalendarDate(value);
+  if (!date) {
+    return value;
+  }
+  date.setDate(date.getDate() + days);
+  return formatLocalCalendarDate(date);
+}
+
+function getOverviewDateStatus(plannedFor: string | undefined, today: string): BillingNextStepsOverviewDateStatus {
+  if (!parseLocalCalendarDate(plannedFor)) {
+    return "no-date";
+  }
+  if (plannedFor! < today) {
+    return "overdue";
+  }
+  if (plannedFor === today) {
+    return "today";
+  }
+  return plannedFor! <= addLocalCalendarDays(today, 7) ? "next-7-days" : "later";
+}
+
+function getOverviewTarget(event: BillingNextStepsOverviewEvent): {
+  completionTargetType?: BillingNextStepTargetType;
+  targetTypeLabel: string;
+  targetLabel: string;
+  targetHref?: string;
+} {
+  if (event.targetType === "payer") {
+    return {
+      completionTargetType: "payer",
+      targetTypeLabel: "Płatnik",
+      targetLabel: event.targetId ? `Płatnik #${event.targetId}` : "Płatnik bez dostępnego rekordu",
+      targetHref: event.targetId ? billingPayerDetailPath(event.targetId) : undefined,
+    };
+  }
+  if (event.targetType === "payment") {
+    return {
+      completionTargetType: "payment",
+      targetTypeLabel: "Wpłata",
+      targetLabel: event.targetId ? `Wpłata #${event.targetId}` : "Wpłata bez dostępnego rekordu",
+      targetHref: event.targetId ? billingPaymentDetailPath(event.targetId) : undefined,
+    };
+  }
+  if (event.targetType === "work_queue_issue") {
+    return {
+      completionTargetType: "work_queue_issue",
+      targetTypeLabel: "Sprawa",
+      targetLabel: "Sprawa rozliczeniowa",
+      targetHref: BILLING_WORK_QUEUE_ROUTE,
+    };
+  }
+  if (event.targetType === "billing_summary") {
+    return {
+      completionTargetType: "billing_summary",
+      targetTypeLabel: "Podsumowanie",
+      targetLabel: "Podsumowanie rozliczeń",
+      targetHref: BILLING_CANONICAL_ROUTE,
+    };
+  }
+  if (event.targetType === "contact") {
+    return {
+      completionTargetType: "contact",
+      targetTypeLabel: "Kontakt",
+      targetLabel: event.targetId ? `Kontakt #${event.targetId}` : "Kontakt bez dostępnego rekordu",
+    };
+  }
+  return {
+    targetTypeLabel: "Inny cel",
+    targetLabel: "Nieobsługiwany lub historyczny cel",
+  };
+}
+
+export function buildBillingNextStepsOverview(
+  events: BillingNextStepsOverviewEvent[],
+  { filter = "all", today }: { filter?: BillingNextStepsOverviewFilter; today: string },
+): BillingNextStepsOverviewView {
+  const completedParentIds = new Set(
+    events
+      .filter((event) => event.eventAction === "completed" && event.parentEventId)
+      .map((event) => Number(event.parentEventId)),
+  );
+  const allRows = events
+    .filter((event) => event.eventAction === "planned" && !completedParentIds.has(event.eventId))
+    .map((event) => {
+      const dateStatus = getOverviewDateStatus(event.plannedFor, today);
+      const target = getOverviewTarget(event);
+      const datePresentation = {
+        overdue: { label: "Zaległy", tone: "danger" },
+        today: { label: "Dzisiaj", tone: "warning" },
+        "next-7-days": { label: "Najbliższe 7 dni", tone: "info" },
+        later: { label: "Później", tone: "neutral" },
+        "no-date": { label: "Bez terminu", tone: "neutral" },
+      }[dateStatus] as { label: string; tone: BillingNextStepsOverviewRow["dateTone"] };
+      return {
+        id: String(event.eventId),
+        eventId: event.eventId,
+        title: safeBillingText(event.title, "Następny krok"),
+        stepType: event.stepType,
+        stepTypeLabel: getBillingNextStepTypeLabel(event.stepType),
+        targetType: event.targetType,
+        completionTargetType: target.completionTargetType,
+        targetId: event.targetId,
+        relatedIssueKey: event.relatedIssueKey,
+        targetTypeLabel: target.targetTypeLabel,
+        targetLabel: target.targetLabel,
+        targetHref: target.targetHref,
+        plannedFor: parseLocalCalendarDate(event.plannedFor) ? event.plannedFor : undefined,
+        dateStatus,
+        dateLabel: parseLocalCalendarDate(event.plannedFor) ? formatDateLabel(event.plannedFor) : "Bez terminu",
+        dateStatusLabel: datePresentation.label,
+        dateTone: datePresentation.tone,
+        noteText: event.noteText,
+        createdAt: event.createdAt,
+      } satisfies BillingNextStepsOverviewRow;
+    })
+    .sort((first, second) => {
+      const firstNoDate = first.dateStatus === "no-date" ? 1 : 0;
+      const secondNoDate = second.dateStatus === "no-date" ? 1 : 0;
+      return (
+        firstNoDate - secondNoDate ||
+        String(first.plannedFor ?? "").localeCompare(String(second.plannedFor ?? "")) ||
+        String(first.createdAt ?? "").localeCompare(String(second.createdAt ?? "")) ||
+        first.eventId - second.eventId
+      );
+    });
+  const counts = BILLING_NEXT_STEPS_OVERVIEW_FILTERS.reduce(
+    (result, option) => {
+      result[option.value] = option.value === "all" ? allRows.length : allRows.filter((row) => row.dateStatus === option.value).length;
+      return result;
+    },
+    {} as Record<BillingNextStepsOverviewFilter, number>,
+  );
+  return {
+    allRows,
+    filteredRows: filter === "all" ? allRows : allRows.filter((row) => row.dateStatus === filter),
+    counts,
+  };
 }
 
 function contactTextExcerpt(value: string | null | undefined, fallback = "Brak treści w danych"): string {
