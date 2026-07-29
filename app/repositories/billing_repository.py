@@ -465,7 +465,7 @@ class BillingRepository:
             ).fetchone()
         return dict(row) if row else None
 
-    def get_next_step_completion_by_parent(
+    def get_next_step_child_by_parent(
         self,
         parent_event_id: int,
         *,
@@ -478,7 +478,6 @@ class BillingRepository:
                 FROM billing_next_step_events e
                 WHERE e.parent_event_id = ?
                   AND e.organization_id = ?
-                  AND e.event_action = 'completed'
                 ORDER BY e.billing_next_step_event_id DESC
                 LIMIT 1
                 """,
@@ -530,25 +529,37 @@ class BillingRepository:
             rows = connection.execute(
                 """
                 SELECT
-                    planned.*,
+                    active.*,
                     COALESCE(u.display_name, u.login) AS created_by_user_name,
                     u.role AS created_by_user_role
-                FROM billing_next_step_events planned
-                LEFT JOIN users u ON u.user_id = planned.created_by_user_id
-                WHERE planned.organization_id = ?
-                  AND planned.event_action = 'planned'
+                FROM billing_next_step_events active
+                LEFT JOIN users u ON u.user_id = active.created_by_user_id
+                WHERE active.organization_id = ?
+                  AND (
+                      active.event_action = 'planned'
+                      OR (
+                          active.event_action = 'snoozed'
+                          AND active.parent_event_id IS NOT NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM billing_next_step_events parent
+                              WHERE parent.organization_id = active.organization_id
+                                AND parent.billing_next_step_event_id = active.parent_event_id
+                                AND parent.event_action IN ('planned', 'snoozed')
+                          )
+                      )
+                  )
                   AND NOT EXISTS (
                       SELECT 1
-                      FROM billing_next_step_events completed
-                      WHERE completed.organization_id = planned.organization_id
-                        AND completed.event_action = 'completed'
-                        AND completed.parent_event_id = planned.billing_next_step_event_id
+                      FROM billing_next_step_events child
+                      WHERE child.organization_id = active.organization_id
+                        AND child.parent_event_id = active.billing_next_step_event_id
                   )
                 ORDER BY
-                    CASE WHEN planned.planned_for IS NULL OR planned.planned_for = '' THEN 1 ELSE 0 END,
-                    planned.planned_for ASC,
-                    planned.created_at ASC,
-                    planned.billing_next_step_event_id ASC
+                    CASE WHEN active.planned_for IS NULL OR active.planned_for = '' THEN 1 ELSE 0 END,
+                    active.planned_for ASC,
+                    active.created_at ASC,
+                    active.billing_next_step_event_id ASC
                 LIMIT ?
                 """,
                 (organization_id, max(1, int(limit))),

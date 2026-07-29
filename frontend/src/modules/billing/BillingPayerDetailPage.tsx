@@ -18,6 +18,7 @@ import { withActiveOrganizationQuery } from "@/context/organizationContextModel"
 import { api } from "@/lib/api";
 import { readContractors } from "../crm/crmModel";
 import { readWorkItems } from "../work-items/workItemsModel";
+import { BillingNextStepActionControls } from "./BillingNextStepActionControls";
 import {
   BILLING_CANONICAL_ROUTE,
   BILLING_CONTACT_ACTION_OPTIONS,
@@ -39,6 +40,7 @@ import {
   BILLING_READ_ONLY,
   buildBillingContactEventRequest,
   buildBillingNextStepRequest,
+  buildBillingNextStepSnoozeRequest,
   buildBillingNextStepRows,
   buildBillingPayerNoteRequest,
   buildBillingPayerDetailView,
@@ -55,6 +57,7 @@ import {
   readBillingPayerNotes,
   readBillingPayers,
   readBillingStudents,
+  suggestBillingNextStepSnoozeDate,
   type BillingContactAction,
   type BillingContactChannel,
   type BillingContactEventErrorState,
@@ -179,11 +182,27 @@ const workItemColumns: Array<TableColumn<BillingRelatedWorkItemRow>> = [
 function PayerNextStepList({
   completingId,
   onComplete,
+  onSnoozeStart,
+  onSnoozeCancel,
+  onSnoozeDateChange,
+  onSnoozeSubmit,
   rows,
+  snoozeDate,
+  snoozeError,
+  snoozeSubmitting,
+  snoozingId,
 }: {
   completingId?: string | null;
   onComplete?: (row: BillingNextStepRow) => void;
+  onSnoozeStart?: (row: BillingNextStepRow) => void;
+  onSnoozeCancel?: () => void;
+  onSnoozeDateChange?: (value: string) => void;
+  onSnoozeSubmit?: (event: FormEvent<HTMLFormElement>, row: BillingNextStepRow) => void;
   rows: BillingNextStepRow[];
+  snoozeDate?: string;
+  snoozeError?: string | null;
+  snoozeSubmitting?: boolean;
+  snoozingId?: string | null;
 }) {
   return rows.length ? (
     <div className="module-readiness">
@@ -194,16 +213,20 @@ function PayerNextStepList({
             <strong>{row.title}</strong>
             <span>{row.stepTypeLabel} · {row.eventActionLabel} · {row.dateLabel}</span>
             {row.noteText ? <p>{row.noteText}</p> : null}
-            {onComplete ? (
-              <Button
-                disabled={Boolean(completingId)}
-                onClick={() => onComplete(row)}
-                size="sm"
-                type="button"
-                variant="secondary"
-              >
-                {completingId === row.id ? "Zapisywanie..." : "Oznacz jako wykonany"}
-              </Button>
+            {onComplete && onSnoozeStart && onSnoozeCancel && onSnoozeDateChange && onSnoozeSubmit ? (
+              <BillingNextStepActionControls
+                busy={Boolean(completingId) || Boolean(snoozeSubmitting)}
+                completing={completingId === row.id}
+                onCancelSnooze={onSnoozeCancel}
+                onComplete={() => onComplete(row)}
+                onSnoozeDateChange={onSnoozeDateChange}
+                onSnoozeSubmit={(event) => onSnoozeSubmit(event, row)}
+                onStartSnooze={() => onSnoozeStart(row)}
+                row={row}
+                snoozeDate={snoozeDate ?? ""}
+                snoozeError={snoozingId === row.id ? snoozeError : null}
+                snoozing={snoozingId === row.id}
+              />
             ) : null}
           </div>
         </div>
@@ -240,6 +263,11 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
   const [completingNextStepId, setCompletingNextStepId] = useState<string | null>(null);
   const [completeNextStepErrorState, setCompleteNextStepErrorState] = useState<BillingNextStepErrorState | null>(null);
   const [completeNextStepSuccessMessage, setCompleteNextStepSuccessMessage] = useState<string | null>(null);
+  const [snoozingNextStepId, setSnoozingNextStepId] = useState<string | null>(null);
+  const [snoozeNextStepDate, setSnoozeNextStepDate] = useState("");
+  const [snoozeNextStepSubmitting, setSnoozeNextStepSubmitting] = useState(false);
+  const [snoozeNextStepError, setSnoozeNextStepError] = useState<string | null>(null);
+  const [snoozeNextStepSuccessMessage, setSnoozeNextStepSuccessMessage] = useState<string | null>(null);
 
   const loadPayer = useCallback(async () => {
     if (organizationStatus === "loading") {
@@ -257,6 +285,9 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
 
     setStatus("loading");
     setErrorState(null);
+    setSnoozingNextStepId(null);
+    setSnoozeNextStepDate("");
+    setSnoozeNextStepError(null);
 
     try {
       const query = withActiveOrganizationQuery(selectedOrganizationId);
@@ -350,8 +381,17 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
       }),
     [loadPayer, selectedOrganizationId],
   );
+  const snoozeNextStepSubmitter = useMemo(
+    () =>
+      createBillingNextStepSubmitter({
+        refreshDetail: loadPayer,
+        setSubmitting: setSnoozeNextStepSubmitting,
+        submitNextStep: (payload) => api.addBillingNextStepEvent(payload, selectedOrganizationId),
+      }),
+    [loadPayer, selectedOrganizationId],
+  );
   const nextStepRows = useMemo(
-    () => buildBillingNextStepRows(snapshot?.nextStepEvents ?? [], { action: "planned", targetType: "payer", targetId: payerId, limit: 6 }),
+    () => buildBillingNextStepRows(snapshot?.nextStepEvents ?? [], { action: "active", targetType: "payer", targetId: payerId, limit: 6 }),
     [payerId, snapshot?.nextStepEvents],
   );
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
@@ -494,6 +534,44 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
       }
     },
     [completeNextStepSubmitter, selectedOrganizationId],
+  );
+  const startNextStepSnooze = useCallback((row: BillingNextStepRow) => {
+    setSnoozingNextStepId(row.id);
+    setSnoozeNextStepDate(suggestBillingNextStepSnoozeDate(row.plannedFor));
+    setSnoozeNextStepError(null);
+    setSnoozeNextStepSuccessMessage(null);
+  }, []);
+  const cancelNextStepSnooze = useCallback(() => {
+    setSnoozingNextStepId(null);
+    setSnoozeNextStepDate("");
+    setSnoozeNextStepError(null);
+  }, []);
+  const handleNextStepSnooze = useCallback(
+    async (event: FormEvent<HTMLFormElement>, row: BillingNextStepRow) => {
+      event.preventDefault();
+      if (snoozingNextStepId !== row.id) {
+        return;
+      }
+      setSnoozeNextStepError(null);
+      setSnoozeNextStepSuccessMessage(null);
+      const validation = buildBillingNextStepSnoozeRequest({
+        parentEventId: row.eventId,
+        currentPlannedFor: row.plannedFor,
+        plannedFor: snoozeNextStepDate,
+        organizationId: selectedOrganizationId,
+      });
+      const result = await snoozeNextStepSubmitter(validation);
+      if (result.status === "blocked") {
+        setSnoozeNextStepError(result.message);
+      } else if (result.status === "error") {
+        setSnoozeNextStepError(result.errorState.description);
+      } else if (result.status === "success") {
+        setSnoozingNextStepId(null);
+        setSnoozeNextStepDate("");
+        setSnoozeNextStepSuccessMessage("Krok został odłożony na nowy termin.");
+      }
+    },
+    [selectedOrganizationId, snoozeNextStepDate, snoozeNextStepSubmitter, snoozingNextStepId],
   );
 
   return (
@@ -696,7 +774,22 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
                     {nextStepSubmitting ? "Zapisywanie..." : "Zapisz krok"}
                   </Button>
                 </form>
-                <PayerNextStepList completingId={completingNextStepId} onComplete={handleNextStepComplete} rows={nextStepRows} />
+                <PayerNextStepList
+                  completingId={completingNextStepId}
+                  onComplete={handleNextStepComplete}
+                  onSnoozeCancel={cancelNextStepSnooze}
+                  onSnoozeDateChange={(value) => {
+                    setSnoozeNextStepDate(value);
+                    setSnoozeNextStepError(null);
+                  }}
+                  onSnoozeStart={startNextStepSnooze}
+                  onSnoozeSubmit={handleNextStepSnooze}
+                  rows={nextStepRows}
+                  snoozeDate={snoozeNextStepDate}
+                  snoozeError={snoozeNextStepError}
+                  snoozeSubmitting={snoozeNextStepSubmitting}
+                  snoozingId={snoozingNextStepId}
+                />
                 {completeNextStepErrorState ? (
                   <div className="invoice-comment-form__message invoice-comment-form__message--error" role="alert">
                     <strong>{completeNextStepErrorState.title}</strong>
@@ -706,6 +799,11 @@ export function BillingPayerDetailPage({ payerId }: { payerId: number }) {
                 {completeNextStepSuccessMessage ? (
                   <div className="invoice-comment-form__message invoice-comment-form__message--success" role="status">
                     {completeNextStepSuccessMessage}
+                  </div>
+                ) : null}
+                {snoozeNextStepSuccessMessage ? (
+                  <div className="invoice-comment-form__message invoice-comment-form__message--success" role="status">
+                    {snoozeNextStepSuccessMessage}
                   </div>
                 ) : null}
               </Card>

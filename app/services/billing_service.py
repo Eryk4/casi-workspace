@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime
+from datetime import date, datetime
 import hashlib
 import io
 import re
@@ -769,13 +769,7 @@ class BillingService:
         if not actor_user or not actor_user.get("user_id"):
             raise ValueError("Nie mozna zapisac nastepnego kroku bez zalogowanego uzytkownika.")
 
-        target_type = str(payload.get("target_type") or "").strip()
-        step_type = str(payload.get("step_type") or "").strip()
         event_action = str(payload.get("event_action") or "").strip()
-        if target_type not in BILLING_NEXT_STEP_TARGET_TYPES:
-            raise ValueError("Nieprawidlowy typ celu nastepnego kroku.")
-        if step_type not in BILLING_NEXT_STEP_TYPES:
-            raise ValueError("Nieprawidlowy typ nastepnego kroku.")
         if event_action not in BILLING_NEXT_STEP_EVENT_ACTIONS:
             raise ValueError("Nieprawidlowa akcja nastepnego kroku.")
 
@@ -788,28 +782,88 @@ class BillingService:
                 raise ValueError("Powiazany krok bazowy jest nieprawidlowy.") from None
             if parent_event_id <= 0:
                 raise ValueError("Powiazany krok bazowy jest nieprawidlowy.")
-        if event_action == "completed" and parent_event_id is None:
-            raise ValueError("Zakonczony krok wymaga wskazania kroku planned.")
-        if event_action != "completed" and parent_event_id is not None:
-            raise ValueError("Tylko zakonczony krok moze wskazywac krok bazowy.")
+        if event_action in {"completed", "snoozed"} and parent_event_id is None:
+            raise ValueError("Zmiana stanu kroku wymaga wskazania aktywnego kroku bazowego.")
+        if event_action == "planned" and parent_event_id is not None:
+            raise ValueError("Krok planned nie moze wskazywac kroku bazowego.")
 
-        target_id = self._normalize_next_step_target_id(target_type, payload.get("target_id"))
-        if target_id is not None:
-            self._validate_next_step_target(target_type, target_id, organization_id=organization_id)
-
-        related_issue_key = str(payload.get("related_issue_key") or "").strip()
-        if len(related_issue_key) > 300:
-            raise ValueError("Klucz sprawy nastepnego kroku musi byc krotki.")
-
+        parent_event: dict[str, Any] | None = None
         if parent_event_id is not None:
             parent_event = self.billing_repository.get_next_step_event_by_id(
                 parent_event_id,
                 organization_id=organization_id,
             )
             if not parent_event:
-                raise ValueError("Nie znaleziono wskazanego kroku planned.")
-            if str(parent_event.get("event_action") or "") != "planned":
-                raise ValueError("Krokiem bazowym moze byc tylko event planned.")
+                raise ValueError("Nie znaleziono wskazanego aktywnego kroku bazowego.")
+            parent_action = str(parent_event.get("event_action") or "")
+            if parent_action not in {"planned", "snoozed"}:
+                raise ValueError("Krokiem bazowym moze byc tylko aktywny event planned albo snoozed.")
+            if parent_action == "snoozed" and not parent_event.get("parent_event_id"):
+                raise ValueError("Historyczny event snoozed bez rodzica nie jest aktywnym krokiem.")
+            if self.billing_repository.get_next_step_child_by_parent(
+                parent_event_id,
+                organization_id=organization_id,
+            ):
+                raise ValueError("Ten krok ma juz pozniejsze zdarzenie.")
+
+        if event_action == "snoozed" and parent_event is not None:
+            inherited_target_type = str(parent_event.get("target_type") or "")
+            inherited_target_id = parent_event.get("target_id")
+            inherited_target_id = int(inherited_target_id) if inherited_target_id is not None else None
+            inherited_issue_key = str(parent_event.get("related_issue_key") or "").strip()
+            inherited_step_type = str(parent_event.get("step_type") or "")
+            inherited_title = str(parent_event.get("title") or "").strip()
+            supplied_identity = {
+                "target_type": payload.get("target_type"),
+                "target_id": payload.get("target_id"),
+                "related_issue_key": payload.get("related_issue_key"),
+                "step_type": payload.get("step_type"),
+                "title": payload.get("title"),
+            }
+            expected_identity = {
+                "target_type": inherited_target_type,
+                "target_id": inherited_target_id,
+                "related_issue_key": inherited_issue_key or None,
+                "step_type": inherited_step_type,
+                "title": inherited_title,
+            }
+            for field_name, supplied_value in supplied_identity.items():
+                if supplied_value in (None, ""):
+                    continue
+                normalized_value: Any = str(supplied_value).strip()
+                if field_name == "target_id":
+                    try:
+                        normalized_value = int(supplied_value)
+                    except (TypeError, ValueError):
+                        raise ValueError("Snooze nie moze zmieniac tozsamosci kroku.") from None
+                if normalized_value != expected_identity[field_name]:
+                    raise ValueError("Snooze nie moze zmieniac tozsamosci kroku.")
+            target_type = inherited_target_type
+            target_id = inherited_target_id
+            related_issue_key = inherited_issue_key
+            step_type = inherited_step_type
+            title = inherited_title
+        else:
+            target_type = str(payload.get("target_type") or "").strip()
+            step_type = str(payload.get("step_type") or "").strip()
+            if target_type not in BILLING_NEXT_STEP_TARGET_TYPES:
+                raise ValueError("Nieprawidlowy typ celu nastepnego kroku.")
+            if step_type not in BILLING_NEXT_STEP_TYPES:
+                raise ValueError("Nieprawidlowy typ nastepnego kroku.")
+            target_id = self._normalize_next_step_target_id(target_type, payload.get("target_id"))
+            if target_id is not None:
+                self._validate_next_step_target(target_type, target_id, organization_id=organization_id)
+            related_issue_key = str(payload.get("related_issue_key") or "").strip()
+            title = str(payload.get("title") or "").strip()
+
+        if target_type not in BILLING_NEXT_STEP_TARGET_TYPES:
+            raise ValueError("Nieprawidlowy typ celu nastepnego kroku.")
+        if step_type not in BILLING_NEXT_STEP_TYPES:
+            raise ValueError("Nieprawidlowy typ nastepnego kroku.")
+        if len(related_issue_key) > 300:
+            raise ValueError("Klucz sprawy nastepnego kroku musi byc krotki.")
+
+        if parent_event_id is not None and event_action == "completed" and parent_event is not None:
             parent_target_id = parent_event.get("target_id")
             normalized_parent_target_id = int(parent_target_id) if parent_target_id is not None else None
             parent_issue_key = str(parent_event.get("related_issue_key") or "").strip()
@@ -818,14 +872,8 @@ class BillingService:
                 or normalized_parent_target_id != target_id
                 or parent_issue_key != related_issue_key
             ):
-                raise ValueError("Krok completed musi dotyczyc tego samego celu co krok planned.")
-            if self.billing_repository.get_next_step_completion_by_parent(
-                parent_event_id,
-                organization_id=organization_id,
-            ):
-                raise ValueError("Ten krok zostal juz oznaczony jako wykonany.")
+                raise ValueError("Krok completed musi dotyczyc tego samego celu co aktywny krok bazowy.")
 
-        title = str(payload.get("title") or "").strip()
         if not title:
             raise ValueError("Tytul nastepnego kroku jest wymagany.")
         if len(title) > 200:
@@ -838,6 +886,21 @@ class BillingService:
         planned_for = str(payload.get("planned_for") or "").strip()
         if planned_for and not re.match(r"^\d{4}-\d{2}-\d{2}$", planned_for):
             raise ValueError("Data nastepnego kroku musi miec format RRRR-MM-DD.")
+        if event_action == "snoozed":
+            if not planned_for:
+                raise ValueError("Odlozenie kroku wymaga nowej daty.")
+            try:
+                snoozed_date = date.fromisoformat(planned_for)
+            except ValueError:
+                raise ValueError("Data odlozenia musi byc poprawna data kalendarzowa RRRR-MM-DD.") from None
+            parent_planned_for = str((parent_event or {}).get("planned_for") or "").strip()
+            if parent_planned_for:
+                try:
+                    parent_date = date.fromisoformat(parent_planned_for)
+                except ValueError:
+                    raise ValueError("Nie mozna bezpiecznie porownac daty historycznego kroku.") from None
+                if snoozed_date <= parent_date:
+                    raise ValueError("Nowa data odlozenia musi byc pozniejsza niz obecny termin.")
 
         try:
             event_id = self.billing_repository.add_next_step_event(
@@ -861,7 +924,7 @@ class BillingService:
                 "idx_billing_next_step_events_parent_unique" in message
                 or "billing_next_step_events.parent_event_id" in message
             ):
-                raise ValueError("Ten krok zostal juz oznaczony jako wykonany.") from None
+                raise ValueError("Ten krok ma juz pozniejsze zdarzenie.") from None
             raise
         self.event_repository.log(
             event_type="billing_next_step_event_added",

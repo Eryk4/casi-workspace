@@ -15,6 +15,7 @@ import { Table, type TableColumn } from "@/components/ui/Table";
 import { useActiveOrganization } from "@/context/ActiveOrganizationContext";
 import { withActiveOrganizationQuery } from "@/context/organizationContextModel";
 import { api } from "@/lib/api";
+import { BillingNextStepActionControls } from "./BillingNextStepActionControls";
 import {
   BILLING_CANONICAL_ROUTE,
   BILLING_CONTACT_CENTER_ROUTE,
@@ -31,6 +32,7 @@ import {
   BILLING_WORK_QUEUE_DECISION_HELP_TEXT,
   buildBillingWorkQueueView,
   buildBillingNextStepRequest,
+  buildBillingNextStepSnoozeRequest,
   buildBillingNextStepRows,
   buildBillingWorkQueueDecisionRequest,
   canUseBillingOrganizationScope,
@@ -46,6 +48,7 @@ import {
   readBillingPayers,
   readBillingStudents,
   readBillingTransactions,
+  suggestBillingNextStepSnoozeDate,
   type BillingCenterSnapshot,
   type BillingErrorState,
   type BillingNextStepErrorState,
@@ -139,12 +142,28 @@ function NextStepList({
   completingId,
   emptyDescription,
   onComplete,
+  onSnoozeStart,
+  onSnoozeCancel,
+  onSnoozeDateChange,
+  onSnoozeSubmit,
   rows,
+  snoozeDate,
+  snoozeError,
+  snoozeSubmitting,
+  snoozingId,
 }: {
   completingId?: string | null;
   emptyDescription: string;
   onComplete?: (row: BillingNextStepRow) => void;
+  onSnoozeStart?: (row: BillingNextStepRow) => void;
+  onSnoozeCancel?: () => void;
+  onSnoozeDateChange?: (value: string) => void;
+  onSnoozeSubmit?: (event: FormEvent<HTMLFormElement>, row: BillingNextStepRow) => void;
   rows: BillingNextStepRow[];
+  snoozeDate?: string;
+  snoozeError?: string | null;
+  snoozeSubmitting?: boolean;
+  snoozingId?: string | null;
 }) {
   return rows.length ? (
     <div className="module-readiness">
@@ -166,16 +185,20 @@ function NextStepList({
               )}
             </span>
             {row.noteText ? <p>{row.noteText}</p> : null}
-            {onComplete ? (
-              <Button
-                disabled={Boolean(completingId)}
-                onClick={() => onComplete(row)}
-                size="sm"
-                type="button"
-                variant="secondary"
-              >
-                {completingId === row.id ? "Zapisywanie..." : "Oznacz jako wykonany"}
-              </Button>
+            {onComplete && onSnoozeStart && onSnoozeCancel && onSnoozeDateChange && onSnoozeSubmit ? (
+              <BillingNextStepActionControls
+                busy={Boolean(completingId) || Boolean(snoozeSubmitting)}
+                completing={completingId === row.id}
+                onCancelSnooze={onSnoozeCancel}
+                onComplete={() => onComplete(row)}
+                onSnoozeDateChange={onSnoozeDateChange}
+                onSnoozeSubmit={(event) => onSnoozeSubmit(event, row)}
+                onStartSnooze={() => onSnoozeStart(row)}
+                row={row}
+                snoozeDate={snoozeDate ?? ""}
+                snoozeError={snoozingId === row.id ? snoozeError : null}
+                snoozing={snoozingId === row.id}
+              />
             ) : null}
           </div>
         </div>
@@ -209,6 +232,11 @@ export function BillingWorkQueuePage() {
   const [completingNextStepId, setCompletingNextStepId] = useState<string | null>(null);
   const [completeNextStepErrorState, setCompleteNextStepErrorState] = useState<BillingNextStepErrorState | null>(null);
   const [completeNextStepSuccessMessage, setCompleteNextStepSuccessMessage] = useState<string | null>(null);
+  const [snoozingNextStepId, setSnoozingNextStepId] = useState<string | null>(null);
+  const [snoozeNextStepDate, setSnoozeNextStepDate] = useState("");
+  const [snoozeNextStepSubmitting, setSnoozeNextStepSubmitting] = useState(false);
+  const [snoozeNextStepError, setSnoozeNextStepError] = useState<string | null>(null);
+  const [snoozeNextStepSuccessMessage, setSnoozeNextStepSuccessMessage] = useState<string | null>(null);
 
   const loadWorkQueue = useCallback(async () => {
     if (organizationStatus === "loading") {
@@ -230,6 +258,9 @@ export function BillingWorkQueuePage() {
     setLoadedOrganizationId(null);
     setStatus("loading");
     setErrorState(null);
+    setSnoozingNextStepId(null);
+    setSnoozeNextStepDate("");
+    setSnoozeNextStepError(null);
 
     try {
       const query = withActiveOrganizationQuery(organizationId);
@@ -331,7 +362,7 @@ export function BillingWorkQueuePage() {
   const snapshotMatchesOrganization = Boolean(snapshot && activeOrganizationKey && loadedOrganizationId === activeOrganizationKey);
   const workQueueView = useMemo(() => (snapshotMatchesOrganization && snapshot ? buildBillingWorkQueueView(snapshot) : null), [snapshot, snapshotMatchesOrganization]);
   const nextStepRows = useMemo(
-    () => buildBillingNextStepRows(snapshot?.nextStepEvents ?? [], { action: "planned", limit: 8 }),
+    () => buildBillingNextStepRows(snapshot?.nextStepEvents ?? [], { action: "active", limit: 8 }),
     [snapshot?.nextStepEvents],
   );
   const completedNextStepRows = useMemo(
@@ -369,6 +400,15 @@ export function BillingWorkQueuePage() {
             setCompletingNextStepId(null);
           }
         },
+        submitNextStep: (payload) => api.addBillingNextStepEvent(payload, activeOrganizationKey),
+      }),
+    [activeOrganizationKey, loadWorkQueue],
+  );
+  const snoozeNextStepSubmitter = useMemo(
+    () =>
+      createBillingNextStepSubmitter({
+        refreshDetail: loadWorkQueue,
+        setSubmitting: setSnoozeNextStepSubmitting,
         submitNextStep: (payload) => api.addBillingNextStepEvent(payload, activeOrganizationKey),
       }),
     [activeOrganizationKey, loadWorkQueue],
@@ -439,6 +479,44 @@ export function BillingWorkQueuePage() {
       }
     },
     [activeOrganizationKey, completeNextStepSubmitter],
+  );
+  const startNextStepSnooze = useCallback((row: BillingNextStepRow) => {
+    setSnoozingNextStepId(row.id);
+    setSnoozeNextStepDate(suggestBillingNextStepSnoozeDate(row.plannedFor));
+    setSnoozeNextStepError(null);
+    setSnoozeNextStepSuccessMessage(null);
+  }, []);
+  const cancelNextStepSnooze = useCallback(() => {
+    setSnoozingNextStepId(null);
+    setSnoozeNextStepDate("");
+    setSnoozeNextStepError(null);
+  }, []);
+  const handleNextStepSnooze = useCallback(
+    async (event: FormEvent<HTMLFormElement>, row: BillingNextStepRow) => {
+      event.preventDefault();
+      if (snoozingNextStepId !== row.id) {
+        return;
+      }
+      setSnoozeNextStepError(null);
+      setSnoozeNextStepSuccessMessage(null);
+      const validation = buildBillingNextStepSnoozeRequest({
+        parentEventId: row.eventId,
+        currentPlannedFor: row.plannedFor,
+        plannedFor: snoozeNextStepDate,
+        organizationId: activeOrganizationKey,
+      });
+      const result = await snoozeNextStepSubmitter(validation);
+      if (result.status === "blocked") {
+        setSnoozeNextStepError(result.message);
+      } else if (result.status === "error") {
+        setSnoozeNextStepError(result.errorState.description);
+      } else if (result.status === "success") {
+        setSnoozingNextStepId(null);
+        setSnoozeNextStepDate("");
+        setSnoozeNextStepSuccessMessage("Krok został odłożony na nowy termin.");
+      }
+    },
+    [activeOrganizationKey, snoozeNextStepDate, snoozeNextStepSubmitter, snoozingNextStepId],
   );
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);
   const readyWithoutData =
@@ -681,11 +759,23 @@ export function BillingWorkQueuePage() {
                 rows={nextStepRows}
                 emptyDescription="Nie ma jeszcze aktywnych ręcznych kroków dla tej organizacji."
                 onComplete={handleNextStepComplete}
+                onSnoozeCancel={cancelNextStepSnooze}
+                onSnoozeDateChange={(value) => {
+                  setSnoozeNextStepDate(value);
+                  setSnoozeNextStepError(null);
+                }}
+                onSnoozeStart={startNextStepSnooze}
+                onSnoozeSubmit={handleNextStepSnooze}
+                snoozeDate={snoozeNextStepDate}
+                snoozeError={snoozeNextStepError}
+                snoozeSubmitting={snoozeNextStepSubmitting}
+                snoozingId={snoozingNextStepId}
               />
               {completeNextStepErrorState ? (
                 <ErrorState description={completeNextStepErrorState.description} title={completeNextStepErrorState.title} />
               ) : null}
               {completeNextStepSuccessMessage ? <p className="module-success">{completeNextStepSuccessMessage}</p> : null}
+              {snoozeNextStepSuccessMessage ? <p className="module-success">{snoozeNextStepSuccessMessage}</p> : null}
             </Card>
             <Card
               description="Historia kroków oznaczonych jako wykonane przez append-only event. V1 nie usuwa ani nie nadpisuje wpisów."

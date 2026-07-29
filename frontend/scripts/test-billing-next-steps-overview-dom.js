@@ -49,8 +49,11 @@ const allEvents = [
 
 function activeEventsFor(organizationId) {
   const scoped = allEvents.filter((event) => Number(event.organization_id) === Number(organizationId));
-  const completedIds = new Set(scoped.filter((event) => event.event_action === "completed" && event.parent_event_id).map((event) => Number(event.parent_event_id)));
-  return scoped.filter((event) => event.event_action === "planned" && !completedIds.has(Number(event.billing_next_step_event_id)));
+  const childParentIds = new Set(scoped.filter((event) => event.parent_event_id).map((event) => Number(event.parent_event_id)));
+  return scoped.filter((event) => {
+    const canBeActive = event.event_action === "planned" || (event.event_action === "snoozed" && event.parent_event_id);
+    return canBeActive && !childParentIds.has(Number(event.billing_next_step_event_id));
+  });
 }
 
 const api = {
@@ -68,10 +71,14 @@ const api = {
   },
   addBillingNextStepEvent: async (payload, organizationId) => {
     submittedPayloads.push(payload);
-    if (allEvents.some((event) => event.event_action === "completed" && Number(event.parent_event_id) === Number(payload.parent_event_id))) {
-      throw new Error("Ten krok został już zakończony");
+    if (allEvents.some((event) => Number(event.parent_event_id) === Number(payload.parent_event_id))) {
+      throw new Error("Ten krok ma już późniejsze zdarzenie");
     }
+    const parent = payload.parent_event_id
+      ? allEvents.find((event) => Number(event.billing_next_step_event_id) === Number(payload.parent_event_id))
+      : null;
     const event = {
+      ...(payload.event_action === "snoozed" ? parent : null),
       billing_next_step_event_id: nextEventId++,
       organization_id: Number(organizationId),
       created_at: "2026-12-18T12:00:00",
@@ -130,6 +137,12 @@ function buttonByText(container, text) {
   return [...container.querySelectorAll("button")].find((button) => button.textContent.trim() === text);
 }
 
+function setInputValue(input, value) {
+  const valueSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set;
+  valueSetter.call(input, value);
+  input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+}
+
 async function settle() {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -171,29 +184,59 @@ async function run() {
   await act(async () => {
     buttonByText(container, "Wszystkie (6)").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
   });
-  const firstComplete = container.querySelector('button[data-next-step-id="101"]');
-  assert.ok(firstComplete);
+  const firstSnooze = container.querySelector('button[data-snooze-next-step-id="101"]');
+  assert.ok(firstSnooze);
   await act(async () => {
-    firstComplete.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
-    firstComplete.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    firstSnooze.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  });
+  let snoozeForm = container.querySelector('form[data-snooze-form-id="101"]');
+  let snoozeDateInput = snoozeForm.querySelector('input[type="date"]');
+  await act(async () => setInputValue(snoozeDateInput, "2099-01-02"));
+  await act(async () => {
+    snoozeForm.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    snoozeForm.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
   });
   await settle();
 
-  const completedPayloads = submittedPayloads.filter((payload) => payload.event_action === "completed");
-  assert.equal(completedPayloads.length, 1);
-  assert.deepEqual(completedPayloads[0], {
+  let snoozedPayloads = submittedPayloads.filter((payload) => payload.event_action === "snoozed");
+  assert.equal(snoozedPayloads.length, 1);
+  assert.deepEqual(snoozedPayloads[0], {
     parent_event_id: 101,
-    target_type: "billing_summary",
-    step_type: "other",
-    event_action: "completed",
-    title: "Dwa takie same",
+    event_action: "snoozed",
+    planned_for: "2099-01-02",
   });
   assert.equal(container.querySelector('button[data-next-step-id="101"]'), null);
   assert.ok(container.querySelector('button[data-next-step-id="102"]'));
+  assert.equal([...container.querySelectorAll("tbody tr")].filter((row) => row.textContent.includes("Dwa takie same")).length, 2);
+  assert.match(container.textContent, /Odłożono/);
+
+  await act(async () => buttonByText(container, "Później (2)").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+  assert.match(container.textContent, /Dwa takie same/);
+  await act(async () => buttonByText(container, "Wszystkie (6)").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+
+  const secondSnooze = container.querySelector('button[data-snooze-next-step-id="900"]');
+  await act(async () => secondSnooze.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+  snoozeForm = container.querySelector('form[data-snooze-form-id="900"]');
+  snoozeDateInput = snoozeForm.querySelector('input[type="date"]');
+  await act(async () => setInputValue(snoozeDateInput, "2099-01-03"));
+  await act(async () => snoozeForm.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  await settle();
+  snoozedPayloads = submittedPayloads.filter((payload) => payload.event_action === "snoozed");
+  assert.deepEqual(snoozedPayloads[1], { parent_event_id: 900, event_action: "snoozed", planned_for: "2099-01-03" });
+
+  const completeSnoozed = container.querySelector('button[data-next-step-id="901"]');
+  await act(async () => {
+    completeSnoozed.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    completeSnoozed.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  });
+  await settle();
+  const completedPayloads = submittedPayloads.filter((payload) => payload.event_action === "completed");
+  assert.equal(completedPayloads.length, 1);
+  assert.equal(completedPayloads[0].parent_event_id, 901);
   assert.equal([...container.querySelectorAll("tbody tr")].filter((row) => row.textContent.includes("Dwa takie same")).length, 1);
 
   const actionLabels = [...container.querySelectorAll("button")].map((button) => button.textContent.trim());
-  assert.ok(!actionLabels.includes("Odłóż"));
+  assert.ok(actionLabels.includes("Odłóż"));
   assert.ok(!actionLabels.includes("Usuń"));
   assert.ok(!actionLabels.includes("Edytuj"));
 

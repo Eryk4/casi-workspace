@@ -676,6 +676,7 @@ export type BillingNextStepRow = {
   targetId?: number;
   stepType: BillingNextStepType;
   stepTypeLabel: string;
+  eventAction: BillingNextStepEventAction;
   eventActionLabel: string;
   targetLabel: string;
   targetHref?: string;
@@ -709,6 +710,8 @@ export type BillingNextStepsOverviewRow = {
   title: string;
   stepType: BillingNextStepType;
   stepTypeLabel: string;
+  eventAction: BillingNextStepEventAction;
+  eventActionLabel: string;
   targetType: string;
   completionTargetType?: BillingNextStepTargetType;
   targetId?: number;
@@ -915,20 +918,22 @@ export type BillingContactEventSubmitterDeps = {
   }) => Promise<unknown>;
 };
 
+export type BillingNextStepWritePayload = {
+  parent_event_id?: number;
+  target_type?: BillingNextStepTargetType;
+  target_id?: number;
+  related_issue_key?: string;
+  step_type?: BillingNextStepType;
+  event_action: BillingNextStepEventAction;
+  title?: string;
+  note_text?: string;
+  planned_for?: string;
+};
+
 export type BillingNextStepValidationResult =
   | {
       ok: true;
-      payload: {
-        parent_event_id?: number;
-        target_type: BillingNextStepTargetType;
-        target_id?: number;
-        related_issue_key?: string;
-        step_type: BillingNextStepType;
-        event_action: BillingNextStepEventAction;
-        title: string;
-        note_text?: string;
-        planned_for?: string;
-      };
+      payload: BillingNextStepWritePayload;
     }
   | {
       ok: false;
@@ -956,17 +961,7 @@ export type BillingNextStepSubmitResult =
 export type BillingNextStepSubmitterDeps = {
   refreshDetail: () => Promise<void>;
   setSubmitting: (isSubmitting: boolean) => void;
-  submitNextStep: (payload: {
-    parent_event_id?: number;
-    target_type: BillingNextStepTargetType;
-    target_id?: number;
-    related_issue_key?: string;
-    step_type: BillingNextStepType;
-    event_action: BillingNextStepEventAction;
-    title: string;
-    note_text?: string;
-    planned_for?: string;
-  }) => Promise<unknown>;
+  submitNextStep: (payload: BillingNextStepWritePayload) => Promise<unknown>;
 };
 
 export type BillingPaymentReviewStatusCode =
@@ -4107,7 +4102,7 @@ function nextStepTargetLabel(event: BillingNextStepEventRecord): string {
 export function buildBillingNextStepRows(
   events: BillingNextStepEventRecord[],
   options: {
-    action?: BillingNextStepEventAction;
+    action?: BillingNextStepEventAction | "active";
     targetType?: BillingNextStepTargetType;
     targetId?: number;
     relatedIssueKey?: string;
@@ -4115,9 +4110,10 @@ export function buildBillingNextStepRows(
   } = {},
 ): BillingNextStepRow[] {
   const normalizedIssueKey = options.relatedIssueKey?.trim();
-  const completedParentIds = new Set(
+  const eventIds = new Set(events.map((event) => event.billing_next_step_event_id));
+  const childParentIds = new Set(
     events
-      .filter((event) => event.event_action === "completed" && event.parent_event_id)
+      .filter((event) => event.parent_event_id)
       .map((event) => Number(event.parent_event_id)),
   );
   return events
@@ -4125,8 +4121,11 @@ export function buildBillingNextStepRows(
     .filter((event) => (options.targetId ? event.target_id === options.targetId : true))
     .filter((event) => (normalizedIssueKey ? event.related_issue_key === normalizedIssueKey : true))
     .filter((event) => {
-      if (options.action === "planned") {
-        return event.event_action === "planned" && !completedParentIds.has(event.billing_next_step_event_id);
+      if (options.action === "active") {
+        const canBeActive =
+          event.event_action === "planned" ||
+          (event.event_action === "snoozed" && Boolean(event.parent_event_id) && eventIds.has(Number(event.parent_event_id)));
+        return canBeActive && !childParentIds.has(event.billing_next_step_event_id);
       }
       return options.action ? event.event_action === options.action : true;
     })
@@ -4146,6 +4145,7 @@ export function buildBillingNextStepRows(
       targetId: event.target_id ?? undefined,
       stepType: event.step_type,
       stepTypeLabel: getBillingNextStepTypeLabel(event.step_type),
+      eventAction: event.event_action,
       eventActionLabel: getBillingNextStepActionLabel(event.event_action),
       targetLabel: nextStepTargetLabel(event),
       targetHref: nextStepTargetHref(event),
@@ -4172,7 +4172,7 @@ export function formatLocalCalendarDate(value = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-function parseLocalCalendarDate(value: string | undefined): Date | null {
+export function parseLocalCalendarDate(value: string | undefined): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
   if (!match) {
     return null;
@@ -4187,7 +4187,7 @@ function parseLocalCalendarDate(value: string | undefined): Date | null {
   return date;
 }
 
-function addLocalCalendarDays(value: string, days: number): string {
+export function addLocalCalendarDays(value: string, days: number): string {
   const date = parseLocalCalendarDate(value);
   if (!date) {
     return value;
@@ -4264,13 +4264,16 @@ export function buildBillingNextStepsOverview(
   events: BillingNextStepsOverviewEvent[],
   { filter = "all", today }: { filter?: BillingNextStepsOverviewFilter; today: string },
 ): BillingNextStepsOverviewView {
-  const completedParentIds = new Set(
+  const childParentIds = new Set(
     events
-      .filter((event) => event.eventAction === "completed" && event.parentEventId)
+      .filter((event) => event.parentEventId)
       .map((event) => Number(event.parentEventId)),
   );
   const allRows = events
-    .filter((event) => event.eventAction === "planned" && !completedParentIds.has(event.eventId))
+    .filter((event) => {
+      const canBeActive = event.eventAction === "planned" || (event.eventAction === "snoozed" && Boolean(event.parentEventId));
+      return canBeActive && !childParentIds.has(event.eventId);
+    })
     .map((event) => {
       const dateStatus = getOverviewDateStatus(event.plannedFor, today);
       const target = getOverviewTarget(event);
@@ -4287,6 +4290,8 @@ export function buildBillingNextStepsOverview(
         title: safeBillingText(event.title, "Następny krok"),
         stepType: event.stepType,
         stepTypeLabel: getBillingNextStepTypeLabel(event.stepType),
+        eventAction: event.eventAction,
+        eventActionLabel: getBillingNextStepActionLabel(event.eventAction),
         targetType: event.targetType,
         completionTargetType: target.completionTargetType,
         targetId: event.targetId,
@@ -5038,16 +5043,16 @@ export function buildBillingNextStepRequest({
     };
   }
 
-  if (eventAction === "completed" && (!parentEventId || !Number.isFinite(parentEventId))) {
+  if (["completed", "snoozed"].includes(eventAction) && (!parentEventId || !Number.isFinite(parentEventId))) {
     return {
       ok: false,
-      message: "Zakończony krok wymaga wskazania konkretnego kroku planned.",
+      message: "Zmiana stanu wymaga wskazania konkretnego aktywnego kroku.",
     };
   }
-  if (eventAction !== "completed" && parentEventId !== undefined) {
+  if (eventAction === "planned" && parentEventId !== undefined) {
     return {
       ok: false,
-      message: "Tylko zakończony krok może wskazywać krok bazowy.",
+      message: "Krok planned nie może wskazywać kroku bazowego.",
     };
   }
 
@@ -5110,6 +5115,53 @@ export function buildBillingNextStepRequest({
       ...(trimmedPlannedFor ? { planned_for: trimmedPlannedFor } : {}),
     },
   };
+}
+
+export function buildBillingNextStepSnoozeRequest({
+  parentEventId,
+  currentPlannedFor,
+  plannedFor,
+  noteText = "",
+  organizationId,
+}: {
+  parentEventId: number;
+  currentPlannedFor?: string;
+  plannedFor: string;
+  noteText?: string;
+  organizationId: string | number | null | undefined;
+}): BillingNextStepValidationResult {
+  if (!canUseBillingOrganizationScope(organizationId)) {
+    return { ok: false, message: BILLING_ORGANIZATION_REQUIRED_TITLE };
+  }
+  if (!Number.isFinite(parentEventId) || parentEventId <= 0) {
+    return { ok: false, message: "Odłożenie wymaga wskazania konkretnego aktywnego kroku." };
+  }
+  const normalizedDate = plannedFor.trim();
+  if (!parseLocalCalendarDate(normalizedDate)) {
+    return { ok: false, message: "Wybierz poprawną nową datę odłożenia." };
+  }
+  const normalizedCurrentDate = currentPlannedFor?.trim();
+  if (normalizedCurrentDate && parseLocalCalendarDate(normalizedCurrentDate) && normalizedDate <= normalizedCurrentDate) {
+    return { ok: false, message: "Nowa data musi być późniejsza niż obecny termin." };
+  }
+  const trimmedNote = noteText.trim();
+  if (trimmedNote.length > BILLING_NEXT_STEP_NOTE_MAX_LENGTH) {
+    return { ok: false, message: `Notatka kroku może mieć maksymalnie ${BILLING_NEXT_STEP_NOTE_MAX_LENGTH} znaków.` };
+  }
+  return {
+    ok: true,
+    payload: {
+      parent_event_id: parentEventId,
+      event_action: "snoozed",
+      planned_for: normalizedDate,
+      ...(trimmedNote ? { note_text: trimmedNote } : {}),
+    },
+  };
+}
+
+export function suggestBillingNextStepSnoozeDate(currentPlannedFor?: string, today = formatLocalCalendarDate()): string {
+  const baseDate = parseLocalCalendarDate(currentPlannedFor) ? currentPlannedFor! : today;
+  return addLocalCalendarDays(baseDate, 1);
 }
 
 export function buildBillingPaymentReviewStatusRequest(

@@ -44,6 +44,7 @@ const issueKey = "payment:61:payer-only:wplata-do-wyjasnienia";
 let submittedPayload = null;
 let submittedOrganizationId = null;
 const submittedPayloads = [];
+let failNextSnooze = true;
 const nextStepEvents = [
   {
     billing_next_step_event_id: 7001,
@@ -64,7 +65,15 @@ const api = {
     submittedPayload = payload;
     submittedOrganizationId = organizationId;
     submittedPayloads.push(payload);
+    if (payload.event_action === "snoozed" && failNextSnooze) {
+      failNextSnooze = false;
+      throw new Error("Kontrolowany blad snooze");
+    }
+    const parent = payload.parent_event_id
+      ? nextStepEvents.find((event) => Number(event.billing_next_step_event_id) === Number(payload.parent_event_id))
+      : null;
     const event = {
+      ...(payload.event_action === "snoozed" ? parent : null),
       billing_next_step_event_id: 7001 + nextStepEvents.length,
       organization_id: Number(organizationId),
       created_at: `2026-12-${String(nextStepEvents.length + 1).padStart(2, "0")}T11:00:00`,
@@ -189,6 +198,12 @@ function setInputValue(input, value) {
   input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 }
 
+async function settle() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 async function run() {
   const container = document.getElementById("root");
   const root = createRoot(container);
@@ -237,22 +252,66 @@ async function run() {
     button.textContent.includes("Oznacz jako wykonany"),
   );
   assert.ok(completeButton, "Aktywny krok powinien miec akcje completed");
+  const snoozeButton = Array.from(plannedRow.querySelectorAll("button")).find((button) => button.textContent.trim() === "Odłóż");
+  assert.ok(snoozeButton, "Aktywny krok powinien miec akcje snooze");
 
   await act(async () => {
-    completeButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
-    completeButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    snoozeButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
   });
+  let snoozeForm = plannedRow.querySelector('form[data-snooze-form-id="7001"]');
+  let snoozeDateInput = snoozeForm.querySelector('input[type="date"]');
+  assert.equal(snoozeDateInput.value, "2026-12-21");
+
+  await act(async () => setInputValue(snoozeDateInput, "2026-12-20"));
+  await act(async () => snoozeForm.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  assert.equal(submittedPayloads.filter((payload) => payload.event_action === "snoozed").length, 0);
+  assert.match(snoozeForm.textContent, /późniejsza/);
+
+  await act(async () => setInputValue(snoozeDateInput, "2026-12-22"));
+  await act(async () => snoozeForm.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  await settle();
+  snoozeForm = container.querySelector('form[data-snooze-form-id="7001"]');
+  snoozeDateInput = snoozeForm.querySelector('input[type="date"]');
+  assert.equal(snoozeDateInput.value, "2026-12-22", "Formularz i data musza pozostac po bledzie");
+
+  await act(async () => {
+    snoozeForm.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    snoozeForm.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+  });
+  await settle();
+  const snoozedPayloads = submittedPayloads.filter((payload) => payload.event_action === "snoozed");
+  assert.equal(snoozedPayloads.length, 2, "Po bledzie tylko jedno ponowienie powinno wejsc in-flight");
+  assert.deepEqual(snoozedPayloads[1], {
+    parent_event_id: 7001,
+    event_action: "snoozed",
+    planned_for: "2026-12-22",
+  });
+  assert.equal(snoozedPayloads[1].target_type, undefined, "Klient nie przesyla targetu przy snooze");
+
+  const snoozedRow = Array.from(container.querySelectorAll(".module-readiness__item")).find((candidate) =>
+    candidate.textContent.includes("Sprawdzic istniejacy krok") && candidate.textContent.includes("Odłożono"),
+  );
+  assert.ok(snoozedRow, "Nowy event snoozed powinien byc aktywnym lisciem");
+  assert.equal(plannedRow.isConnected, false, "Rodzic planned powinien zniknac z aktywnej listy");
+  const snoozedCompleteButton = Array.from(snoozedRow.querySelectorAll("button")).find((button) =>
+    button.textContent.includes("Oznacz jako wykonany"),
+  );
+  await act(async () => {
+    snoozedCompleteButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    snoozedCompleteButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  });
+  await settle();
 
   const completedPayloads = submittedPayloads.filter((payload) => payload.event_action === "completed");
   assert.equal(completedPayloads.length, 1, "Podwojne klikniecie nie powinno wyslac drugiego zadania");
   assert.deepEqual(completedPayloads[0], {
-    parent_event_id: 7001,
+    parent_event_id: 7003,
     target_type: "work_queue_issue",
     related_issue_key: issueKey,
     step_type: "check_payment",
     event_action: "completed",
     title: "Sprawdzic istniejacy krok",
-    planned_for: "2026-12-20",
+    planned_for: "2026-12-22",
   });
   assert.match(container.textContent, /Wykonano/);
   assert.equal(

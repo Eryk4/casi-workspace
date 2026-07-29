@@ -943,14 +943,24 @@ The stage adds `billing_next_step_events` and a minimal organization-scoped API 
 
 This is not a calendar, reminder system, task manager, message sender, payment allocation, accounting action, charge mutation, balance mutation, import flow, AI workflow, PDF export, or spreadsheet export. `planned_for` is informational only.
 
-The append-only `completed` action is available on the work queue, payer detail, and aggregate next-steps view. `snoozed` UI and any automation still require a separate product and security review.
+The append-only `completed` and `snoozed` actions are available on the work queue, payer detail, and aggregate next-steps view. Payment detail remains read-only for next-step actions. Automation still requires a separate product and security review.
 
 ### Stage 2j: Aggregate next billing steps
 
 Status: implemented at `/rozliczenia/kroki` as an organization-scoped operational view.
 
-The view answers which billing actions are currently active. An active item is one concrete `planned` event without a `completed` event linked to it by `parent_event_id`. The planned event ID is the identity of the item: events are never grouped or deduplicated by title, date, step type, target, or any combination of text fields. A legacy `completed` event without `parent_event_id` remains history and closes no planned item.
+The view answers which billing actions are currently active. An active item is the leaf of one concrete append-only history: either a `planned` event or a correctly linked `snoozed` event with no child pointing to it through `parent_event_id`. Each event ID is the identity of that version of the item; events are never grouped or deduplicated by title, date, step type, target, or any combination of text fields. Legacy `completed` and `snoozed` events without `parent_event_id` remain history and do not close or create active items.
 
 The read-only endpoint returns active events for exactly one selected organization in one bounded query. The UI classifies the calendar-only `planned_for` value as overdue, today, within the next seven days, later, or without a date. Dated items are sorted ascending; missing dates are last, with `created_at` and event ID providing deterministic tie-breaking. Known payer, payment, work queue issue, and billing summary targets receive stable links where such routes exist. Missing or historical targets use a safe fallback and do not break the list.
 
-The page does not create steps and introduces no new write path. It only reuses the existing append-only `completed` contract with the exact planned event ID as `parent_event_id`. Completing one of two identical items removes only that item. The page does not expose `snoozed`, editing, deletion, bulk actions, reminders, automation, calendar integration, notifications, or message sending. Opening and filtering the page do not change financial tables or event logs.
+The page does not create new `planned` steps. It reuses the existing append-only event write path for `completed` and `snoozed`, always with the exact active event ID as `parent_event_id`. Completing or snoozing one of two identical items affects only that item. The page does not expose editing, deletion, bulk actions, reminders, automation, calendar integration, notifications, or message sending. Opening and filtering the page do not change financial tables or event logs.
+
+### Stage 2k: Snooze next billing step
+
+Status: implemented as `snoozed v1` on `/rozliczenia/sprawy`, `/rozliczenia/platnicy/{payerId}`, and `/rozliczenia/kroki`.
+
+The append-only chain is `planned → snoozed → snoozed → completed`. A `snoozed` event must point to exactly one active `planned` or correctly linked `snoozed` parent. It becomes the new active leaf and never edits or deletes its parent. `completed` can terminate an active `planned` or `snoozed` leaf. The existing unique index on `parent_event_id` allows only one direct transition from a parent, so competing snooze and completion requests cannot both succeed.
+
+Snooze requires a new calendar date in `YYYY-MM-DD` format. When the parent has `planned_for`, the new date must be later; when it has no date, any valid calendar date is accepted. Dates are not converted through UTC. The server inherits organization, target, related issue key, step type, and title from the parent and rejects attempts to change that identity. Cross-organization lookup returns a safe not-found response.
+
+The only intended write effects are a new row in `billing_next_step_events` and a sanitized audit row in `event_logs`. Financial transactions, charges, payment matches, payer ledger entries, balances, reminders, messages, automation, and calendar data are unchanged. The UI provides one-step snooze with explicit date confirmation and no edit, delete, or bulk action. Payment detail remains read-only.

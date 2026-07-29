@@ -79,6 +79,7 @@ const {
   buildBillingContactEventRequest,
   buildBillingContactCenterView,
   buildBillingNextStepRequest,
+  buildBillingNextStepSnoozeRequest,
   buildBillingNextStepRows,
   buildBillingPaymentReviewStatusRequest,
   buildBillingWorkQueueDecisionRequest,
@@ -143,6 +144,7 @@ const {
   readBillingPayers,
   readBillingStudents,
   readBillingTransactions,
+  suggestBillingNextStepSnoozeDate,
 } = require("../src/modules/billing/billingModel.ts");
 
 function makeBalance(overrides = {}) {
@@ -1112,12 +1114,12 @@ const duplicatePlannedWorkQueueEvent = {
 };
 const duplicateRowsBeforeCompletion = buildBillingNextStepRows(
   [nextStepEvents.events[0], duplicatePlannedWorkQueueEvent],
-  { action: "planned" },
+  { action: "active" },
 );
 assert.equal(duplicateRowsBeforeCompletion.length, 2);
 assert.deepEqual(duplicateRowsBeforeCompletion.map((row) => row.eventId), [1005, 1001]);
 const completedWorkQueueHistory = [nextStepEvents.events[0], duplicatePlannedWorkQueueEvent, completedWorkQueueEvent];
-const activeDuplicateRows = buildBillingNextStepRows(completedWorkQueueHistory, { action: "planned" });
+const activeDuplicateRows = buildBillingNextStepRows(completedWorkQueueHistory, { action: "active" });
 assert.equal(activeDuplicateRows.length, 1);
 assert.equal(activeDuplicateRows[0].eventId, 1005);
 assert.equal(buildBillingNextStepRows(completedWorkQueueHistory, { action: "completed" }).length, 1);
@@ -1128,9 +1130,25 @@ const legacyUnlinkedCompletion = {
   created_at: "2099-05-14T10:00:00",
 };
 assert.equal(
-  buildBillingNextStepRows([nextStepEvents.events[0], legacyUnlinkedCompletion], { action: "planned" }).length,
+  buildBillingNextStepRows([nextStepEvents.events[0], legacyUnlinkedCompletion], { action: "active" }).length,
   1,
 );
+const linkedSnoozedEvent = {
+  ...nextStepEvents.events[0],
+  billing_next_step_event_id: 1007,
+  parent_event_id: 1001,
+  event_action: "snoozed",
+  planned_for: "2099-05-14",
+  created_at: "2099-05-13T10:00:00",
+};
+const legacyUnlinkedSnoozedEvent = { ...linkedSnoozedEvent, billing_next_step_event_id: 1008, parent_event_id: null };
+const orphanSnoozedEvent = { ...linkedSnoozedEvent, billing_next_step_event_id: 1009, parent_event_id: 9999 };
+const snoozedLeafRows = buildBillingNextStepRows(
+  [nextStepEvents.events[0], linkedSnoozedEvent, duplicatePlannedWorkQueueEvent, legacyUnlinkedSnoozedEvent, orphanSnoozedEvent],
+  { action: "active" },
+);
+assert.deepEqual(snoozedLeafRows.map((row) => row.eventId), [1007, 1005]);
+assert.equal(snoozedLeafRows.find((row) => row.eventId === 1007).eventActionLabel, "Odłożono");
 assert.deepEqual(buildBillingNextStepRequest({
   targetType: "work_queue_issue",
   relatedIssueKey: issueToHandle.issueKey,
@@ -1152,6 +1170,24 @@ assert.deepEqual(buildBillingNextStepRequest({
     planned_for: "2099-05-12",
   },
 });
+assert.deepEqual(buildBillingNextStepSnoozeRequest({
+  parentEventId: 1001,
+  currentPlannedFor: "2099-05-12",
+  plannedFor: "2099-05-14",
+  organizationId: "42",
+}), {
+  ok: true,
+  payload: {
+    parent_event_id: 1001,
+    event_action: "snoozed",
+    planned_for: "2099-05-14",
+  },
+});
+assert.equal(buildBillingNextStepSnoozeRequest({ parentEventId: 1001, currentPlannedFor: "2099-05-12", plannedFor: "", organizationId: "42" }).ok, false);
+assert.equal(buildBillingNextStepSnoozeRequest({ parentEventId: 1001, currentPlannedFor: "2099-05-12", plannedFor: "2099-05-12", organizationId: "42" }).ok, false);
+assert.equal(buildBillingNextStepSnoozeRequest({ parentEventId: 1001, currentPlannedFor: "2099-05-12", plannedFor: "2099-05-11", organizationId: "42" }).ok, false);
+assert.equal(buildBillingNextStepSnoozeRequest({ parentEventId: 1001, plannedFor: "2099-02-31", organizationId: "42" }).ok, false);
+assert.equal(suggestBillingNextStepSnoozeDate("2099-05-12", "2099-01-01"), "2099-05-13");
 assert.deepEqual(buildBillingNextStepRequest({
   parentEventId: plannedNextStepRows[0].eventId,
   targetType: plannedNextStepRows[0].targetType,
@@ -1409,7 +1445,7 @@ assert.doesNotMatch(payerDetailPageSource, /Wyślij SMS|Wyślij e-mail|Wyślij p
 const paymentDetailPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingPaymentDetailPage.tsx"), "utf8");
 assert.match(paymentDetailPageSource, /Następny krok/);
 assert.match(paymentDetailPageSource, /BILLING_NEXT_STEP_HELP_TEXT/);
-assert.doesNotMatch(paymentDetailPageSource, /Oznacz jako wykonany|addBillingNextStepEvent/);
+assert.doesNotMatch(paymentDetailPageSource, /Oznacz jako wykonany|Odłóż|addBillingNextStepEvent/);
 assert.doesNotMatch(paymentDetailPageSource, /Wyślij SMS|Wyślij e-mail|Wyślij przypomnienie|Dodaj płatność|Dopasuj wpłatę|Dodaj do kalendarza/i);
 const contactCenterPageSource = fs.readFileSync(path.join(srcRoot, "modules", "billing", "BillingContactCenterPage.tsx"), "utf8");
 assert.match(contactCenterPageSource, /Kontakty rozliczeniowe/);

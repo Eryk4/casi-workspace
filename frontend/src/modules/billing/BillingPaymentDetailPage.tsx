@@ -186,7 +186,7 @@ export function BillingPaymentDetailPage({ paymentId }: { paymentId: number }) {
 
   const detail = useMemo<BillingPaymentDetailView | null>(() => (snapshot ? buildBillingPaymentDetailView(snapshot, paymentId) : null), [paymentId, snapshot]);
   const nextStepRows = useMemo(
-    () => buildBillingNextStepRows(snapshot?.nextStepEvents ?? [], { action: "planned", targetType: "payment", targetId: paymentId, limit: 5 }),
+    () => buildBillingNextStepRows(snapshot?.nextStepEvents ?? [], { action: "active", targetType: "payment", targetId: paymentId, limit: 5 }),
     [paymentId, snapshot?.nextStepEvents],
   );
   const organizationMissing = organizationStatus === "ready" && !canUseBillingOrganizationScope(selectedOrganizationId);

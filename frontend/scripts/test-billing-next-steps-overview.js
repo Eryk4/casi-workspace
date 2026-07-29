@@ -51,6 +51,8 @@ const events = [
   { ...base, eventId: 22, targetType: "payment", targetId: 8, title: "Wpłata" },
   { ...base, eventId: 23, targetType: "work_queue_issue", relatedIssueKey: "issue:1", title: "Sprawa" },
   { ...base, eventId: 24, targetType: "future_target", targetId: 9, title: "Nieznany" },
+  { ...base, eventId: 25, eventAction: "snoozed", parentEventId: 18, plannedFor: "2026-12-24", createdAt: "2026-12-02T10:00:00" },
+  { ...base, eventId: 26, eventAction: "snoozed", plannedFor: "2026-12-24", createdAt: "2026-12-02T10:00:00" },
 ];
 
 const view = buildBillingNextStepsOverview(events, { today: "2026-12-18" });
@@ -60,9 +62,11 @@ assert.equal(view.counts.today, 1);
 assert.equal(view.counts["next-7-days"], 4);
 assert.equal(view.counts.later, 1);
 assert.equal(view.counts["no-date"], 5);
-assert.deepEqual(view.allRows.slice(0, 7).map((row) => row.eventId), [10, 11, 16, 18, 12, 13, 14]);
+assert.deepEqual(view.allRows.slice(0, 7).map((row) => row.eventId), [10, 11, 16, 12, 25, 13, 14]);
 assert.ok(view.allRows.some((row) => row.eventId === 16));
-assert.ok(view.allRows.some((row) => row.eventId === 18));
+assert.ok(!view.allRows.some((row) => row.eventId === 18));
+assert.ok(view.allRows.some((row) => row.eventId === 25 && row.eventActionLabel === "Odłożono"));
+assert.ok(!view.allRows.some((row) => row.eventId === 26));
 assert.ok(!view.allRows.some((row) => row.eventId === 17));
 assert.equal(view.allRows.filter((row) => row.title === "Identyczny krok" && row.eventId !== 17).length, 8);
 
