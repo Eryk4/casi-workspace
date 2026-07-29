@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useActiveOrganization } from "@/context/ActiveOrganizationContext";
+import { useInternalNotificationCount } from "@/context/InternalNotificationCountContext";
+import { formatUnreadCount } from "@/modules/notifications/internalNotificationsModel";
 import { shouldShowTopbarPrimaryAction } from "./appShellModel";
 
 type TopbarProps = {
@@ -31,6 +33,8 @@ export function Topbar({ currentModule, pathname, sessionAttention = false }: To
   } = useActiveOrganization();
   const showOrganizationSelector = organizations.length > 0 || organizationStatus === "loading";
   const organizationSelectorDisabled = organizationStatus === "loading" || organizations.length <= 1;
+  const { unreadCount } = useInternalNotificationCount();
+  const unreadCountLabel = formatUnreadCount(unreadCount);
 
   return (
     <header className="app-topbar">
@@ -88,10 +92,10 @@ export function Topbar({ currentModule, pathname, sessionAttention = false }: To
             {currentModule.actionLabel}
           </Button>
         ) : null}
-        <button className="app-topbar__icon-button" type="button" aria-label="Powiadomienia">
+        <Link className="app-topbar__icon-button" href="/powiadomienia" aria-label="Powiadomienia">
           <Bell aria-hidden="true" size={17} />
-          <span>3</span>
-        </button>
+          {unreadCountLabel ? <span>{unreadCountLabel}</span> : null}
+        </Link>
         <button className="app-topbar__icon-button" type="button" aria-label="Pomoc">
           <CircleHelp aria-hidden="true" size={17} />
         </button>

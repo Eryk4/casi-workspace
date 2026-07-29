@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
+  Bell,
   Bot,
   Building2,
   ClipboardList,
@@ -28,7 +29,8 @@ export type NavigationItem = {
     | "crm"
     | "work-items"
     | "reports"
-    | "settings";
+    | "settings"
+    | "notifications";
   label: string;
   path: string;
   icon: LucideIcon;
@@ -69,6 +71,19 @@ export const navigationItems: NavigationItem[] = [
     actionLabel: "OdĹ›wieĹĽ pulpit dnia",
     readiness: "live",
     readinessLabel: "Produkt v1",
+  },
+  {
+    id: "notifications",
+    label: "Powiadomienia",
+    path: "/powiadomienia",
+    icon: Bell,
+    group: "core",
+    component: "InternalNotificationsPage",
+    description: "Trwała skrzynka wewnętrznych sygnałów wymagających uwagi.",
+    actionLabel: "Sprawdź nowe powiadomienia",
+    readiness: "live",
+    readinessLabel: "Produkt v1",
+    primaryEndpoint: "/api/internal-notifications",
   },
   {
     id: "assistant-ceo",

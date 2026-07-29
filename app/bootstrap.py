@@ -14,6 +14,7 @@ from app.repositories.event_repository import EventRepository
 from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.invoice_handoff_repository import InvoiceHandoffRepository
 from app.repositories.invoice_ksef_override_repository import InvoiceKSeFOverrideRepository
+from app.repositories.internal_notification_repository import InternalNotificationRepository
 from app.repositories.intake_repository import IntakeRepository
 from app.repositories.knowledge_repository import KnowledgeRepository
 from app.repositories.ksef_import_repository import KSeFImportRepository
@@ -42,6 +43,7 @@ from app.services.dashboard_view_service import DashboardViewService
 from app.services.notification_service import NotificationService
 from app.services.organization_service import OrganizationService
 from app.services.intake_service import IntakeService
+from app.services.internal_notification_service import InternalNotificationService
 from app.services.search_service import SearchService
 from app.services.storage_service import LocalStorageService, S3StorageService, StorageError, StorageService
 from app.services.system_settings_service import SystemSettingsService
@@ -93,6 +95,7 @@ def build_services() -> dict[str, object]:
     invoice_handoff_repository = InvoiceHandoffRepository()
     invoice_ksef_override_repository = InvoiceKSeFOverrideRepository()
     task_template_repository = TaskTemplateRepository()
+    internal_notification_repository = InternalNotificationRepository()
     duplicate_detector = DuplicateDetector(invoice_repository)
     notification_service = NotificationService(event_repository)
     storage_service = build_storage_service()
@@ -209,6 +212,14 @@ def build_services() -> dict[str, object]:
         organization_repository=organization_repository,
         billing_ledger_service=billing_ledger_service,
     )
+    internal_notification_service = InternalNotificationService(
+        repository=internal_notification_repository,
+        billing_service=billing_service,
+        event_repository=event_repository,
+        organization_repository=organization_repository,
+        organization_service=organization_service,
+        user_repository=user_repository,
+    )
     dashboard_view_service = DashboardViewService(
         dashboard_view_repository=dashboard_view_repository,
         event_repository=event_repository,
@@ -269,6 +280,7 @@ def build_services() -> dict[str, object]:
         "invoice_handoff_repository": invoice_handoff_repository,
         "invoice_ksef_override_repository": invoice_ksef_override_repository,
         "task_template_repository": task_template_repository,
+        "internal_notification_repository": internal_notification_repository,
         "contractor_repository": contractor_repository,
         "email_import_repository": email_import_repository,
         "ksef_import_repository": ksef_import_repository,
@@ -290,6 +302,7 @@ def build_services() -> dict[str, object]:
         "billing_ledger_service": billing_ledger_service,
         "approval_service": approval_service,
         "billing_service": billing_service,
+        "internal_notification_service": internal_notification_service,
         "dashboard_view_service": dashboard_view_service,
         "automation_service": automation_service,
         "whiteboard_service": whiteboard_service,

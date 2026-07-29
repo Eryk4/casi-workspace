@@ -43,6 +43,8 @@ Currently allowlisted JSON write paths:
 | `PATCH` | `/api/organization-shared-note` | Notes | `shared_note_text` | `tests.test_http_server_system` |
 | `PATCH` | `/api/user-personal-note` | Notes | `personal_note_text` | `tests.test_http_server_system` |
 | `POST` | `/api/tasks/{id}/snooze-reminder` | Tasks/reminders | `mode` | `tests.test_task_http` |
+| `POST` | `/api/internal-notifications/materialize-attention` | Internal notifications | empty JSON object only | `tests.test_internal_notifications` |
+| `POST` | `/api/internal-notifications/{id}/state` | Internal notifications | `action` | `tests.test_internal_notifications` |
 | `POST` | `/api/knowledge/documents/{id}/restore-version` | Knowledge | `version_number` | `tests.test_http_server_access` |
 | `POST` | `/api/knowledge/documents/{id}/mark-official-version` | Knowledge | `version_number` | `tests.test_http_server_access` |
 | `POST` | `/api/tasks/{id}/checklist` | Tasks | `item_text` | `tests.test_task_http` |

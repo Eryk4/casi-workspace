@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 
 import { findNavigationItem } from "@/config/navigation";
 import { ActiveOrganizationProvider, useActiveOrganization } from "@/context/ActiveOrganizationContext";
+import { InternalNotificationCountProvider } from "@/context/InternalNotificationCountContext";
 import { AUTH_REQUIRED_EVENT } from "@/lib/api";
 
 import { shouldClearSessionAttentionForPath } from "./appShellModel";
@@ -43,15 +44,17 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <ActiveOrganizationProvider>
-      <AppShellFrame
-        currentModule={currentModule}
-        pathname={pathname}
-        sessionAttention={sessionAttention}
-        sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
-      >
-        {children}
-      </AppShellFrame>
+      <InternalNotificationCountProvider>
+        <AppShellFrame
+          currentModule={currentModule}
+          pathname={pathname}
+          sessionAttention={sessionAttention}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
+        >
+          {children}
+        </AppShellFrame>
+      </InternalNotificationCountProvider>
     </ActiveOrganizationProvider>
   );
 }

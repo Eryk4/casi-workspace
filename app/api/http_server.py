@@ -76,6 +76,7 @@ from app.domain.constants import (
 )
 from app.services.auth_service import AuthError, PermissionError
 from app.services.knowledge_service import KnowledgeError
+from app.services.internal_notification_service import InternalNotificationNotFoundError
 from app.services.organization_service import OrganizationError, OrganizationPermissionError
 from app.services.system_settings_service import SystemSettingsError
 from app.services.storage_service import StorageError, StorageNotFoundError
@@ -138,6 +139,10 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
         @property
         def billing_service(self):
             return services["billing_service"]
+
+        @property
+        def internal_notification_service(self):
+            return services["internal_notification_service"]
 
         @property
         def whiteboard_service(self):
@@ -1323,6 +1328,46 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(attention)
+            if path == "/api/internal-notifications":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                if organization_id is None:
+                    return self._send_json({"error": "Wybierz organizacje dla centrum powiadomien."}, status=400)
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 50
+                try:
+                    result = self.internal_notification_service.list_notifications(
+                        organization_id=int(organization_id),
+                        recipient_user_id=int(user["user_id"]),
+                        actor_user=user,
+                        filter_name=self._query_one(query, "filter") or "inbox",
+                        limit=min(max(limit, 1), 100),
+                        cursor=self._query_one(query, "cursor") or None,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result)
+            if path == "/api/internal-notifications/unread-count":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                if organization_id is None:
+                    return self._send_json({"error": "Wybierz organizacje dla centrum powiadomien."}, status=400)
+                try:
+                    result = self.internal_notification_service.unread_count(
+                        organization_id=int(organization_id),
+                        recipient_user_id=int(user["user_id"]),
+                        actor_user=user,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result)
             if path == "/api/billing/schools":
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:
@@ -1688,6 +1733,62 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     {"ok": True},
                     extra_headers=[("Set-Cookie", self._build_clear_cookie())],
                 )
+
+            if path == "/api/internal-notifications/materialize-attention":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                if organization_id is None:
+                    return self._send_json({"error": "Wybierz organizacje dla centrum powiadomien."}, status=400)
+                payload = self._read_json()
+                if payload:
+                    return self._send_json(
+                        {"error": "Materializacja nie przyjmuje pol payloadu."},
+                        status=400,
+                    )
+                try:
+                    result = self.internal_notification_service.materialize_billing_attention(
+                        organization_id=int(organization_id),
+                        recipient_user_id=int(user["user_id"]),
+                        trigger_actor_user=user,
+                        trigger_actor=self._actor_label(user),
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result, status=201)
+
+            if path.startswith("/api/internal-notifications/") and path.endswith("/state"):
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                if organization_id is None:
+                    return self._send_json({"error": "Wybierz organizacje dla centrum powiadomien."}, status=400)
+                notification_id = self._extract_id(path, "/api/internal-notifications/", suffix="/state")
+                if notification_id is None:
+                    return self._not_found()
+                payload = self._read_json()
+                if any(key not in {"action"} for key in payload):
+                    return self._send_json({"error": "Endpoint przyjmuje tylko pole action."}, status=400)
+                try:
+                    result = self.internal_notification_service.add_state_event(
+                        notification_id,
+                        str(payload.get("action") or ""),
+                        organization_id=int(organization_id),
+                        recipient_user_id=int(user["user_id"]),
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                    )
+                except InternalNotificationNotFoundError:
+                    return self._send_json({"error": "Nie znaleziono powiadomienia."}, status=404)
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result, status=201 if result.get("changed") else 200)
 
             if path == "/api/google-calendar/connect":
                 user = self._require_user(WRITE_ROLES)

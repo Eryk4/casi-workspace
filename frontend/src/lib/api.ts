@@ -246,6 +246,25 @@ export const api = {
     apiRequest<Record<string, unknown>>("/billing/next-step-events/active", { query }),
   billingNextStepAttention: (query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>("/billing/next-step-attention", { query }),
+  internalNotifications: (query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>("/internal-notifications", { query }),
+  internalNotificationUnreadCount: (query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>("/internal-notifications/unread-count", { query }),
+  materializeInternalNotifications: (organizationId?: string | null) =>
+    apiRequest<Record<string, unknown>>("/internal-notifications/materialize-attention", {
+      method: "POST",
+      query: withOrganizationQuery(organizationId),
+    }),
+  updateInternalNotificationState: (
+    notificationId: number | string,
+    action: "read" | "unread" | "archived",
+    organizationId?: string | null,
+  ) =>
+    apiRequest<Record<string, unknown>>(`/internal-notifications/${notificationId}/state`, {
+      method: "POST",
+      body: { action },
+      query: withOrganizationQuery(organizationId),
+    }),
   billingPayers: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/payers", { query }),
   billingPayerNotes: (payerId: number | string, query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>(`/billing/payers/${payerId}/notes`, { query }),

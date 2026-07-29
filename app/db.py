@@ -1110,6 +1110,56 @@ CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_target
 CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_issue
     ON billing_next_step_events(organization_id, related_issue_key, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS internal_notifications (
+    internal_notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    recipient_user_id INTEGER NOT NULL,
+    source_type TEXT NOT NULL,
+    source_event_id INTEGER NOT NULL,
+    reason_code TEXT NOT NULL,
+    detected_on TEXT NOT NULL,
+    planned_for TEXT,
+    title_snapshot TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id INTEGER,
+    related_issue_key TEXT,
+    target_label_snapshot TEXT NOT NULL,
+    internal_link_snapshot TEXT,
+    dedupe_key TEXT NOT NULL,
+    created_by_user_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL,
+    CHECK (source_type = 'billing_next_step_attention'),
+    CHECK (reason_code IN ('overdue', 'due_today'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_notifications_dedupe_key
+    ON internal_notifications(dedupe_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_notifications_source_unique
+    ON internal_notifications(organization_id, recipient_user_id, source_type, source_event_id, reason_code);
+CREATE INDEX IF NOT EXISTS idx_internal_notifications_recipient_created
+    ON internal_notifications(organization_id, recipient_user_id, created_at DESC, internal_notification_id DESC);
+
+CREATE TABLE IF NOT EXISTS internal_notification_state_events (
+    internal_notification_state_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    notification_id INTEGER NOT NULL,
+    organization_id INTEGER NOT NULL,
+    recipient_user_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    actor_user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (notification_id) REFERENCES internal_notifications(internal_notification_id) ON DELETE CASCADE,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    FOREIGN KEY (actor_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    CHECK (action IN ('read', 'unread', 'archived'))
+);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_state_latest
+    ON internal_notification_state_events(notification_id, created_at DESC, internal_notification_state_event_id DESC);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_state_recipient
+    ON internal_notification_state_events(organization_id, recipient_user_id, notification_id);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_id INTEGER NOT NULL,
@@ -2562,6 +2612,66 @@ CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_target
 CREATE INDEX IF NOT EXISTS idx_billing_next_step_events_issue
     ON billing_next_step_events(organization_id, related_issue_key, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS internal_notifications (
+    internal_notification_id BIGSERIAL PRIMARY KEY,
+    organization_id BIGINT NOT NULL,
+    recipient_user_id BIGINT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_event_id BIGINT NOT NULL,
+    reason_code TEXT NOT NULL,
+    detected_on TEXT NOT NULL,
+    planned_for TEXT,
+    title_snapshot TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id BIGINT,
+    related_issue_key TEXT,
+    target_label_snapshot TEXT NOT NULL,
+    internal_link_snapshot TEXT,
+    dedupe_key TEXT NOT NULL,
+    created_by_user_id BIGINT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_internal_notifications_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    CONSTRAINT fk_internal_notifications_recipient
+        FOREIGN KEY (recipient_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    CONSTRAINT fk_internal_notifications_creator
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE SET NULL,
+    CONSTRAINT chk_internal_notifications_source
+        CHECK (source_type = 'billing_next_step_attention'),
+    CONSTRAINT chk_internal_notifications_reason
+        CHECK (reason_code IN ('overdue', 'due_today'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_notifications_dedupe_key
+    ON internal_notifications(dedupe_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_notifications_source_unique
+    ON internal_notifications(organization_id, recipient_user_id, source_type, source_event_id, reason_code);
+CREATE INDEX IF NOT EXISTS idx_internal_notifications_recipient_created
+    ON internal_notifications(organization_id, recipient_user_id, created_at DESC, internal_notification_id DESC);
+
+CREATE TABLE IF NOT EXISTS internal_notification_state_events (
+    internal_notification_state_event_id BIGSERIAL PRIMARY KEY,
+    notification_id BIGINT NOT NULL,
+    organization_id BIGINT NOT NULL,
+    recipient_user_id BIGINT NOT NULL,
+    action TEXT NOT NULL,
+    actor_user_id BIGINT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_internal_notification_state_notification
+        FOREIGN KEY (notification_id) REFERENCES internal_notifications(internal_notification_id) ON DELETE CASCADE,
+    CONSTRAINT fk_internal_notification_state_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    CONSTRAINT fk_internal_notification_state_recipient
+        FOREIGN KEY (recipient_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    CONSTRAINT fk_internal_notification_state_actor
+        FOREIGN KEY (actor_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    CONSTRAINT chk_internal_notification_state_action
+        CHECK (action IN ('read', 'unread', 'archived'))
+);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_state_latest
+    ON internal_notification_state_events(notification_id, created_at DESC, internal_notification_state_event_id DESC);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_state_recipient
+    ON internal_notification_state_events(organization_id, recipient_user_id, notification_id);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id BIGSERIAL PRIMARY KEY,
     invoice_id BIGINT NOT NULL,
@@ -2868,6 +2978,8 @@ PRAGMA foreign_keys = OFF;
   DROP TABLE IF EXISTS user_module_inbox_state;
   DROP TABLE IF EXISTS billing_payer_charge_state;
 DROP TABLE IF EXISTS billing_payer_ledger_entries;
+DROP TABLE IF EXISTS internal_notification_state_events;
+DROP TABLE IF EXISTS internal_notifications;
 DROP TABLE IF EXISTS billing_next_step_events;
 DROP TABLE IF EXISTS billing_contact_events;
 DROP TABLE IF EXISTS billing_work_queue_events;
@@ -2929,6 +3041,8 @@ POSTGRES_RESET_SCRIPT = """
   DROP TABLE IF EXISTS user_module_inbox_state CASCADE;
   DROP TABLE IF EXISTS billing_payer_charge_state CASCADE;
 DROP TABLE IF EXISTS billing_payer_ledger_entries CASCADE;
+DROP TABLE IF EXISTS internal_notification_state_events CASCADE;
+DROP TABLE IF EXISTS internal_notifications CASCADE;
 DROP TABLE IF EXISTS billing_next_step_events CASCADE;
 DROP TABLE IF EXISTS billing_contact_events CASCADE;
 DROP TABLE IF EXISTS billing_work_queue_events CASCADE;
