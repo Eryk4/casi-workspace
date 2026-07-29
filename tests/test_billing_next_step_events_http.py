@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 from app.db import get_connection
 from tests.http_server_support import HttpServerTestCase
@@ -302,6 +303,236 @@ class BillingNextStepEventsHttpTests(HttpServerTestCase):
             {int(item["billing_next_step_event_id"]) for item in foreign_events},
             {int(foreign_event["billing_next_step_event_id"])},
         )
+
+    def test_attention_read_model_is_stable_org_scoped_and_read_only(self) -> None:
+        organization_id = int(self.organization["organization_id"])
+        other_organization_id = int(self.second_organization["organization_id"])
+        as_of_date = "2026-12-18"
+
+        def add(payload: dict[str, object], *, scoped_organization_id: int = organization_id) -> dict[str, object]:
+            return self.services["billing_service"].add_next_step_event(
+                payload,
+                actor_user=self.admin,
+                actor="admin",
+                organization_id=scoped_organization_id,
+            )
+
+        overdue = add(
+            {
+                "target_type": "payer",
+                "target_id": self.payer["billing_payer_id"],
+                "step_type": "call",
+                "event_action": "planned",
+                "title": "Zalegly planned",
+                "planned_for": "2026-12-11",
+            }
+        )
+        due_today = add(
+            {
+                "target_type": "payment",
+                "target_id": self.transaction_id,
+                "step_type": "check_payment",
+                "event_action": "planned",
+                "title": "Krok na dzisiaj",
+                "planned_for": as_of_date,
+            }
+        )
+        future = add(
+            {
+                "target_type": "billing_summary",
+                "step_type": "review_notes",
+                "event_action": "planned",
+                "title": "Krok przyszly",
+                "planned_for": "2026-12-19",
+            }
+        )
+        without_date = add(
+            {
+                "target_type": "billing_summary",
+                "step_type": "review_notes",
+                "event_action": "planned",
+                "title": "Krok bez daty",
+            }
+        )
+        chain_parent = add(
+            {
+                "target_type": "work_queue_issue",
+                "related_issue_key": "attention:chain",
+                "step_type": "clarify_payment",
+                "event_action": "planned",
+                "title": "Lancuch attention",
+                "planned_for": "2026-12-10",
+            }
+        )
+        chain_leaf = add(
+            {
+                "parent_event_id": chain_parent["billing_next_step_event_id"],
+                "event_action": "snoozed",
+                "planned_for": "2026-12-12",
+            }
+        )
+        completed_parent = add(
+            {
+                "target_type": "billing_summary",
+                "step_type": "other",
+                "event_action": "planned",
+                "title": "Krok zakonczony",
+                "planned_for": "2026-12-09",
+            }
+        )
+        completed = add(
+            {
+                "parent_event_id": completed_parent["billing_next_step_event_id"],
+                "target_type": "billing_summary",
+                "step_type": "other",
+                "event_action": "completed",
+                "title": "Krok zakonczony",
+                "planned_for": "2026-12-09",
+            }
+        )
+        duplicate_payload = {
+            "target_type": "billing_summary",
+            "step_type": "other",
+            "event_action": "planned",
+            "title": "Dwa identyczne attention",
+            "planned_for": "2026-12-17",
+        }
+        first_duplicate = add(duplicate_payload)
+        second_duplicate = add(duplicate_payload)
+
+        repository = self.services["billing_service"].billing_repository
+        legacy_snoozed_id = repository.add_next_step_event(
+            {
+                "organization_id": organization_id,
+                "target_type": "billing_summary",
+                "step_type": "other",
+                "event_action": "snoozed",
+                "title": "Legacy snoozed",
+                "planned_for": "2026-12-08",
+                "created_by_user_id": self.admin["user_id"],
+            }
+        )
+        legacy_completed_id = repository.add_next_step_event(
+            {
+                "organization_id": organization_id,
+                "target_type": "payer",
+                "target_id": self.payer["billing_payer_id"],
+                "step_type": "call",
+                "event_action": "completed",
+                "title": "Zalegly planned",
+                "planned_for": "2026-12-11",
+                "created_by_user_id": self.admin["user_id"],
+            }
+        )
+        missing_target_id = repository.add_next_step_event(
+            {
+                "organization_id": organization_id,
+                "target_type": "payer",
+                "target_id": 987654321,
+                "step_type": "call",
+                "event_action": "planned",
+                "title": "Brakujacy target historyczny",
+                "planned_for": "2026-12-16",
+                "created_by_user_id": self.admin["user_id"],
+            }
+        )
+        foreign = add(
+            {
+                "target_type": "billing_summary",
+                "step_type": "other",
+                "event_action": "planned",
+                "title": "Krok obcej organizacji",
+                "planned_for": "2026-12-15",
+            },
+            scoped_organization_id=other_organization_id,
+        )
+
+        read_state_before = self._overview_read_state()
+        attention = self.services["billing_service"].get_next_step_attention(
+            organization_id=organization_id,
+            as_of_date=as_of_date,
+        )
+        with self.assertRaises(ValueError):
+            self.services["billing_service"].get_next_step_attention(
+                organization_id=organization_id,
+                as_of_date="2026-02-31",
+            )
+        self.assertEqual(attention["as_of_date"], as_of_date)
+        self.assertEqual(attention["overdue_count"], 5)
+        self.assertEqual(attention["due_today_count"], 1)
+        self.assertEqual(attention["attention_count"], 6)
+        candidates = attention["candidates"]
+        candidate_ids = [int(item["billing_next_step_event_id"]) for item in candidates]
+        self.assertEqual(
+            candidate_ids,
+            [
+                int(overdue["billing_next_step_event_id"]),
+                int(chain_leaf["billing_next_step_event_id"]),
+                missing_target_id,
+                int(first_duplicate["billing_next_step_event_id"]),
+                int(second_duplicate["billing_next_step_event_id"]),
+                int(due_today["billing_next_step_event_id"]),
+            ],
+        )
+        self.assertNotIn(int(chain_parent["billing_next_step_event_id"]), candidate_ids)
+        self.assertNotIn(int(completed_parent["billing_next_step_event_id"]), candidate_ids)
+        self.assertNotIn(int(completed["billing_next_step_event_id"]), candidate_ids)
+        self.assertNotIn(int(future["billing_next_step_event_id"]), candidate_ids)
+        self.assertNotIn(int(without_date["billing_next_step_event_id"]), candidate_ids)
+        self.assertNotIn(legacy_snoozed_id, candidate_ids)
+        self.assertNotIn(legacy_completed_id, candidate_ids)
+        self.assertNotIn(int(foreign["billing_next_step_event_id"]), candidate_ids)
+        self.assertEqual(candidates[0]["reason_code"], "overdue")
+        self.assertEqual(candidates[-1]["reason_code"], "due_today")
+        missing_candidate = next(item for item in candidates if int(item["billing_next_step_event_id"]) == missing_target_id)
+        self.assertEqual(missing_candidate["target_label"], "Niedostepny platnik historyczny")
+        self.assertIsNone(missing_candidate["target_href"])
+        self.assertEqual(read_state_before, self._overview_read_state())
+
+        with patch("app.services.billing_service.current_local_date_value", return_value=as_of_date):
+            response, payload = self._request(
+                "GET",
+                f"/api/billing/next-step-attention?organization_id={organization_id}",
+                headers={"Cookie": self.cookie},
+            )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        endpoint_attention = json.loads(payload)
+        self.assertEqual(endpoint_attention, attention)
+        self.assertEqual(read_state_before, self._overview_read_state())
+
+        operator_cookie = self._login("next-step-operator", "1234")
+        with patch("app.services.billing_service.current_local_date_value", return_value=as_of_date):
+            response, payload = self._request(
+                "GET",
+                "/api/billing/next-step-attention",
+                headers={"Cookie": operator_cookie},
+            )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        self.assertEqual(json.loads(payload)["organization_id"], organization_id)
+
+        with patch("app.services.billing_service.current_local_date_value", return_value=as_of_date):
+            response, payload = self._request(
+                "GET",
+                f"/api/billing/next-step-attention?organization_id={other_organization_id}",
+                headers={"Cookie": operator_cookie},
+            )
+        self.assertEqual(response.status, 200, payload.decode("utf-8"))
+        cross_scope_data = json.loads(payload)
+        self.assertEqual(cross_scope_data["organization_id"], organization_id)
+        self.assertEqual(
+            [int(item["billing_next_step_event_id"]) for item in cross_scope_data["candidates"]],
+            candidate_ids,
+        )
+        self.assertNotIn("Krok obcej organizacji", payload.decode("utf-8"))
+
+        read_state_before_override = self._overview_read_state()
+        response, payload = self._request(
+            "GET",
+            f"/api/billing/next-step-attention?organization_id={organization_id}&as_of_date=2099-01-01",
+            headers={"Cookie": self.cookie},
+        )
+        self.assertEqual(response.status, 400, payload.decode("utf-8"))
+        self.assertEqual(read_state_before_override, self._overview_read_state())
 
     def test_can_add_and_list_payer_and_payment_next_steps_without_financial_side_effects(self) -> None:
         organization_id = int(self.organization["organization_id"])

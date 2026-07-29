@@ -41,6 +41,7 @@ import {
   type DashboardSignal,
   type DashboardStatus,
 } from "./dashboardModel";
+import { BillingNextStepAttentionPanel } from "./BillingNextStepAttentionPanel";
 
 const columns: Array<TableColumn<DashboardSignal>> = [
   {
@@ -169,6 +170,8 @@ export function DashboardPage() {
           title="Brak danych pulpitu"
         />
       ) : null}
+
+      {!organizationMissing ? <BillingNextStepAttentionPanel /> : null}
 
       {canShowDashboardData ? (
         <>

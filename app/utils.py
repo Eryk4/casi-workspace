@@ -14,6 +14,11 @@ def now_local_datetime_value() -> str:
     return datetime.now().replace(second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M")
 
 
+def current_local_date_value() -> str:
+    """Return the host-local calendar date without UTC conversion."""
+    return datetime.now().date().isoformat()
+
+
 def future_local_datetime_value(hours: int = 24) -> str:
     return (datetime.now() + timedelta(hours=hours)).replace(second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M")
 

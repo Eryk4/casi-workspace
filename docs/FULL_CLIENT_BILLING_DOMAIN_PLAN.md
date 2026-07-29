@@ -964,3 +964,15 @@ The append-only chain is `planned → snoozed → snoozed → completed`. A `sno
 Snooze requires a new calendar date in `YYYY-MM-DD` format. When the parent has `planned_for`, the new date must be later; when it has no date, any valid calendar date is accepted. Dates are not converted through UTC. The server inherits organization, target, related issue key, step type, and title from the parent and rejects attempts to change that identity. Cross-organization lookup returns a safe not-found response.
 
 The only intended write effects are a new row in `billing_next_step_events` and a sanitized audit row in `event_logs`. Financial transactions, charges, payment matches, payer ledger entries, balances, reminders, messages, automation, and calendar data are unchanged. The UI provides one-step snooze with explicit date confirmation and no edit, delete, or bulk action. Payment detail remains read-only.
+
+### Stage 2l: Billing next-step attention
+
+Status: implemented as `attention v1`, a read-only summary on the main workspace dashboard.
+
+The central billing read-model receives one server-authorized organization and an explicit calendar-only `as_of_date`. It reuses the repository definition of an active leaf and returns only active `planned` or correctly linked `snoozed` leaves whose `planned_for` is earlier than the reference date (`overdue`) or equal to it (`due_today`). Future steps and steps without a date are not attention candidates. Event ID remains the identity, so two identical active steps remain two candidates. Results are ordered by overdue first, oldest calendar date first, then `created_at` and event ID.
+
+The production GET endpoint obtains the reference date from one central host-local calendar-date function. Public clients cannot override it. Tests and future internal processes can call the same service method with an explicit `as_of_date`; no UTC conversion is applied. CASI does not yet have organization-specific timezone configuration, so the current extension point is that central date function rather than dates calculated independently in React components.
+
+The dashboard section shows overdue, due-today, and total counts plus at most five candidates and safe internal links. Missing or historical targets receive a non-breaking fallback without an unsafe link. The section exposes no completion, snooze, create, edit, delete, message, contact, finance, or bulk action. Reading or refreshing attention creates no audit event and changes neither `billing_next_step_events` nor financial tables.
+
+Attention v1 creates no reminder records, delivery state, schedules, retry state, notification channels, recipients, queue, scheduler, agent, email, Telegram message, or other automation. Future schedulers, internal notifications, email, Telegram, or agents must consume this central candidate read-model and use existing validated domain write paths for any separately approved action. They must never edit the database directly or bypass organization scope and service validation.

@@ -1307,6 +1307,22 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(next_step_events)
+            if path == "/api/billing/next-step-attention":
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                if self._query_one(query, "as_of_date"):
+                    return self._send_json(
+                        {"error": "Data odniesienia attention jest ustalana po stronie serwera."},
+                        status=400,
+                    )
+                try:
+                    attention = self.billing_service.get_next_step_attention(
+                        organization_id=organization_id,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(attention)
             if path == "/api/billing/schools":
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:

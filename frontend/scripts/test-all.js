@@ -3,6 +3,8 @@ const path = require("node:path");
 
 const tests = [
   "test-dashboard.js",
+  "test-billing-attention.js",
+  "test-billing-attention-dom.js",
   "test-daily-brief.js",
   "test-organization-context.js",
   "test-auth-session.js",

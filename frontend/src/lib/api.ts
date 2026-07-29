@@ -244,6 +244,8 @@ export const api = {
     apiRequest<Record<string, unknown>>("/billing/next-step-events", { query }),
   billingActiveNextStepEvents: (query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>("/billing/next-step-events/active", { query }),
+  billingNextStepAttention: (query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>("/billing/next-step-attention", { query }),
   billingPayers: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/billing/payers", { query }),
   billingPayerNotes: (payerId: number | string, query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>(`/billing/payers/${payerId}/notes`, { query }),

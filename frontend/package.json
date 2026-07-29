@@ -7,6 +7,8 @@
     "build": "node scripts/build-next.js",
     "start": "next start --hostname 127.0.0.1 --port 3000",
     "test:dashboard": "node scripts/test-dashboard.js",
+    "test:billing-attention": "node scripts/test-billing-attention.js",
+    "test:billing-attention-dom": "node scripts/test-billing-attention-dom.js",
     "test:invoices": "node scripts/test-invoices.js",
     "test:work-items": "node scripts/test-work-items.js",
     "test:documents": "node scripts/test-documents.js",

@@ -12,7 +12,7 @@ from app.services.billing_ledger_service import BillingLedgerService
 from app.repositories.billing_repository import BillingRepository
 from app.repositories.event_repository import EventRepository
 from app.repositories.organization_repository import OrganizationRepository
-from app.utils import extract_phone_identifiers, normalize_phone_identifier, now_iso
+from app.utils import current_local_date_value, extract_phone_identifiers, normalize_phone_identifier, now_iso
 
 PAYMENT_REVIEW_STATUSES = {
     "needs_review": "Do wyjasnienia",
@@ -751,6 +751,83 @@ class BillingService:
         return {
             "organization_id": organization_id,
             "events": events,
+        }
+
+    def get_next_step_attention(
+        self,
+        *,
+        organization_id: int | None = None,
+        as_of_date: str | date | None = None,
+        limit: int = 2000,
+    ) -> dict[str, Any]:
+        """Build the read-only attention model for one authorized organization."""
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed sprawdzeniem krokow wymagajacych uwagi.")
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+
+        normalized_as_of = as_of_date.isoformat() if isinstance(as_of_date, date) else str(as_of_date or current_local_date_value()).strip()
+        try:
+            reference_date = date.fromisoformat(normalized_as_of)
+        except ValueError:
+            raise ValueError("Data odniesienia attention musi byc poprawna data RRRR-MM-DD.") from None
+        normalized_as_of = reference_date.isoformat()
+
+        active_events = self.billing_repository.list_active_next_step_events(
+            organization_id=organization_id,
+            limit=min(max(int(limit), 1), 5000),
+        )
+        candidates: list[dict[str, Any]] = []
+        for event in active_events:
+            planned_for = str(event.get("planned_for") or "").strip()
+            if not planned_for:
+                continue
+            try:
+                planned_date = date.fromisoformat(planned_for)
+            except ValueError:
+                continue
+            if planned_date > reference_date:
+                continue
+
+            target_label, target_href = self._build_next_step_attention_target(
+                event,
+                organization_id=organization_id,
+            )
+            candidates.append(
+                {
+                    "billing_next_step_event_id": int(event["billing_next_step_event_id"]),
+                    "organization_id": organization_id,
+                    "reason_code": "overdue" if planned_date < reference_date else "due_today",
+                    "planned_for": planned_for,
+                    "target_type": str(event.get("target_type") or ""),
+                    "target_id": event.get("target_id"),
+                    "related_issue_key": event.get("related_issue_key"),
+                    "step_type": str(event.get("step_type") or ""),
+                    "title": str(event.get("title") or "").strip() or "Nastepny krok rozliczeniowy",
+                    "target_label": target_label,
+                    "target_href": target_href,
+                    "created_at": str(event.get("created_at") or ""),
+                }
+            )
+
+        candidates.sort(
+            key=lambda item: (
+                0 if item["reason_code"] == "overdue" else 1,
+                item["planned_for"],
+                item["created_at"],
+                item["billing_next_step_event_id"],
+            )
+        )
+        overdue_count = sum(1 for item in candidates if item["reason_code"] == "overdue")
+        due_today_count = len(candidates) - overdue_count
+        return {
+            "organization_id": organization_id,
+            "as_of_date": normalized_as_of,
+            "overdue_count": overdue_count,
+            "due_today_count": due_today_count,
+            "attention_count": len(candidates),
+            "candidates": candidates,
         }
 
     def add_next_step_event(
@@ -1997,6 +2074,34 @@ class BillingService:
             events = self.billing_repository.list_contact_events(organization_id=organization_id, limit=500)
             if not any(int(item.get("billing_contact_event_id") or 0) == int(target_id) for item in events):
                 raise ValueError("Nie znaleziono kontaktu rozliczeniowego w wybranej organizacji.")
+
+    def _build_next_step_attention_target(
+        self,
+        event: dict[str, Any],
+        *,
+        organization_id: int,
+    ) -> tuple[str, str | None]:
+        target_type = str(event.get("target_type") or "")
+        raw_target_id = event.get("target_id")
+        target_id = int(raw_target_id) if raw_target_id not in (None, "") else None
+
+        if target_type == "payer" and target_id:
+            payer = self.billing_repository.get_payer_by_id(target_id, organization_id=organization_id)
+            if payer:
+                return f"Platnik #{target_id}", f"/rozliczenia/platnicy/{target_id}"
+            return "Niedostepny platnik historyczny", None
+        if target_type == "payment" and target_id:
+            payment = self.billing_repository.get_transaction_by_id(target_id, organization_id=organization_id)
+            if payment:
+                return f"Wplata #{target_id}", f"/rozliczenia/wplaty/{target_id}"
+            return "Niedostepna wplata historyczna", None
+        if target_type == "work_queue_issue":
+            return "Sprawa rozliczeniowa", "/rozliczenia/sprawy"
+        if target_type == "contact":
+            return (f"Kontakt rozliczeniowy #{target_id}" if target_id else "Kontakt rozliczeniowy"), None
+        if target_type == "billing_summary":
+            return "Rozliczenia", "/rozliczenia"
+        return "Niedostepny cel historyczny", None
 
     def _resolve_charge_unit_rate(self, model: dict[str, Any]) -> float:
         settlement_mode = str(model.get("settlement_mode") or "").strip().lower()
