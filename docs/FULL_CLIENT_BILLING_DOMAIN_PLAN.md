@@ -985,6 +985,20 @@ The stage introduces a durable, recipient-scoped inbox for the currently authent
 
 `internal_notifications` is immutable notification history. Read, unread, and archived state is stored only as append-only rows in `internal_notification_state_events`; archive is terminal in v1. Listing, filtering, pagination, unread-count reads, opening the page, changing organization, and refreshing the browser do not materialize notifications or write audit events. Materialization and state changes are explicit POST actions and create sanitized audit rows only when they create a notification or append a new state event.
 
+### Stage 2n — internal notification scheduler core v1
+
+Automatic materialization is an explicit opt-in schedule scoped by organization, recipient `users.user_id`, and source `billing_next_step_attention`. The v1 cadence is daily, with a stored IANA timezone and local `HH:MM`; defaults are disabled, `Europe/Warsaw`, and `08:00`. Reads never create a schedule. Settings change only through an explicit save and are recorded in sanitized `event_logs`.
+
+The scheduler is a separate one-shot worker, never a hidden web thread and never started by the backend, frontend, login, AppShell, or notification page:
+
+`python -m app.jobs.internal_notifications_scheduler --once`
+
+Each logical local day has at most one run. Database uniqueness, an atomic conditional claim, a bounded lease, and at most three attempts with a fixed 15-minute backoff protect concurrent workers and recovery after crashes. An expired lease can be reclaimed; an active lease cannot. After a multi-day outage, the worker performs at most one materialization for the current local date, not a historical backfill. Time meaning comes from `zoneinfo` and the schedule's timezone, never the host timezone. The declared `tzdata` dependency supplies the IANA database when the operating system does not provide it, including on Windows.
+
+The worker calls only the existing central internal-notification materializer. It does not select billing candidates itself, write directly to `internal_notifications`, alter billing events or financial tables, change notification read state, send messages, invoke webhooks, or perform business actions. Run history stores only counts and sanitized error metadata. There is no polling in the UI and no external delivery in this stage.
+
+Future deployment may invoke `--once` periodically from cron, Windows Task Scheduler, a platform job, or a dedicated worker. That operational layer must not implement candidate selection, deduplication, or notification creation. Future delivery channels must read durable `internal_notifications` in a separate layer. Future automated business actions must use their validated write paths and require a separate product decision; they must not be added to this materialization scheduler.
+
 The UI provides inbox, unread, all, and archive filters, stable cursor pagination, safe internal billing links, explicit materialization, and explicit read/unread/archive actions. The AppShell counter is recipient- and organization-scoped, capped visually at `99+`, cleared while the organization changes, and refreshed without polling. The page exposes no payment, charge, match, ledger, balance, completion, snooze, contact, message, delete, bulk, or financial action.
 
-This is not a delivery engine. V1 adds no scheduler, queue, retries, e-mail, Telegram, push delivery, agent, escalation, automatic materialization, automatic read tracking, or automatic archival. A future scheduler may call the same service with an explicit recipient and organization only after a separate permissions, tenancy, retry, observability, and cost-control review. Future external delivery must consume stored notifications through a dedicated outbox and must not mutate billing or notification tables directly.
+This remains not a delivery engine. Stage 2n adds only opt-in scheduling, bounded claims, and retries for the existing internal materializer. It adds no e-mail, Telegram, push delivery, agent, escalation, automatic business action, automatic read tracking, or automatic archival. Future external delivery must consume stored notifications through a dedicated outbox and must not mutate billing or notification tables directly.

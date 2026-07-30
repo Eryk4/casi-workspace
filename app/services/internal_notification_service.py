@@ -43,6 +43,21 @@ class InternalNotificationService:
         self.organization_service = organization_service
         self.user_repository = user_repository
 
+    def validate_recipient_scope(
+        self,
+        *,
+        organization_id: int,
+        recipient_user_id: int,
+        actor_user: dict[str, Any] | None,
+        require_write: bool,
+    ) -> None:
+        self._validate_recipient_scope(
+            organization_id=organization_id,
+            recipient_user_id=recipient_user_id,
+            actor_user=actor_user,
+            require_write=require_write,
+        )
+
     def materialize_billing_attention(
         self,
         *,

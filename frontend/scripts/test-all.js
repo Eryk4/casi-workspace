@@ -19,6 +19,7 @@ const tests = [
   "test-internal-notifications.js",
   "test-internal-notifications-dom.js",
   "test-internal-notification-shell.js",
+  "test-internal-notification-scheduler.js",
   "test-boss-assistant.js",
   "test-company-assistant.js",
   "test-crm.js",

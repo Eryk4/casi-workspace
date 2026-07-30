@@ -33,6 +33,33 @@ export type MaterializationResult = {
   existingCount: number;
 };
 
+export type InternalNotificationScheduleSettings = {
+  exists: boolean;
+  organizationId: number;
+  recipientUserId: number;
+  enabled: boolean;
+  cadence: "daily";
+  timezoneName: string;
+  localTime: string;
+  nextRunAtUtc: string | null;
+};
+
+export type InternalNotificationScheduleRun = {
+  id: number;
+  status: "pending" | "running" | "succeeded" | "failed";
+  scheduledLocalDate: string;
+  asOfDate: string;
+  scheduledForUtc: string;
+  attemptCount: number;
+  candidatesCount: number | null;
+  createdCount: number | null;
+  existingCount: number | null;
+  errorCode: string | null;
+  errorSummary: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
 export const INTERNAL_NOTIFICATION_FILTERS: Array<{ id: InternalNotificationFilter; label: string }> = [
   { id: "inbox", label: "Skrzynka" },
   { id: "unread", label: "Nieprzeczytane" },
@@ -58,6 +85,17 @@ function integer(value: unknown): number {
 function text(value: unknown): string {
   const parsed = typeof value === "string" ? value.trim() : "";
   if (!parsed) throw new Error("Brak wymaganego pola powiadomienia.");
+  return parsed;
+}
+
+function optionalText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function nonNegativeInteger(value: unknown, nullable = false): number | null {
+  if (nullable && (value === null || value === undefined || value === "")) return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error("Nieprawidlowa wartosc liczbowa harmonogramu.");
   return parsed;
 }
 
@@ -139,6 +177,52 @@ export function readMaterializationResult(value: unknown): MaterializationResult
     createdCount: nonNegative("created_count"),
     existingCount: nonNegative("existing_count"),
   };
+}
+
+export function readInternalNotificationSchedule(value: unknown): InternalNotificationScheduleSettings {
+  const source = record(value);
+  const cadence = text(source.cadence);
+  if (cadence !== "daily") throw new Error("Nieprawidlowa czestotliwosc harmonogramu.");
+  const timezoneName = text(source.timezone_name);
+  const localTime = text(source.local_time);
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(localTime)) throw new Error("Nieprawidlowa godzina harmonogramu.");
+  return {
+    exists: source.exists === true,
+    organizationId: integer(source.organization_id),
+    recipientUserId: integer(source.recipient_user_id),
+    enabled: source.enabled === true,
+    cadence,
+    timezoneName,
+    localTime,
+    nextRunAtUtc: optionalText(source.next_run_at_utc),
+  };
+}
+
+export function readInternalNotificationScheduleRuns(value: unknown): InternalNotificationScheduleRun[] {
+  const source = record(value);
+  if (!Array.isArray(source.items)) throw new Error("Brak historii uruchomien harmonogramu.");
+  return source.items.map((raw) => {
+    const item = record(raw);
+    const status = text(item.status);
+    if (!(["pending", "running", "succeeded", "failed"] as string[]).includes(status)) {
+      throw new Error("Nieprawidlowy status uruchomienia harmonogramu.");
+    }
+    return {
+      id: integer(item.internal_notification_schedule_run_id),
+      status: status as InternalNotificationScheduleRun["status"],
+      scheduledLocalDate: calendarDate(item.scheduled_local_date) as string,
+      asOfDate: calendarDate(item.as_of_date) as string,
+      scheduledForUtc: text(item.scheduled_for_utc),
+      attemptCount: nonNegativeInteger(item.attempt_count) as number,
+      candidatesCount: nonNegativeInteger(item.candidates_count, true),
+      createdCount: nonNegativeInteger(item.created_count, true),
+      existingCount: nonNegativeInteger(item.existing_count, true),
+      errorCode: optionalText(item.error_code),
+      errorSummary: optionalText(item.error_summary),
+      startedAt: optionalText(item.started_at),
+      finishedAt: optionalText(item.finished_at),
+    };
+  });
 }
 
 export function emptyStateCopy(filter: InternalNotificationFilter): { title: string; description: string } {

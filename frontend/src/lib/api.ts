@@ -250,6 +250,19 @@ export const api = {
     apiRequest<Record<string, unknown>>("/internal-notifications", { query }),
   internalNotificationUnreadCount: (query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>("/internal-notifications/unread-count", { query }),
+  internalNotificationSchedule: (query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>("/internal-notifications/schedule", { query }),
+  internalNotificationScheduleRuns: (query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>("/internal-notifications/schedule/runs", { query }),
+  saveInternalNotificationSchedule: (
+    payload: { enabled: boolean; local_time: string; timezone_name: string; cadence: "daily" },
+    organizationId?: string | null,
+  ) =>
+    apiRequest<Record<string, unknown>>("/internal-notifications/schedule", {
+      method: "POST",
+      body: payload,
+      query: withOrganizationQuery(organizationId),
+    }),
   materializeInternalNotifications: (organizationId?: string | null) =>
     apiRequest<Record<string, unknown>>("/internal-notifications/materialize-attention", {
       method: "POST",

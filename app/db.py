@@ -1160,6 +1160,72 @@ CREATE INDEX IF NOT EXISTS idx_internal_notification_state_latest
 CREATE INDEX IF NOT EXISTS idx_internal_notification_state_recipient
     ON internal_notification_state_events(organization_id, recipient_user_id, notification_id);
 
+CREATE TABLE IF NOT EXISTS internal_notification_schedules (
+    internal_notification_schedule_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    organization_id INTEGER NOT NULL,
+    recipient_user_id INTEGER NOT NULL,
+    source_type TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    cadence TEXT NOT NULL DEFAULT 'daily',
+    timezone_name TEXT NOT NULL DEFAULT 'Europe/Warsaw',
+    local_time TEXT NOT NULL DEFAULT '08:00',
+    next_run_at_utc TEXT,
+    created_by_user_id INTEGER NOT NULL,
+    updated_by_user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    FOREIGN KEY (updated_by_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    CHECK (source_type = 'billing_next_step_attention'),
+    CHECK (enabled IN (0, 1)),
+    CHECK (cadence = 'daily')
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_notification_schedules_scope
+    ON internal_notification_schedules(organization_id, recipient_user_id, source_type);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_schedules_due
+    ON internal_notification_schedules(enabled, next_run_at_utc, internal_notification_schedule_id);
+
+CREATE TABLE IF NOT EXISTS internal_notification_schedule_runs (
+    internal_notification_schedule_run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    schedule_id INTEGER NOT NULL,
+    organization_id INTEGER NOT NULL,
+    recipient_user_id INTEGER NOT NULL,
+    source_type TEXT NOT NULL,
+    scheduled_local_date TEXT NOT NULL,
+    as_of_date TEXT NOT NULL,
+    scheduled_for_utc TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    lease_token TEXT,
+    lease_expires_at_utc TEXT,
+    next_attempt_at_utc TEXT,
+    candidates_count INTEGER,
+    created_count INTEGER,
+    existing_count INTEGER,
+    error_code TEXT,
+    error_summary TEXT,
+    started_at TEXT,
+    finished_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (schedule_id) REFERENCES internal_notification_schedules(internal_notification_schedule_id) ON DELETE CASCADE,
+    FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    CHECK (source_type = 'billing_next_step_attention'),
+    CHECK (status IN ('pending', 'running', 'succeeded', 'failed')),
+    CHECK (attempt_count >= 0),
+    CHECK (candidates_count IS NULL OR candidates_count >= 0),
+    CHECK (created_count IS NULL OR created_count >= 0),
+    CHECK (existing_count IS NULL OR existing_count >= 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_day
+    ON internal_notification_schedule_runs(schedule_id, scheduled_local_date);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_claim
+    ON internal_notification_schedule_runs(status, next_attempt_at_utc, lease_expires_at_utc);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_history
+    ON internal_notification_schedule_runs(schedule_id, created_at DESC, internal_notification_schedule_run_id DESC);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     invoice_id INTEGER NOT NULL,
@@ -2672,6 +2738,88 @@ CREATE INDEX IF NOT EXISTS idx_internal_notification_state_latest
 CREATE INDEX IF NOT EXISTS idx_internal_notification_state_recipient
     ON internal_notification_state_events(organization_id, recipient_user_id, notification_id);
 
+CREATE TABLE IF NOT EXISTS internal_notification_schedules (
+    internal_notification_schedule_id BIGSERIAL PRIMARY KEY,
+    organization_id BIGINT NOT NULL,
+    recipient_user_id BIGINT NOT NULL,
+    source_type TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    cadence TEXT NOT NULL DEFAULT 'daily',
+    timezone_name TEXT NOT NULL DEFAULT 'Europe/Warsaw',
+    local_time TEXT NOT NULL DEFAULT '08:00',
+    next_run_at_utc TEXT,
+    created_by_user_id BIGINT NOT NULL,
+    updated_by_user_id BIGINT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_internal_notification_schedules_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    CONSTRAINT fk_internal_notification_schedules_recipient
+        FOREIGN KEY (recipient_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    CONSTRAINT fk_internal_notification_schedules_creator
+        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    CONSTRAINT fk_internal_notification_schedules_updater
+        FOREIGN KEY (updated_by_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    CONSTRAINT chk_internal_notification_schedules_source
+        CHECK (source_type = 'billing_next_step_attention'),
+    CONSTRAINT chk_internal_notification_schedules_enabled
+        CHECK (enabled IN (0, 1)),
+    CONSTRAINT chk_internal_notification_schedules_cadence
+        CHECK (cadence = 'daily')
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_notification_schedules_scope
+    ON internal_notification_schedules(organization_id, recipient_user_id, source_type);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_schedules_due
+    ON internal_notification_schedules(enabled, next_run_at_utc, internal_notification_schedule_id);
+
+CREATE TABLE IF NOT EXISTS internal_notification_schedule_runs (
+    internal_notification_schedule_run_id BIGSERIAL PRIMARY KEY,
+    schedule_id BIGINT NOT NULL,
+    organization_id BIGINT NOT NULL,
+    recipient_user_id BIGINT NOT NULL,
+    source_type TEXT NOT NULL,
+    scheduled_local_date TEXT NOT NULL,
+    as_of_date TEXT NOT NULL,
+    scheduled_for_utc TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    lease_token TEXT,
+    lease_expires_at_utc TEXT,
+    next_attempt_at_utc TEXT,
+    candidates_count INTEGER,
+    created_count INTEGER,
+    existing_count INTEGER,
+    error_code TEXT,
+    error_summary TEXT,
+    started_at TEXT,
+    finished_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_internal_notification_schedule_runs_schedule
+        FOREIGN KEY (schedule_id) REFERENCES internal_notification_schedules(internal_notification_schedule_id) ON DELETE CASCADE,
+    CONSTRAINT fk_internal_notification_schedule_runs_organization
+        FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+    CONSTRAINT fk_internal_notification_schedule_runs_recipient
+        FOREIGN KEY (recipient_user_id) REFERENCES users(user_id) ON DELETE RESTRICT,
+    CONSTRAINT chk_internal_notification_schedule_runs_source
+        CHECK (source_type = 'billing_next_step_attention'),
+    CONSTRAINT chk_internal_notification_schedule_runs_status
+        CHECK (status IN ('pending', 'running', 'succeeded', 'failed')),
+    CONSTRAINT chk_internal_notification_schedule_runs_attempts
+        CHECK (attempt_count >= 0),
+    CONSTRAINT chk_internal_notification_schedule_runs_candidates
+        CHECK (candidates_count IS NULL OR candidates_count >= 0),
+    CONSTRAINT chk_internal_notification_schedule_runs_created
+        CHECK (created_count IS NULL OR created_count >= 0),
+    CONSTRAINT chk_internal_notification_schedule_runs_existing
+        CHECK (existing_count IS NULL OR existing_count >= 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_day
+    ON internal_notification_schedule_runs(schedule_id, scheduled_local_date);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_claim
+    ON internal_notification_schedule_runs(status, next_attempt_at_utc, lease_expires_at_utc);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_history
+    ON internal_notification_schedule_runs(schedule_id, created_at DESC, internal_notification_schedule_run_id DESC);
+
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id BIGSERIAL PRIMARY KEY,
     invoice_id BIGINT NOT NULL,
@@ -2978,6 +3126,8 @@ PRAGMA foreign_keys = OFF;
   DROP TABLE IF EXISTS user_module_inbox_state;
   DROP TABLE IF EXISTS billing_payer_charge_state;
 DROP TABLE IF EXISTS billing_payer_ledger_entries;
+DROP TABLE IF EXISTS internal_notification_schedule_runs;
+DROP TABLE IF EXISTS internal_notification_schedules;
 DROP TABLE IF EXISTS internal_notification_state_events;
 DROP TABLE IF EXISTS internal_notifications;
 DROP TABLE IF EXISTS billing_next_step_events;
@@ -3041,6 +3191,8 @@ POSTGRES_RESET_SCRIPT = """
   DROP TABLE IF EXISTS user_module_inbox_state CASCADE;
   DROP TABLE IF EXISTS billing_payer_charge_state CASCADE;
 DROP TABLE IF EXISTS billing_payer_ledger_entries CASCADE;
+DROP TABLE IF EXISTS internal_notification_schedule_runs CASCADE;
+DROP TABLE IF EXISTS internal_notification_schedules CASCADE;
 DROP TABLE IF EXISTS internal_notification_state_events CASCADE;
 DROP TABLE IF EXISTS internal_notifications CASCADE;
 DROP TABLE IF EXISTS billing_next_step_events CASCADE;

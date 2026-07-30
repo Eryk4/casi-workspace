@@ -45,6 +45,7 @@ Currently allowlisted JSON write paths:
 | `POST` | `/api/tasks/{id}/snooze-reminder` | Tasks/reminders | `mode` | `tests.test_task_http` |
 | `POST` | `/api/internal-notifications/materialize-attention` | Internal notifications | empty JSON object only | `tests.test_internal_notifications` |
 | `POST` | `/api/internal-notifications/{id}/state` | Internal notifications | `action` | `tests.test_internal_notifications` |
+| `POST` | `/api/internal-notifications/schedule` | Internal notification scheduler | `enabled`, `local_time`, `timezone_name`, optional `cadence=daily` | `tests.test_internal_notification_scheduler_http` |
 | `POST` | `/api/knowledge/documents/{id}/restore-version` | Knowledge | `version_number` | `tests.test_http_server_access` |
 | `POST` | `/api/knowledge/documents/{id}/mark-official-version` | Knowledge | `version_number` | `tests.test_http_server_access` |
 | `POST` | `/api/tasks/{id}/checklist` | Tasks | `item_text` | `tests.test_task_http` |

@@ -21,6 +21,8 @@
     "test:internal-notifications": "node scripts/test-internal-notifications.js",
     "test:internal-notifications-dom": "node scripts/test-internal-notifications-dom.js",
     "test:internal-notification-shell": "node scripts/test-internal-notification-shell.js",
+    "test:internal-notification-scheduler": "node scripts/test-internal-notification-scheduler.js",
+    "test:internal-notification-scheduler-dom": "node scripts/test-internal-notification-scheduler-dom.js",
     "test:boss-assistant": "node scripts/test-boss-assistant.js",
     "test:company-assistant": "node scripts/test-company-assistant.js",
     "test:crm": "node scripts/test-crm.js",

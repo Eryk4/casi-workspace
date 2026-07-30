@@ -35,6 +35,8 @@ let currentOrganizationId = "42";
 let failOrganizationId = null;
 let materializeCalls = 0;
 let refreshCountCalls = 0;
+let scheduleSaveCalls = 0;
+let savedSchedule = null;
 let resolveDelayedOrganization = null;
 const listCalls = [];
 const stateCalls = [];
@@ -98,6 +100,58 @@ const api = {
       return { organization_id: 43, filter: query.filter, items: [rawNotification(43, 43)], next_cursor: null, has_more: false };
     }
     return { organization_id: Number(organizationId), filter: query.filter, items: [], next_cursor: null, has_more: false };
+  },
+  internalNotificationSchedule: async (query) => ({
+    exists: savedSchedule !== null,
+    organization_id: Number(query.organization_id),
+    recipient_user_id: 7,
+    source_type: "billing_next_step_attention",
+    enabled: savedSchedule?.enabled ?? false,
+    cadence: "daily",
+    timezone_name: savedSchedule?.timezone_name ?? "Europe/Warsaw",
+    local_time: savedSchedule?.local_time ?? "08:00",
+    next_run_at_utc: savedSchedule?.enabled ? "2026-07-30T06:00:00+00:00" : null,
+  }),
+  internalNotificationScheduleRuns: async (query) => ({
+    organization_id: Number(query.organization_id),
+    recipient_user_id: 7,
+    items: savedSchedule ? [{
+      internal_notification_schedule_run_id: 81,
+      schedule_id: 12,
+      organization_id: Number(query.organization_id),
+      recipient_user_id: 7,
+      source_type: "billing_next_step_attention",
+      scheduled_local_date: "2026-07-29",
+      as_of_date: "2026-07-29",
+      scheduled_for_utc: "2026-07-29T06:00:00+00:00",
+      status: "succeeded",
+      attempt_count: 1,
+      candidates_count: 2,
+      created_count: 1,
+      existing_count: 1,
+      error_code: null,
+      error_summary: null,
+      started_at: "2026-07-29T06:00:00+00:00",
+      finished_at: "2026-07-29T06:00:01+00:00",
+      created_at: "2026-07-29T06:00:00+00:00",
+    }] : [],
+  }),
+  saveInternalNotificationSchedule: async (payload) => {
+    scheduleSaveCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    savedSchedule = { ...payload };
+    return {
+      exists: true,
+      internal_notification_schedule_id: 12,
+      organization_id: Number(currentOrganizationId),
+      recipient_user_id: 7,
+      source_type: "billing_next_step_attention",
+      enabled: payload.enabled,
+      cadence: "daily",
+      timezone_name: payload.timezone_name,
+      local_time: payload.local_time,
+      next_run_at_utc: payload.enabled ? "2026-07-30T06:00:00+00:00" : null,
+    };
   },
   materializeInternalNotifications: async () => {
     materializeCalls += 1;
@@ -163,6 +217,12 @@ function buttonByText(container, text) {
   return [...container.querySelectorAll("button")].find((button) => button.textContent.trim() === text);
 }
 
+function setInputValue(input, value) {
+  const valueSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set;
+  valueSetter.call(input, value);
+  input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+}
+
 async function settle(delay = 0) {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, delay)); });
 }
@@ -179,6 +239,31 @@ async function run() {
   assert.ok(container.querySelector('a[href="/rozliczenia/platnicy/1"]'));
   assert.match(container.textContent, /Źródło historyczne/);
   assert.match(container.textContent, /Samo otwarcie strony niczego nie zapisuje/);
+  assert.match(container.textContent, /Automatyczne sprawdzanie/);
+  assert.match(container.textContent, /Nie wysyła wiadomości i nie wykonuje działań rozliczeniowych/);
+  assert.match(container.textContent, /Wyłączone/);
+  assert.equal(scheduleSaveCalls, 0, "GET i zmiana pola nie mogą wykonywać autosave");
+
+  const scheduleTime = container.querySelector('.notification-schedule input[type="time"]');
+  const scheduleTimezone = container.querySelector('.notification-schedule input[type="text"]');
+  const scheduleEnabled = container.querySelector('.notification-schedule input[type="checkbox"]');
+  assert.equal(scheduleTime.value, "08:00");
+  assert.equal(scheduleTimezone.value, "Europe/Warsaw");
+  await act(async () => {
+    scheduleEnabled.click();
+    setInputValue(scheduleTime, "09:15");
+  });
+  assert.equal(scheduleSaveCalls, 0, "Zmiana kontrolek nie zapisuje ustawień");
+  const saveScheduleButton = buttonByText(container, "Zapisz ustawienia");
+  await act(async () => {
+    saveScheduleButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    saveScheduleButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  });
+  await settle(10);
+  assert.equal(scheduleSaveCalls, 1, "Podwójne kliknięcie wykonuje jeden zapis");
+  assert.deepEqual(savedSchedule, { enabled: true, local_time: "09:15", timezone_name: "Europe/Warsaw", cadence: "daily" });
+  assert.match(container.textContent, /Ustawienia automatycznego sprawdzania zostały zapisane/);
+  assert.match(container.textContent, /kandydaci 2, nowe 1, istniejące 1/);
 
   await act(async () => buttonByText(container, "Załaduj kolejne").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
   await settle();

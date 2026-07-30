@@ -145,6 +145,10 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
             return services["internal_notification_service"]
 
         @property
+        def internal_notification_scheduler_service(self):
+            return services["internal_notification_scheduler_service"]
+
+        @property
         def whiteboard_service(self):
             return services["whiteboard_service"]
 
@@ -1350,6 +1354,54 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(result)
+            if path == "/api/internal-notifications/schedule":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                if organization_id is None:
+                    return self._send_json({"error": "Wybierz organizacje dla harmonogramu powiadomien."}, status=400)
+                requested_organization_id = self._parse_optional_int(self._query_one(query, "organization_id"))
+                if requested_organization_id is not None and requested_organization_id != int(organization_id):
+                    return self._send_json({"error": "Nie znaleziono harmonogramu."}, status=404)
+                try:
+                    result = self.internal_notification_scheduler_service.get_settings(
+                        organization_id=int(organization_id),
+                        recipient_user_id=int(user["user_id"]),
+                        actor_user=user,
+                    )
+                except InternalNotificationNotFoundError:
+                    return self._send_json({"error": "Nie znaleziono harmonogramu."}, status=404)
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result)
+            if path == "/api/internal-notifications/schedule/runs":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                if organization_id is None:
+                    return self._send_json({"error": "Wybierz organizacje dla historii harmonogramu."}, status=400)
+                requested_organization_id = self._parse_optional_int(self._query_one(query, "organization_id"))
+                if requested_organization_id is not None and requested_organization_id != int(organization_id):
+                    return self._send_json({"error": "Nie znaleziono historii harmonogramu."}, status=404)
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 20
+                try:
+                    result = self.internal_notification_scheduler_service.list_runs(
+                        organization_id=int(organization_id),
+                        recipient_user_id=int(user["user_id"]),
+                        actor_user=user,
+                        limit=min(max(limit, 1), 50),
+                    )
+                except InternalNotificationNotFoundError:
+                    return self._send_json({"error": "Nie znaleziono historii harmonogramu."}, status=404)
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result)
             if path == "/api/internal-notifications/unread-count":
                 user = self._require_user(READ_ROLES)
                 if not user:
@@ -1759,6 +1811,44 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(result, status=201)
+
+            if path == "/api/internal-notifications/schedule":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_write_scope(user, query)
+                if organization_id is ...:
+                    return
+                if organization_id is None:
+                    return self._send_json({"error": "Wybierz organizacje dla harmonogramu powiadomien."}, status=400)
+                requested_organization_id = self._parse_optional_int(self._query_one(query, "organization_id"))
+                if requested_organization_id is not None and requested_organization_id != int(organization_id):
+                    return self._send_json({"error": "Nie znaleziono harmonogramu."}, status=404)
+                payload = self._read_json()
+                allowed_fields = {"enabled", "local_time", "timezone_name", "cadence"}
+                if any(key not in allowed_fields for key in payload):
+                    return self._send_json(
+                        {"error": "Endpoint harmonogramu przyjmuje tylko enabled, local_time, timezone_name i cadence."},
+                        status=400,
+                    )
+                if not isinstance(payload.get("enabled"), bool):
+                    return self._send_json({"error": "Pole enabled musi byc wartoscia logiczna."}, status=400)
+                try:
+                    result = self.internal_notification_scheduler_service.save_settings(
+                        organization_id=int(organization_id),
+                        recipient_user_id=int(user["user_id"]),
+                        actor_user=user,
+                        actor=self._actor_label(user),
+                        enabled=payload["enabled"],
+                        local_time=str(payload.get("local_time") or ""),
+                        timezone_name=str(payload.get("timezone_name") or ""),
+                        cadence=str(payload.get("cadence") or "daily"),
+                    )
+                except InternalNotificationNotFoundError:
+                    return self._send_json({"error": "Nie znaleziono harmonogramu."}, status=404)
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result)
 
             if path.startswith("/api/internal-notifications/") and path.endswith("/state"):
                 user = self._require_user(READ_ROLES)

@@ -15,6 +15,7 @@ from app.repositories.invoice_repository import InvoiceRepository
 from app.repositories.invoice_handoff_repository import InvoiceHandoffRepository
 from app.repositories.invoice_ksef_override_repository import InvoiceKSeFOverrideRepository
 from app.repositories.internal_notification_repository import InternalNotificationRepository
+from app.repositories.internal_notification_schedule_repository import InternalNotificationScheduleRepository
 from app.repositories.intake_repository import IntakeRepository
 from app.repositories.knowledge_repository import KnowledgeRepository
 from app.repositories.ksef_import_repository import KSeFImportRepository
@@ -44,6 +45,7 @@ from app.services.notification_service import NotificationService
 from app.services.organization_service import OrganizationService
 from app.services.intake_service import IntakeService
 from app.services.internal_notification_service import InternalNotificationService
+from app.services.internal_notification_scheduler_service import InternalNotificationSchedulerService
 from app.services.search_service import SearchService
 from app.services.storage_service import LocalStorageService, S3StorageService, StorageError, StorageService
 from app.services.system_settings_service import SystemSettingsService
@@ -96,6 +98,7 @@ def build_services() -> dict[str, object]:
     invoice_ksef_override_repository = InvoiceKSeFOverrideRepository()
     task_template_repository = TaskTemplateRepository()
     internal_notification_repository = InternalNotificationRepository()
+    internal_notification_schedule_repository = InternalNotificationScheduleRepository()
     duplicate_detector = DuplicateDetector(invoice_repository)
     notification_service = NotificationService(event_repository)
     storage_service = build_storage_service()
@@ -220,6 +223,11 @@ def build_services() -> dict[str, object]:
         organization_service=organization_service,
         user_repository=user_repository,
     )
+    internal_notification_scheduler_service = InternalNotificationSchedulerService(
+        repository=internal_notification_schedule_repository,
+        notification_service=internal_notification_service,
+        event_repository=event_repository,
+    )
     dashboard_view_service = DashboardViewService(
         dashboard_view_repository=dashboard_view_repository,
         event_repository=event_repository,
@@ -281,6 +289,7 @@ def build_services() -> dict[str, object]:
         "invoice_ksef_override_repository": invoice_ksef_override_repository,
         "task_template_repository": task_template_repository,
         "internal_notification_repository": internal_notification_repository,
+        "internal_notification_schedule_repository": internal_notification_schedule_repository,
         "contractor_repository": contractor_repository,
         "email_import_repository": email_import_repository,
         "ksef_import_repository": ksef_import_repository,
@@ -303,6 +312,7 @@ def build_services() -> dict[str, object]:
         "approval_service": approval_service,
         "billing_service": billing_service,
         "internal_notification_service": internal_notification_service,
+        "internal_notification_scheduler_service": internal_notification_scheduler_service,
         "dashboard_view_service": dashboard_view_service,
         "automation_service": automation_service,
         "whiteboard_service": whiteboard_service,
