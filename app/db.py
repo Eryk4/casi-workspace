@@ -4327,6 +4327,14 @@ def _open_sqlite_connection() -> DatabaseConnection:
     return DatabaseConnection(connection, backend="sqlite", driver_name="sqlite")
 
 
+def _open_sqlite_read_only_connection() -> DatabaseConnection:
+    database_uri = f"{SQLITE_DB_PATH.resolve().as_uri()}?mode=ro"
+    connection = sqlite3.connect(database_uri, uri=True)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA query_only = ON")
+    return DatabaseConnection(connection, backend="sqlite", driver_name="sqlite")
+
+
 def _open_postgres_connection() -> DatabaseConnection:
     if not DATABASE_URL:
         raise RuntimeError("Brakuje zmiennej INVOICE_DATABASE_URL dla PostgreSQL.")
@@ -4346,6 +4354,31 @@ def _open_postgres_connection() -> DatabaseConnection:
         cursor.execute("SET lock_timeout = '10000ms'")
         cursor.execute("SET idle_in_transaction_session_timeout = '120000ms'")
         cursor.close()
+        return DatabaseConnection(connection, backend="postgresql", driver_name="psycopg2")
+    raise RuntimeError(
+        "Brakuje sterownika PostgreSQL. Zainstaluj 'psycopg[binary]' albo 'psycopg2-binary'."
+    )
+
+
+def _open_postgres_read_only_connection() -> DatabaseConnection:
+    if not DATABASE_URL:
+        raise RuntimeError("Brakuje zmiennej INVOICE_DATABASE_URL dla PostgreSQL.")
+    connect_timeout_seconds = max(3, int(os.getenv("INVOICE_DB_CONNECT_TIMEOUT_SECONDS", "10")))
+    read_only_options = "-c default_transaction_read_only=on -c statement_timeout=15000"
+    if psycopg is not None:
+        connection = psycopg.connect(
+            DATABASE_URL,
+            row_factory=dict_row,
+            connect_timeout=connect_timeout_seconds,
+            options=read_only_options,
+        )
+        return DatabaseConnection(connection, backend="postgresql", driver_name="psycopg")
+    if psycopg2 is not None:
+        connection = psycopg2.connect(
+            DATABASE_URL,
+            connect_timeout=connect_timeout_seconds,
+            options=read_only_options,
+        )
         return DatabaseConnection(connection, backend="postgresql", driver_name="psycopg2")
     raise RuntimeError(
         "Brakuje sterownika PostgreSQL. Zainstaluj 'psycopg[binary]' albo 'psycopg2-binary'."
@@ -5637,6 +5670,21 @@ def get_connection():
         raise
     finally:
         connection.close()
+
+
+@contextmanager
+def get_read_only_connection():
+    if str(DB_ENGINE or "").strip().lower() in {"sqlite", "sqlite3"}:
+        connection = _open_sqlite_read_only_connection()
+    else:
+        connection = _open_postgres_read_only_connection()
+    try:
+        yield connection
+    finally:
+        try:
+            connection.rollback()
+        finally:
+            connection.close()
 
 
 def execute_insert_returning_id(

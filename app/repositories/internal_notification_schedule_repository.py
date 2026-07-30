@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.db import get_connection
+from app.db import get_connection, get_read_only_connection
 
 
 class InternalNotificationScheduleRepository:
@@ -101,6 +101,20 @@ class InternalNotificationScheduleRepository:
                 (now_utc, max(1, min(int(limit), 500))),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def count_due_schedules_read_only(self, *, now_utc: str) -> int:
+        with get_read_only_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM internal_notification_schedules
+                WHERE enabled = 1
+                  AND next_run_at_utc IS NOT NULL
+                  AND next_run_at_utc <= ?
+                """,
+                (now_utc,),
+            ).fetchone()
+        return int(row["count"])
 
     def ensure_run(self, payload: dict[str, Any]) -> tuple[dict[str, Any], bool]:
         with get_connection() as connection:

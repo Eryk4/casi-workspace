@@ -999,6 +999,12 @@ The worker calls only the existing central internal-notification materializer. I
 
 Future deployment may invoke `--once` periodically from cron, Windows Task Scheduler, a platform job, or a dedicated worker. That operational layer must not implement candidate selection, deduplication, or notification creation. Future delivery channels must read durable `internal_notifications` in a separate layer. Future automated business actions must use their validated write paths and require a separate product decision; they must not be added to this materialization scheduler.
 
+### Stage 2o — internal notification scheduler runtime v1
+
+The operational entry point has a second, environment-level opt-in: `INTERNAL_NOTIFICATION_SCHEDULER_RUNTIME_ENABLED`. It fails closed and defaults to disabled independently of recipient schedules. Disabled `--once` and `--check` return a sanitized `disabled` report with exit code `0` before application bootstrap or database access.
+
+Enabled `--check` validates explicit database configuration, verifies `Europe/Warsaw`, opens the configured database read-only, and counts due schedules without creating runs, notifications, audit events, or billing writes. Enabled `--once` remains a bounded one-shot process with an internal batch limit of 100 and returns structured operational counts. Platform-level invocation is intentionally external and provider-neutral; no cron, cloud job, backend autostart, polling loop, or deployment activation is stored in this stage. The activation, emergency shutdown, diagnostics, and rollback contract is documented in `docs/INTERNAL_NOTIFICATION_SCHEDULER_RUNTIME.md`.
+
 The UI provides inbox, unread, all, and archive filters, stable cursor pagination, safe internal billing links, explicit materialization, and explicit read/unread/archive actions. The AppShell counter is recipient- and organization-scoped, capped visually at `99+`, cleared while the organization changes, and refreshed without polling. The page exposes no payment, charge, match, ledger, balance, completion, snooze, contact, message, delete, bulk, or financial action.
 
 This remains not a delivery engine. Stage 2n adds only opt-in scheduling, bounded claims, and retries for the existing internal materializer. It adds no e-mail, Telegram, push delivery, agent, escalation, automatic business action, automatic read tracking, or automatic archival. Future external delivery must consume stored notifications through a dedicated outbox and must not mutate billing or notification tables directly.
