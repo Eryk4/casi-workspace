@@ -47,6 +47,8 @@ TEST_RUNTIME_ROOT = _test_runtime_root()
 
 
 def _load_local_env_files() -> None:
+    if os.getenv("INVOICE_LOAD_LOCAL_ENV", "1").strip().lower() not in {"1", "true", "tak", "yes", "on"}:
+        return
     candidate_files = (
         BASE_DIR / ".env.local",
         DATA_DIR / "local.env",
@@ -208,12 +210,29 @@ KNOWLEDGE_DIR = STORAGE_ROOT / "wiedza"
 WHITEBOARD_DIR = STORAGE_ROOT / "tablica"
 BACKUPS_DIR = STORAGE_ROOT / "backup"
 STORAGE_BACKEND = normalize_storage_backend(os.getenv("INVOICE_STORAGE_BACKEND", "local"))
+REQUIRE_DURABLE_STORAGE = os.getenv("INVOICE_REQUIRE_DURABLE_STORAGE", "0").strip().lower() in {
+    "1",
+    "true",
+    "tak",
+    "yes",
+    "on",
+}
+DATABASE_BOOTSTRAP_MODE = os.getenv("INVOICE_DATABASE_BOOTSTRAP_MODE", "auto").strip().lower() or "auto"
+if DATABASE_BOOTSTRAP_MODE not in {"auto", "validate", "off"}:
+    raise RuntimeError("INVOICE_DATABASE_BOOTSTRAP_MODE musi miec wartosc auto, validate albo off.")
 S3_ENDPOINT_URL = os.getenv("INVOICE_S3_ENDPOINT_URL", "").strip()
 S3_REGION = os.getenv("INVOICE_S3_REGION", "").strip()
 S3_BUCKET = os.getenv("INVOICE_S3_BUCKET", "").strip()
 S3_ACCESS_KEY_ID = os.getenv("INVOICE_S3_ACCESS_KEY_ID", "").strip()
 S3_SECRET_ACCESS_KEY = os.getenv("INVOICE_S3_SECRET_ACCESS_KEY", "")
 S3_PREFIX = os.getenv("INVOICE_S3_PREFIX", "").strip().strip("/")
+S3_REQUIRE_TLS = os.getenv("INVOICE_S3_REQUIRE_TLS", "1").strip().lower() in {
+    "1",
+    "true",
+    "tak",
+    "yes",
+    "on",
+}
 S3_PUBLIC_BASE_URL = os.getenv("INVOICE_S3_PUBLIC_BASE_URL", "").strip().rstrip("/")
 PUBLIC_BASE_URL = os.getenv("INVOICE_PUBLIC_BASE_URL", "").strip().rstrip("/")
 
@@ -273,3 +292,8 @@ def ensure_directories() -> None:
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
     SQLITE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+def ensure_database_directory() -> None:
+    if DB_ENGINE in {"sqlite", "sqlite3"}:
+        SQLITE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)

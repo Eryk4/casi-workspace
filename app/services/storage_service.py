@@ -16,6 +16,7 @@ from app.config import (
     S3_BUCKET,
     S3_ENDPOINT_URL,
     S3_PREFIX,
+    S3_REQUIRE_TLS,
     S3_REGION,
     S3_SECRET_ACCESS_KEY,
     WHITEBOARD_DIR,
@@ -142,6 +143,7 @@ class S3StorageService:
         access_key_id: str = S3_ACCESS_KEY_ID,
         secret_access_key: str = S3_SECRET_ACCESS_KEY,
         prefix: str = S3_PREFIX,
+        require_tls: bool = S3_REQUIRE_TLS,
         client: Any | None = None,
     ) -> None:
         self.endpoint_url = endpoint_url.strip()
@@ -150,6 +152,7 @@ class S3StorageService:
         self.access_key_id = access_key_id.strip()
         self.secret_access_key = secret_access_key
         self.prefix = prefix.strip().strip("/")
+        self.require_tls = bool(require_tls)
         self._client = client
         self._validate_configuration()
 
@@ -264,6 +267,8 @@ class S3StorageService:
                 + ", ".join(missing)
                 + "."
             )
+        if self.require_tls and not self.endpoint_url.lower().startswith("https://"):
+            raise StorageError("INVOICE_S3_ENDPOINT_URL musi uzywac HTTPS.")
 
     def _artifact_root(self, artifact_type: str) -> str:
         if artifact_type == "document":

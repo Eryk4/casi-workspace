@@ -6,7 +6,7 @@ import time
 from contextlib import contextmanager
 from typing import Any, Iterable
 
-from app.config import DATABASE_URL, SQLITE_DB_PATH, DB_ENGINE, ensure_directories
+from app.config import DATABASE_URL, SQLITE_DB_PATH, DB_ENGINE, ensure_database_directory
 from app.domain.constants import (
     COORDINATOR_ROLE,
     GUEST_ROLE,
@@ -4386,7 +4386,7 @@ def _open_postgres_read_only_connection() -> DatabaseConnection:
 
 
 def _open_connection() -> DatabaseConnection:
-    ensure_directories()
+    ensure_database_directory()
     if str(DB_ENGINE or "").strip().lower() in {"sqlite", "sqlite3"}:
         return _open_sqlite_connection()
     return _open_postgres_connection()
@@ -5608,6 +5608,83 @@ def _apply_database_schema_bootstrap(connection: DatabaseConnection) -> None:
     _ensure_system_email_oauth_state_cleanup(connection)
     _ensure_knowledge_document_defaults(connection)
     _ensure_knowledge_version_defaults(connection)
+    _ensure_schema_metadata(connection)
+
+
+CURRENT_SCHEMA_VERSION = "1"
+
+
+def _ensure_schema_metadata(connection: DatabaseConnection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS casi_schema_metadata (
+            schema_key TEXT PRIMARY KEY,
+            schema_value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO casi_schema_metadata (schema_key, schema_value, updated_at)
+        VALUES ('schema_version', ?, ?)
+        ON CONFLICT(schema_key) DO UPDATE SET
+            schema_value = excluded.schema_value,
+            updated_at = excluded.updated_at
+        """,
+        (CURRENT_SCHEMA_VERSION, now_iso()),
+    )
+
+
+def apply_database_schema_to_connection(connection: DatabaseConnection) -> None:
+    _apply_database_schema_bootstrap(connection)
+
+
+def database_schema_status_read_only() -> dict[str, Any]:
+    with get_read_only_connection() as connection:
+        if connection.backend == "sqlite":
+            table_row = connection.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'table' AND name = 'casi_schema_metadata'
+                """
+            ).fetchone()
+        else:
+            table_row = connection.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = current_schema()
+                  AND table_name = 'casi_schema_metadata'
+                """
+            ).fetchone()
+        row = (
+            connection.execute(
+                """
+                SELECT schema_value
+                FROM casi_schema_metadata
+                WHERE schema_key = 'schema_version'
+                """
+            ).fetchone()
+            if table_row
+            else None
+        )
+        actual_version = str(row["schema_value"]) if row else None
+    return {
+        "ready": actual_version == CURRENT_SCHEMA_VERSION,
+        "actual_version": actual_version,
+        "expected_version": CURRENT_SCHEMA_VERSION,
+    }
+
+
+def validate_database_schema() -> dict[str, Any]:
+    status = database_schema_status_read_only()
+    if not status["ready"]:
+        raise RuntimeError(
+            "Schemat bazy nie jest gotowy. Uruchom jawna komende migracji przed startem backendu."
+        )
+    return status
 
 
 def initialize_database() -> None:

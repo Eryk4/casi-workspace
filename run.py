@@ -12,21 +12,23 @@ from app.config import (
     DEFAULT_ADMIN_LOGIN,
     DEFAULT_ADMIN_PASSWORD,
     DB_ENGINE,
+    DATABASE_BOOTSTRAP_MODE,
     EMAIL_AUTOCHECK_SECONDS,
     ENABLE_DEMO_SEED,
     KNOWLEDGE_FOLDER_SCAN_SECONDS,
     KNOWLEDGE_PIPELINE_POLL_SECONDS,
     SECURE_COOKIES,
     SQLITE_DB_PATH,
+    STORAGE_BACKEND,
     STORAGE_ROOT,
+    ensure_directories,
     TASK_REMINDER_POLL_SECONDS,
     TASK_REMINDER_WORKER_POLL_SECONDS,
-    TELEGRAM_WEBHOOK_SECRET,
     database_label,
     default_login_hint_enabled,
     telegram_integration_enabled,
 )
-from app.db import initialize_database, reset_database
+from app.db import initialize_database, reset_database, validate_database_schema
 from app.demo_seed import seed_demo_data
 from app.reset_guard import prepare_local_sandbox_reset_from_environment
 from app.workers.email_import_worker import EmailImportSchedulerLoop
@@ -75,19 +77,26 @@ class KnowledgePipelineLoop:
 def _print_environment_info() -> None:
     print(f"Wersja aplikacji: {APP_RELEASE_ID}")
     print(f"Aktywna baza danych: {database_label()}")
-    print(f"Magazyn dokumentow i OCR: {STORAGE_ROOT}")
+    if STORAGE_BACKEND == "local":
+        print(f"Magazyn dokumentow i OCR: {STORAGE_ROOT}")
+    else:
+        print(f"Magazyn dokumentow i OCR: {STORAGE_BACKEND}")
     print(f"Demo seed: {'wlaczony' if ENABLE_DEMO_SEED else 'wylaczony'}")
     print(f"Bezpieczne ciasteczka sesji: {'wlaczone' if SECURE_COOKIES else 'wylaczone'}")
-    if default_login_hint_enabled():
+    if DATABASE_BOOTSTRAP_MODE == "auto" and default_login_hint_enabled():
         print(
             "Konto startowe administratora: "
             f"login {DEFAULT_ADMIN_LOGIN}, haslo {DEFAULT_ADMIN_PASSWORD}, "
             "jesli baza jest pusta i nie nadpisano ich zmiennymi srodowiskowymi."
         )
-    if DEFAULT_ADMIN_LOGIN == "admin" and DEFAULT_ADMIN_PASSWORD == "Admin1234":
+    if (
+        DATABASE_BOOTSTRAP_MODE == "auto"
+        and DEFAULT_ADMIN_LOGIN == "admin"
+        and DEFAULT_ADMIN_PASSWORD == "Admin1234"
+    ):
         print("UWAGA: zmien domyslne dane administratora przed uzyciem srodowiska produkcyjnego.")
     if telegram_integration_enabled():
-        print(f"Webhook Telegram: /api/telegram/webhook/{TELEGRAM_WEBHOOK_SECRET}")
+        print("Webhook Telegram: skonfigurowany.")
     else:
         print("Webhook Telegram: wylaczony (brak tokenu bota lub sekretu webhooka).")
 
@@ -108,8 +117,10 @@ def main() -> None:
     parser.add_argument("--reset", action="store_true", help="Resetuje lokalny sandbox SQLite po guardrailu bezpieczenstwa.")
     args = parser.parse_args()
 
-    print("[START] Inicjalizacja bazy...", flush=True)
+    print(f"[START] Tryb bootstrapu bazy: {DATABASE_BOOTSTRAP_MODE}", flush=True)
     if args.reset:
+        if DATABASE_BOOTSTRAP_MODE != "auto":
+            raise RuntimeError("Reset jest dozwolony tylko w lokalnym trybie bootstrapu auto.")
         reset_plan = prepare_local_sandbox_reset_from_environment(
             db_engine=DB_ENGINE,
             sqlite_path=SQLITE_DB_PATH,
@@ -120,15 +131,20 @@ def main() -> None:
         else:
             print("[INFO] Brak istniejacego pliku SQLite do backupu przed resetem.", flush=True)
         reset_database()
-    else:
+    elif DATABASE_BOOTSTRAP_MODE == "auto":
+        ensure_directories()
         initialize_database()
-    print("[OK] Inicjalizacja bazy zakonczona.", flush=True)
+    elif DATABASE_BOOTSTRAP_MODE == "validate":
+        validate_database_schema()
+    print("[OK] Kontrola bazy zakonczona.", flush=True)
 
     print("[START] Budowanie serwisow...", flush=True)
     try:
-        services = build_services()
+        services = build_services(
+            initialize_default_organization=DATABASE_BOOTSTRAP_MODE == "auto",
+        )
     except Exception as error:
-        if not _is_missing_organizations_table_error(error):
+        if DATABASE_BOOTSTRAP_MODE != "auto" or not _is_missing_organizations_table_error(error):
             raise
         print(
             "[WARN] Wykryto brak tabeli organizations podczas startu. "
@@ -136,9 +152,12 @@ def main() -> None:
             flush=True,
         )
         initialize_database()
-        services = build_services()
-    services["auth_service"].ensure_default_admin()
+        services = build_services(initialize_default_organization=True)
+    if DATABASE_BOOTSTRAP_MODE == "auto":
+        services["auth_service"].ensure_default_admin()
     print("[OK] Serwisy gotowe.", flush=True)
+    if ENABLE_DEMO_SEED and DATABASE_BOOTSTRAP_MODE != "auto":
+        raise RuntimeError("Seed demo jest dozwolony tylko w lokalnym trybie bootstrapu auto.")
     if ENABLE_DEMO_SEED:
         print("[START] Seed danych demo...", flush=True)
         seed_demo_data(

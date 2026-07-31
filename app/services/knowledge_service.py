@@ -203,7 +203,6 @@ class KnowledgeService:
     ) -> dict[str, Any]:
         organization = self._resolve_organization(organization_id)
         folder_path = self._organization_folder_path(organization["slug"])
-        folder_path.mkdir(parents=True, exist_ok=True)
         documents = self.knowledge_repository.list_documents(
             int(organization["organization_id"]),
             search=search,
@@ -973,6 +972,10 @@ class KnowledgeService:
         actor_user: dict[str, Any],
         actor: str,
     ) -> dict[str, Any]:
+        if str(getattr(self.storage_service, "backend_name", "")).strip().lower() != "lokalny":
+            raise KnowledgeError(
+                "Synchronizacja obserwowanego folderu jest dostepna tylko dla lokalnego storage."
+            )
         organization = self._resolve_organization(organization_id)
         folder_path = self._organization_folder_path(organization["slug"])
         folder_path.mkdir(parents=True, exist_ok=True)

@@ -6,6 +6,7 @@
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
     "build": "node scripts/build-next.js",
     "start": "next start --hostname 127.0.0.1 --port 3000",
+    "start:paas": "node scripts/start-paas.js",
     "test:dashboard": "node scripts/test-dashboard.js",
     "test:billing-attention": "node scripts/test-billing-attention.js",
     "test:billing-attention-dom": "node scripts/test-billing-attention-dom.js",
@@ -23,6 +24,7 @@
     "test:internal-notification-shell": "node scripts/test-internal-notification-shell.js",
     "test:internal-notification-scheduler": "node scripts/test-internal-notification-scheduler.js",
     "test:internal-notification-scheduler-dom": "node scripts/test-internal-notification-scheduler-dom.js",
+    "test:start-paas": "node scripts/test-start-paas.js",
     "test:boss-assistant": "node scripts/test-boss-assistant.js",
     "test:company-assistant": "node scripts/test-company-assistant.js",
     "test:crm": "node scripts/test-crm.js",
@@ -32,6 +34,10 @@
     "lint": "next lint",
     "test:settings": "node scripts/test-settings.js",
     "test:models": "node scripts/test-all.js"
+  },
+  "engines": {
+    "node": ">=24.18.0 <25",
+    "npm": ">=11.16.0 <12"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

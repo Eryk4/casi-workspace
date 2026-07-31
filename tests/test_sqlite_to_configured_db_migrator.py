@@ -338,8 +338,19 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
         for table_name in ACCESS_CORE_TABLES:
             self.assertNotIn(table_name, report["tables_missing_from_migrator"])
         self.assertEqual(len(report["migrator_tables"]), 63)
-        self.assertEqual(len(report["tables_missing_from_migrator"]), 10)
+        self.assertEqual(len(report["tables_missing_from_migrator"]), 14)
         self.assertEqual(report["blocker_count"], 0)
+
+    def test_audit_reports_notification_operational_tables_as_missing(self):
+        report = audit.build_audit()
+
+        for table_name in (
+            "internal_notifications",
+            "internal_notification_state_events",
+            "internal_notification_schedules",
+            "internal_notification_schedule_runs",
+        ):
+            self.assertIn(table_name, report["tables_missing_from_migrator"])
 
     def test_audit_no_longer_reports_task_workflow_tables_as_missing(self):
         report = audit.build_audit()

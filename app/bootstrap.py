@@ -54,12 +54,21 @@ from app.services.task_reminder_service import TaskReminderService
 from app.services.work_item_service import WorkItemService
 from app.services.whiteboard_service import WhiteboardService
 from app.integrations.email_google_oauth import EmailGoogleOAuthAdapter
-from app.config import DEFAULT_ADMIN_LOGIN, STORAGE_BACKEND, TASK_REMINDER_RETRY_MINUTES
+from app.config import DEFAULT_ADMIN_LOGIN, REQUIRE_DURABLE_STORAGE, STORAGE_BACKEND, TASK_REMINDER_RETRY_MINUTES
 from app.config import TASK_REMINDER_MAX_ATTEMPTS, TASK_REMINDER_PROCESSING_TIMEOUT_MINUTES
 
 
-def build_storage_service(storage_backend: str | None = None) -> StorageService:
+def build_storage_service(
+    storage_backend: str | None = None,
+    *,
+    require_durable: bool | None = None,
+) -> StorageService:
     normalized_backend = str(storage_backend or STORAGE_BACKEND or "local").strip().lower()
+    durable_required = REQUIRE_DURABLE_STORAGE if require_durable is None else bool(require_durable)
+    if durable_required and normalized_backend != "s3":
+        raise StorageError(
+            "Trwaly storage jest wymagany. Ustaw INVOICE_STORAGE_BACKEND=s3 i kompletna konfiguracje S3."
+        )
     if normalized_backend == "local":
         return LocalStorageService()
     if normalized_backend == "s3":
@@ -70,7 +79,7 @@ def build_storage_service(storage_backend: str | None = None) -> StorageService:
     )
 
 
-def build_services() -> dict[str, object]:
+def build_services(*, initialize_default_organization: bool = True) -> dict[str, object]:
     billing_repository = BillingRepository()
     invoice_repository = InvoiceRepository()
     contractor_repository = ContractorRepository()
@@ -112,7 +121,8 @@ def build_services() -> dict[str, object]:
         system_settings_repository=system_settings_repository,
         event_repository=event_repository,
     )
-    organization_service.ensure_default_setup(DEFAULT_ADMIN_LOGIN)
+    if initialize_default_organization:
+        organization_service.ensure_default_setup(DEFAULT_ADMIN_LOGIN)
     auth_service = AuthService(
         user_repository=user_repository,
         session_repository=session_repository,

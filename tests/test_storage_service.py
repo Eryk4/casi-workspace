@@ -65,6 +65,15 @@ class StorageBackendSelectionTests(TestCase):
         with self.assertRaisesRegex(StorageError, "INVOICE_STORAGE_BACKEND"):
             build_storage_service("ftp")
 
+    def test_durable_storage_rejects_local_without_fallback(self) -> None:
+        with self.assertRaisesRegex(StorageError, "Trwaly storage"):
+            build_storage_service("local", require_durable=True)
+
+    def test_durable_s3_missing_configuration_does_not_fallback(self) -> None:
+        with patch("app.bootstrap.S3StorageService", side_effect=StorageError("missing S3")):
+            with self.assertRaisesRegex(StorageError, "missing S3"):
+                build_storage_service("s3", require_durable=True)
+
 
 class S3StorageServiceTests(TestCase):
     def build_service(self) -> tuple[S3StorageService, FakeS3Client]:
@@ -137,3 +146,33 @@ class S3StorageServiceTests(TestCase):
                 secret_access_key="",
                 client=FakeS3Client(),
             )
+
+    def test_durable_s3_requires_tls(self) -> None:
+        with self.assertRaisesRegex(StorageError, "HTTPS"):
+            S3StorageService(
+                endpoint_url="http://storage.invalid",
+                region="test",
+                bucket="casi-staging",
+                access_key_id="placeholder",
+                secret_access_key="placeholder",
+                prefix="casi/staging",
+                require_tls=True,
+                client=FakeS3Client(),
+            )
+
+    def test_s3_client_error_never_creates_local_copy(self) -> None:
+        class FailingClient(FakeS3Client):
+            def put_object(self, **kwargs):
+                raise RuntimeError("S3 unavailable")
+
+        service = S3StorageService(
+            endpoint_url="https://storage.invalid",
+            region="test",
+            bucket="casi-staging",
+            access_key_id="placeholder",
+            secret_access_key="placeholder",
+            prefix="casi/staging",
+            client=FailingClient(),
+        )
+        with self.assertRaises(RuntimeError):
+            service.save_binary("document", Path("organizacje/test/file.pdf"), b"content")
