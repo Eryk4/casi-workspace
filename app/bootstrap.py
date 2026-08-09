@@ -39,6 +39,11 @@ from app.services.natural_task_command_service import NaturalTaskCommandService
 from app.services.approval_service import ApprovalService
 from app.services.attachment_service import AttachmentService
 from app.services.automation_service import AutomationService
+from app.services.automation_operations_service import (
+    AutomationOperationsRegistry,
+    AutomationOperationsService,
+    InternalNotificationSchedulerOperationsAdapter,
+)
 from app.services.billing_ledger_service import BillingLedgerService
 from app.services.dashboard_view_service import DashboardViewService
 from app.services.notification_service import NotificationService
@@ -238,6 +243,17 @@ def build_services(*, initialize_default_organization: bool = True) -> dict[str,
         notification_service=internal_notification_service,
         event_repository=event_repository,
     )
+    automation_operations_registry = AutomationOperationsRegistry(
+        (
+            InternalNotificationSchedulerOperationsAdapter(
+                internal_notification_schedule_repository
+            ),
+        )
+    )
+    automation_operations_service = AutomationOperationsService(
+        registry=automation_operations_registry,
+        notification_service=internal_notification_service,
+    )
     dashboard_view_service = DashboardViewService(
         dashboard_view_repository=dashboard_view_repository,
         event_repository=event_repository,
@@ -323,6 +339,8 @@ def build_services(*, initialize_default_organization: bool = True) -> dict[str,
         "billing_service": billing_service,
         "internal_notification_service": internal_notification_service,
         "internal_notification_scheduler_service": internal_notification_scheduler_service,
+        "automation_operations_registry": automation_operations_registry,
+        "automation_operations_service": automation_operations_service,
         "dashboard_view_service": dashboard_view_service,
         "automation_service": automation_service,
         "whiteboard_service": whiteboard_service,

@@ -6,6 +6,80 @@ from app.db import get_connection, get_read_only_connection
 
 
 class InternalNotificationScheduleRepository:
+    def get_operations_snapshot(
+        self,
+        *,
+        organization_id: int,
+        recipient_user_id: int,
+        source_type: str,
+    ) -> dict[str, Any] | None:
+        """Return one bounded, read-only operational snapshot without loading run history."""
+        with get_read_only_connection() as connection:
+            row = connection.execute(
+                """
+                WITH scoped_schedule AS (
+                    SELECT *
+                    FROM internal_notification_schedules
+                    WHERE organization_id = ?
+                      AND recipient_user_id = ?
+                      AND source_type = ?
+                ),
+                latest_run AS (
+                    SELECT run.*
+                    FROM internal_notification_schedule_runs run
+                    WHERE run.schedule_id = (
+                        SELECT internal_notification_schedule_id FROM scoped_schedule
+                    )
+                    ORDER BY run.created_at DESC, run.internal_notification_schedule_run_id DESC
+                    LIMIT 1
+                ),
+                latest_terminal_run AS (
+                    SELECT run.*
+                    FROM internal_notification_schedule_runs run
+                    WHERE run.schedule_id = (
+                        SELECT internal_notification_schedule_id FROM scoped_schedule
+                    )
+                      AND run.status IN ('succeeded', 'failed')
+                    ORDER BY run.created_at DESC, run.internal_notification_schedule_run_id DESC
+                    LIMIT 1
+                ),
+                recent_runs AS (
+                    SELECT run.status
+                    FROM internal_notification_schedule_runs run
+                    WHERE run.schedule_id = (
+                        SELECT internal_notification_schedule_id FROM scoped_schedule
+                    )
+                    ORDER BY run.created_at DESC, run.internal_notification_schedule_run_id DESC
+                    LIMIT 20
+                )
+                SELECT
+                    schedule.*,
+                    latest.internal_notification_schedule_run_id AS latest_run_id,
+                    latest.status AS latest_run_status,
+                    latest.attempt_count AS latest_attempt_count,
+                    latest.candidates_count AS latest_candidates_count,
+                    latest.created_count AS latest_created_count,
+                    latest.existing_count AS latest_existing_count,
+                    latest.error_code AS latest_error_code,
+                    latest.error_summary AS latest_error_summary,
+                    latest.scheduled_for_utc AS latest_scheduled_for_utc,
+                    latest.started_at AS latest_started_at,
+                    latest.finished_at AS latest_finished_at,
+                    latest.created_at AS latest_created_at,
+                    terminal.internal_notification_schedule_run_id AS terminal_run_id,
+                    terminal.status AS terminal_run_status,
+                    terminal.error_code AS terminal_error_code,
+                    terminal.error_summary AS terminal_error_summary,
+                    terminal.finished_at AS terminal_finished_at,
+                    (SELECT COUNT(*) FROM recent_runs WHERE status = 'failed') AS recent_failure_count
+                FROM scoped_schedule schedule
+                LEFT JOIN latest_run latest ON 1 = 1
+                LEFT JOIN latest_terminal_run terminal ON 1 = 1
+                """,
+                (organization_id, recipient_user_id, source_type),
+            ).fetchone()
+        return dict(row) if row else None
+
     def get_schedule(
         self,
         *,
@@ -315,6 +389,20 @@ class InternalNotificationScheduleRepository:
 
     def list_runs(self, *, schedule_id: int, limit: int = 20) -> list[dict[str, Any]]:
         with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM internal_notification_schedule_runs
+                WHERE schedule_id = ?
+                ORDER BY created_at DESC, internal_notification_schedule_run_id DESC
+                LIMIT ?
+                """,
+                (schedule_id, max(1, min(int(limit), 50))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_runs_read_only(self, *, schedule_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        with get_read_only_connection() as connection:
             rows = connection.execute(
                 """
                 SELECT *

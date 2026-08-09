@@ -12,6 +12,7 @@ import {
   ReceiptText,
   Settings,
   SunMedium,
+  Workflow,
 } from "lucide-react";
 
 export type NavigationGroup = "core" | "operations" | "management";
@@ -30,7 +31,8 @@ export type NavigationItem = {
     | "work-items"
     | "reports"
     | "settings"
-    | "notifications";
+    | "notifications"
+    | "automations";
   label: string;
   path: string;
   icon: LucideIcon;
@@ -84,6 +86,19 @@ export const navigationItems: NavigationItem[] = [
     readiness: "live",
     readinessLabel: "Produkt v1",
     primaryEndpoint: "/api/internal-notifications",
+  },
+  {
+    id: "automations",
+    label: "Automatyzacje",
+    path: "/automatyzacje",
+    icon: Workflow,
+    group: "operations",
+    component: "AutomationOperationsPage",
+    description: "Stan operacyjny automatyzacji dostępnych w bieżącej organizacji.",
+    actionLabel: "Odśwież stan",
+    readiness: "live",
+    readinessLabel: "Produkt v1",
+    primaryEndpoint: "/api/automations/operations",
   },
   {
     id: "assistant-ceo",

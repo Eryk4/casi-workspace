@@ -75,6 +75,7 @@ from app.domain.constants import (
     READ_ROLES,
 )
 from app.services.auth_service import AuthError, PermissionError
+from app.services.automation_operations_service import AutomationOperationNotFoundError
 from app.services.knowledge_service import KnowledgeError
 from app.services.internal_notification_service import InternalNotificationNotFoundError
 from app.services.organization_service import OrganizationError, OrganizationPermissionError
@@ -127,6 +128,10 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
         @property
         def automation_service(self):
             return services["automation_service"]
+
+        @property
+        def automation_operations_service(self):
+            return services["automation_operations_service"]
 
         @property
         def billing_ledger_service(self):
@@ -1332,6 +1337,62 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(attention)
+            if path == "/api/automations/operations":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                if self._query_one(query, "recipient_id") or self._query_one(query, "recipient_user_id"):
+                    return self._send_json({"error": "Odbiorca jest ustalany po stronie serwera."}, status=400)
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                if organization_id is None:
+                    return self._send_json({"error": "Wybierz organizacje dla Centrum Automatyzacji."}, status=400)
+                requested_organization_id = self._requested_organization_id(query)
+                if requested_organization_id is not None and int(requested_organization_id) != int(organization_id):
+                    return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
+                try:
+                    result = self.automation_operations_service.dashboard(
+                        organization_id=int(organization_id),
+                        recipient_user_id=int(user["user_id"]),
+                        actor_user=user,
+                    )
+                except AutomationOperationNotFoundError:
+                    return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result)
+            if path.startswith("/api/automations/operations/"):
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                if self._query_one(query, "recipient_id") or self._query_one(query, "recipient_user_id"):
+                    return self._send_json({"error": "Odbiorca jest ustalany po stronie serwera."}, status=400)
+                automation_key = path.removeprefix("/api/automations/operations/").strip("/")
+                if not automation_key or "/" in automation_key:
+                    return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                if organization_id is None:
+                    return self._send_json({"error": "Wybierz organizacje dla Centrum Automatyzacji."}, status=400)
+                requested_organization_id = self._requested_organization_id(query)
+                if requested_organization_id is not None and int(requested_organization_id) != int(organization_id):
+                    return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
+                limit = self._parse_optional_int(self._query_one(query, "limit")) or 20
+                try:
+                    result = self.automation_operations_service.detail(
+                        automation_key,
+                        organization_id=int(organization_id),
+                        recipient_user_id=int(user["user_id"]),
+                        actor_user=user,
+                        history_limit=min(max(limit, 1), 50),
+                    )
+                except AutomationOperationNotFoundError:
+                    return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                return self._send_json(result)
             if path == "/api/internal-notifications":
                 user = self._require_user(READ_ROLES)
                 if not user:
