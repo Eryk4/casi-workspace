@@ -1,6 +1,8 @@
 ﻿from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,63 +23,79 @@ class DatabaseMigrationAuditTests(unittest.TestCase):
         self.assertIn("organizations", report["postgresql_tables"])
         self.assertIn("organizations", report["migrator_tables"])
         self.assertIn("users", report["migrator_tables"])
-        self.assertIn("google_calendar_oauth_states", report["tables_missing_from_migrator"])
-        self.assertIn("email_import_runs", report["tables_missing_from_migrator"])
+        self.assertIn("email_import_runs", report["migrator_tables"])
+        self.assertIn("google_calendar_oauth_states", report["classified_excluded_tables"])
+        self.assertEqual(len(report["sqlite_tables"]), 78)
+        self.assertEqual(len(report["manifest_tables"]), 78)
+        self.assertEqual(len(report["migrator_tables"]), 73)
+        self.assertEqual(report["unclassified_tables"], [])
+        self.assertEqual(report["tables_missing_from_migrator"], [])
         self.assertEqual(report["blocker_count"], 0)
+
+    def test_audit_script_runs_directly_from_repository_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_root = Path(tmp)
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(audit.__file__),
+                    "--output-json",
+                    str(output_root / "audit.json"),
+                    "--output-md",
+                    str(output_root / "audit.md"),
+                    "--fail-on-blockers",
+                ],
+                cwd=audit.ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Unclassified tables: 0", completed.stdout)
+        self.assertIn("Blockers: 0", completed.stdout)
 
     def test_remaining_table_decisions_classify_current_missing_tables(self):
         report = audit.build_audit()
         decisions = {item["table"]: item for item in report["remaining_table_decisions"]}
 
-        self.assertEqual(set(decisions), set(report["tables_missing_from_migrator"]))
-        self.assertEqual(decisions["google_calendar_oauth_states"]["classification"], "can_rebuild")
-        self.assertEqual(decisions["task_reminder_worker_heartbeats"]["classification"], "can_rebuild")
-        self.assertTrue(decisions["email_import_items"]["contains_sensitive_data"])
-        self.assertTrue(decisions["ksef_import_items"]["contains_customer_business_data"])
+        self.assertEqual(set(decisions), set(report["classified_excluded_tables"]))
+        self.assertEqual(decisions["google_calendar_oauth_states"]["category"], "D_runtime_temporary")
+        self.assertEqual(decisions["task_reminder_worker_heartbeats"]["category"], "D_runtime_temporary")
+        self.assertFalse(decisions["user_sessions"]["migrate"])
+        self.assertTrue(decisions["google_calendar_oauth_states"]["rebuild_procedure"])
 
     def test_no_remaining_must_migrate_tables_after_core_packages(self):
         report = audit.build_audit()
         decisions = {item["table"]: item for item in report["remaining_table_decisions"]}
 
         self.assertEqual(report["blocker_count"], 0)
-        self.assertFalse(
-            [item for item in decisions.values() if item["classification"] == "must_migrate"]
+        self.assertEqual(
+            set(decisions),
+            {
+                "casi_schema_metadata",
+                "google_calendar_oauth_states",
+                "system_email_oauth_states",
+                "task_reminder_worker_heartbeats",
+                "user_sessions",
+            },
         )
-
         for table_name in (
-            "email_import_runs",
-            "email_import_items",
-            "ksef_import_runs",
-            "ksef_import_items",
-        ):
-            self.assertEqual(decisions[table_name]["classification"], "should_migrate")
-            self.assertFalse(decisions[table_name]["prototype_blocker"])
-            self.assertEqual(decisions[table_name]["audit_severity"], "warning")
-
-        for table_name in (
+            "casi_schema_metadata",
             "google_calendar_oauth_states",
             "system_email_oauth_states",
-            "task_reminder_outbox",
             "task_reminder_worker_heartbeats",
-            "user_module_inbox_state",
+            "user_sessions",
         ):
-            self.assertEqual(decisions[table_name]["classification"], "can_rebuild")
-            self.assertTrue(decisions[table_name]["can_be_rebuilt"])
-            self.assertEqual(decisions[table_name]["audit_severity"], "warning")
-
-        self.assertEqual(
-            decisions["task_reminder_outbox_attempts"]["classification"],
-            "can_skip_for_prototype",
-        )
+            self.assertEqual(decisions[table_name]["category"], "D_runtime_temporary")
+            self.assertFalse(decisions[table_name]["migrate"])
 
     def test_recommendations_allow_controlled_postgresql_test_when_no_blockers_remain(self):
         report = audit.build_audit()
         recommendations = "\n".join(report["recommended_next_actions"])
 
         self.assertEqual(report["blocker_count"], 0)
-        self.assertIn("pierwszy kontrolowany test migracji", recommendations)
-        self.assertIn("Pozostale tabele nie blokuja", recommendations)
-        self.assertNotIn("dopiero potem uruchomic", recommendations)
+        self.assertIn("pustym, jednorazowym PostgreSQL", recommendations)
 
     def test_critical_missing_table_is_reported_as_blocker(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -111,7 +129,7 @@ class DatabaseMigrationAuditTests(unittest.TestCase):
             report = audit.build_audit(db_path=db_file, migrator_path=migrator)
 
         issues = [issue for issue in report["issues"] if issue["table"] == "google_calendar_oauth_states"]
-        self.assertEqual(issues[0]["severity"], "warning")
+        self.assertEqual(issues[0]["severity"], "info")
         self.assertEqual(report["blocker_count"], 0)
 
     def test_sqlite_and_postgresql_only_tables_are_reported(self):
@@ -164,7 +182,7 @@ class DatabaseMigrationAuditTests(unittest.TestCase):
         self.assertEqual(loaded["schema_sources"]["db_schema_file"], "app\\db.py" if "\\" in loaded["schema_sources"]["db_schema_file"] else "app/db.py")
         self.assertNotIn("C:\\Users", markdown)
         self.assertIn("Czy migracja bazy jest zablokowana?", markdown)
-        self.assertIn("Decyzje dla pozostalych tabel", markdown)
+        self.assertIn("Jawnie wykluczone", markdown)
         self.assertIn("remaining_table_decisions", loaded)
 
     def test_missing_files_are_errors_without_postgresql_requirement(self):

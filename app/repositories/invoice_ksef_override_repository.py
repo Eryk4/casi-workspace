@@ -9,7 +9,44 @@ from app.utils import now_iso
 class InvoiceKSeFOverrideRepository:
     def create(self, payload: dict[str, Any]) -> int:
         timestamp = now_iso()
+        organization_id = int(payload["organization_id"])
+        invoice_id = int(payload["invoice_id"])
+        approval_request_id = payload.get("approval_request_id")
+        status = str(payload.get("status") or "pending").strip().lower()
         with get_connection() as connection:
+            invoice = connection.execute(
+                "SELECT id, organization_id FROM invoices WHERE id = ?",
+                (invoice_id,),
+            ).fetchone()
+            if not invoice:
+                raise ValueError("Nie znaleziono faktury dla korekty KSeF.")
+            if int(invoice["organization_id"]) != organization_id:
+                raise ValueError("Faktura nie nalezy do organizacji korekty KSeF.")
+
+            if approval_request_id is None:
+                if status != "approved":
+                    raise ValueError(
+                        "Korekta KSeF oczekujaca na decyzje wymaga wniosku akceptacji."
+                    )
+            else:
+                approval = connection.execute(
+                    """
+                    SELECT approval_request_id, organization_id, entity_type, entity_id
+                    FROM approval_requests
+                    WHERE approval_request_id = ?
+                    """,
+                    (int(approval_request_id),),
+                ).fetchone()
+                if not approval:
+                    raise ValueError("Nie znaleziono wniosku akceptacji dla korekty KSeF.")
+                if (
+                    int(approval["organization_id"]) != organization_id
+                    or str(approval["entity_type"]) != "invoice"
+                    or int(approval["entity_id"]) != invoice_id
+                ):
+                    raise ValueError(
+                        "Wniosek akceptacji nie odpowiada organizacji i fakturze korekty KSeF."
+                    )
             return execute_insert_returning_id(
                 connection,
                 """
@@ -33,13 +70,13 @@ class InvoiceKSeFOverrideRepository:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    payload["organization_id"],
-                    payload["invoice_id"],
-                    payload.get("approval_request_id"),
+                    organization_id,
+                    invoice_id,
+                    int(approval_request_id) if approval_request_id is not None else None,
                     payload["field_name"],
                     payload.get("source_value"),
                     payload.get("local_value"),
-                    payload.get("status") or "pending",
+                    status,
                     payload.get("requested_by_user_id"),
                     payload.get("approved_by_user_id"),
                     payload.get("rejected_by_user_id"),
@@ -56,8 +93,9 @@ class InvoiceKSeFOverrideRepository:
     def update(self, override_id: int, fields: dict[str, Any]) -> None:
         if not fields:
             return
+        if "approval_request_id" in fields:
+            raise ValueError("Nie mozna przepinac korekty KSeF do innego wniosku akceptacji.")
         allowed = {
-            "approval_request_id",
             "source_value",
             "local_value",
             "status",

@@ -98,7 +98,6 @@ LEGACY_TABLES = (
     "invoices",
     "invoice_relations",
     "event_logs",
-    "user_sessions",
 )
 
 
@@ -337,11 +336,11 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
 
         for table_name in ACCESS_CORE_TABLES:
             self.assertNotIn(table_name, report["tables_missing_from_migrator"])
-        self.assertEqual(len(report["migrator_tables"]), 63)
-        self.assertEqual(len(report["tables_missing_from_migrator"]), 14)
+        self.assertEqual(len(report["migrator_tables"]), 73)
+        self.assertEqual(len(report["tables_missing_from_migrator"]), 0)
         self.assertEqual(report["blocker_count"], 0)
 
-    def test_audit_reports_notification_operational_tables_as_missing(self):
+    def test_audit_reports_notification_operational_tables_as_migrated(self):
         report = audit.build_audit()
 
         for table_name in (
@@ -350,7 +349,7 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
             "internal_notification_schedules",
             "internal_notification_schedule_runs",
         ):
-            self.assertIn(table_name, report["tables_missing_from_migrator"])
+            self.assertIn(table_name, report["migrator_tables"])
 
     def test_audit_no_longer_reports_task_workflow_tables_as_missing(self):
         report = audit.build_audit()
@@ -422,15 +421,29 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
             self.assertNotIn(table_name, report["tables_missing_from_migrator"])
         self.assertEqual(report["migration_order_issues"], [])
 
-    def test_migrator_was_not_expanded_to_all_schema_tables(self):
+    def test_manifest_classifies_every_schema_table_and_excludes_only_runtime_state(self):
         report = audit.build_audit()
 
         self.assertLess(len(report["migrator_tables"]), len(report["sqlite_tables"]))
-        self.assertIn("google_calendar_oauth_states", report["tables_missing_from_migrator"])
-        self.assertIn("email_import_runs", report["tables_missing_from_migrator"])
-        self.assertIn("ksef_import_runs", report["tables_missing_from_migrator"])
-        self.assertIn("task_reminder_outbox", report["tables_missing_from_migrator"])
-        self.assertIn("user_module_inbox_state", report["tables_missing_from_migrator"])
+        self.assertEqual(report["unclassified_tables"], [])
+        self.assertEqual(report["tables_missing_from_migrator"], [])
+        self.assertEqual(
+            set(report["classified_excluded_tables"]),
+            {
+                "casi_schema_metadata",
+                "google_calendar_oauth_states",
+                "system_email_oauth_states",
+                "task_reminder_worker_heartbeats",
+                "user_sessions",
+            },
+        )
+        for table_name in (
+            "email_import_runs",
+            "ksef_import_runs",
+            "task_reminder_outbox",
+            "user_module_inbox_state",
+        ):
+            self.assertIn(table_name, report["migrator_tables"])
 
     def test_database_migration_does_not_run_physical_storage_migration(self):
         migrator_source = Path(migrator.__file__).read_text(encoding="utf-8")
@@ -492,13 +505,12 @@ class SQLiteToConfiguredDbMigratorTests(unittest.TestCase):
                 )
                 source.commit()
 
-                @contextmanager
-                def target_connection():
-                    yield target
-                    target.commit()
-
-                with patch.object(migrator, "get_connection", target_connection):
-                    copied = migrator._copy_table(source, "organization_memberships")
+                copied = migrator._copy_table(
+                    source,
+                    "organization_memberships",
+                    target_connection=target,
+                )
+                target.commit()
 
                 row = target.execute("SELECT * FROM organization_memberships").fetchone()
             finally:

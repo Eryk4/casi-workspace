@@ -194,6 +194,8 @@ def profile_database_migration_audit() -> None:
             "-u",
             "-m",
             "unittest",
+            "tests.test_data_migration_coverage",
+            "tests.test_invoice_ksef_override_integrity",
             "tests.test_database_migration_audit",
             "tests.test_sqlite_to_configured_db_migrator",
             "-v",

@@ -1402,6 +1402,23 @@ class HttpServerTestMethods(HttpServerTestCase):
         self.assertEqual(update_result["ksef_correction"]["mode"], "request_created")
         approval_request_id = int(update_result["ksef_correction"]["request_id"])
         self.assertEqual(update_result["ksef_correction"]["requested_user_id"], delegate["user_id"])
+        approval_record = self.services["approval_repository"].get_by_id(
+            approval_request_id,
+            organization_id=int(organization["organization_id"]),
+        )
+        linked_overrides = self.services[
+            "invoice_ksef_override_repository"
+        ].list_for_approval_request(
+            approval_request_id,
+            organization_id=int(organization["organization_id"]),
+        )
+        self.assertIsNotNone(approval_record)
+        self.assertEqual(len(linked_overrides), 1)
+        self.assertEqual(int(linked_overrides[0]["invoice_id"]), int(invoice["id"]))
+        self.assertEqual(
+            int(linked_overrides[0]["organization_id"]),
+            int(organization["organization_id"]),
+        )
 
         delegate_cookie = self._login("delegate-http", "1234")
         response, payload = self._request(

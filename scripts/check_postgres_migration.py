@@ -391,6 +391,7 @@ def run_controlled_migration_check(target: SafePostgresTarget) -> None:
     configure_target_environment(target)
 
     import migrate_sqlite_to_configured_db as migrator
+    from app.db import reset_database
 
     with tempfile.TemporaryDirectory(prefix="casi_pg_migration_test_") as tmp:
         source_sqlite = Path(tmp) / "synthetic_source.sqlite3"
@@ -400,14 +401,13 @@ def run_controlled_migration_check(target: SafePostgresTarget) -> None:
         print("Resetting only the validated test PostgreSQL schema.")
         print("Synthetic SQLite source:", source_sqlite.name)
 
-        migrator.reset_database()
-        summary: dict[str, int] = {}
-        with migrator._sqlite_connect(source_sqlite) as source:
-            for table_name in migrator.TABLE_ORDER:
-                summary[table_name] = migrator._copy_table(source, table_name)
-        migrator._reset_postgres_sequences()
+        reset_database()
+        apply_report = migrator.apply_data_migration(source_sqlite)
+        verify_report = migrator.verify_data_migration(source_sqlite)
 
-    verify_postgres_result(summary)
+    if verify_report["status"] != "pass":
+        raise AssertionError("Canonical verification failed after controlled migration.")
+    verify_postgres_result(apply_report["tables"])
 
 
 def verify_postgres_result(summary: dict[str, int]) -> None:

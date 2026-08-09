@@ -3160,6 +3160,7 @@ DROP TABLE IF EXISTS task_history;
 DROP TABLE IF EXISTS task_reminder_outbox_attempts;
 DROP TABLE IF EXISTS task_reminder_outbox;
 DROP TABLE IF EXISTS task_reminder_worker_heartbeats;
+DROP TABLE IF EXISTS invoice_ksef_field_overrides;
 DROP TABLE IF EXISTS approval_requests;
 DROP TABLE IF EXISTS task_templates;
 DROP TABLE IF EXISTS task_checklist_items;
@@ -3225,6 +3226,7 @@ DROP TABLE IF EXISTS task_history CASCADE;
 DROP TABLE IF EXISTS task_reminder_outbox_attempts CASCADE;
 DROP TABLE IF EXISTS task_reminder_outbox CASCADE;
 DROP TABLE IF EXISTS task_reminder_worker_heartbeats CASCADE;
+DROP TABLE IF EXISTS invoice_ksef_field_overrides CASCADE;
 DROP TABLE IF EXISTS approval_requests CASCADE;
 DROP TABLE IF EXISTS task_templates CASCADE;
 DROP TABLE IF EXISTS task_checklist_items CASCADE;
@@ -3927,7 +3929,7 @@ def _ensure_invoice_ksef_override_schema(connection) -> None:
                 rejected_at TEXT,
                 FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
                 FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
-                FOREIGN KEY (approval_request_id) REFERENCES approval_requests(approval_request_id) ON DELETE SET NULL,
+                FOREIGN KEY (approval_request_id) REFERENCES approval_requests(approval_request_id),
                 FOREIGN KEY (requested_by_user_id) REFERENCES users(user_id),
                 FOREIGN KEY (approved_by_user_id) REFERENCES users(user_id),
                 FOREIGN KEY (rejected_by_user_id) REFERENCES users(user_id)
@@ -3965,7 +3967,7 @@ def _ensure_invoice_ksef_override_schema(connection) -> None:
             CONSTRAINT fk_invoice_ksef_overrides_invoice
                 FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
             CONSTRAINT fk_invoice_ksef_overrides_request
-                FOREIGN KEY (approval_request_id) REFERENCES approval_requests(approval_request_id) ON DELETE SET NULL,
+                FOREIGN KEY (approval_request_id) REFERENCES approval_requests(approval_request_id),
             CONSTRAINT fk_invoice_ksef_overrides_requested_by
                 FOREIGN KEY (requested_by_user_id) REFERENCES users(user_id),
             CONSTRAINT fk_invoice_ksef_overrides_approved_by
@@ -4324,6 +4326,7 @@ class DatabaseConnection:
 def _open_sqlite_connection() -> DatabaseConnection:
     connection = sqlite3.connect(SQLITE_DB_PATH)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
     return DatabaseConnection(connection, backend="sqlite", driver_name="sqlite")
 
 
@@ -4331,6 +4334,7 @@ def _open_sqlite_read_only_connection() -> DatabaseConnection:
     database_uri = f"{SQLITE_DB_PATH.resolve().as_uri()}?mode=ro"
     connection = sqlite3.connect(database_uri, uri=True)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA query_only = ON")
     return DatabaseConnection(connection, backend="sqlite", driver_name="sqlite")
 

@@ -117,20 +117,19 @@ The JSON report contains statuses only, never DSNs, access keys, secret keys, or
 
 ## Safe staging sequence
 
-1. Pin and verify Python, Node, and npm.
-2. Provision an empty staging PostgreSQL and a private staging S3-compatible bucket.
-3. Put DSN and S3 credentials only in the platform secret store.
-4. Set `INVOICE_LOAD_LOCAL_ENV=0`, PostgreSQL, durable S3, seed off, reset off, bootstrap `validate`, and scheduler runtime `false`.
-5. Run `database_migrate --check`; expect migration required for an empty database.
-6. Run `database_migrate --apply`.
-7. Run `database_migrate --check`; expect ready.
-8. Run `staging_preflight`; require full PASS.
-9. Start backend in `web` mode and verify read-only `/health`.
-10. Build and start the frontend with `start:paas`.
-11. Create the first staging administrator through a separately reviewed secure workflow.
-12. Run scheduler `--check` while its runtime gate is false.
-13. Enable one test user schedule only after application and organization isolation checks pass.
-14. Enable the scheduler runtime only for its dedicated job and perform one controlled `--once`.
+1. Provision a new, empty PostgreSQL target and keep its DSN only in the platform secret store.
+2. Run `python -m app.cli.database_migrate --apply` to create the current schema. This is schema migration only.
+3. Run `python -m app.cli.staging_preflight` with bootstrap `validate`, seed/reset disabled, durable storage configured, and scheduler runtime disabled.
+4. Run `python migrate_sqlite_to_configured_db.py plan --source-sqlite <explicit-binary-copy.sqlite3> --output <plan.json>`.
+5. Review the complete table classification, counts, canonical source hashes, relation checks, and storage-path findings. Any blocking issue stops the migration.
+6. Run `python migrate_sqlite_to_configured_db.py apply --source-sqlite <explicit-binary-copy.sqlite3> --output <apply.json>` against the still-empty target.
+7. Run `python migrate_sqlite_to_configured_db.py verify --source-sqlite <explicit-binary-copy.sqlite3> --output <verify.json>` and require every persistent table to pass.
+8. Confirm that every declared PostgreSQL sequence was set above the migrated maximum ID; perform controlled post-migration inserts on the disposable staging target.
+9. Start the backend with `INVOICE_DATABASE_BOOTSTRAP_MODE=validate`; it must not migrate, seed, reset, or create an administrator.
+10. Run backend health, organization-isolation, frontend, storage, and scheduler-disabled smoke tests.
+11. Do not connect production traffic, enable scheduled jobs, or promote staging without a separate reviewed decision.
+
+The data migrator requires an empty persistent target and uses one logical target transaction. It never truncates or merges with an active database. If apply fails, discard and recreate only the explicitly disposable staging target, rerun schema migration, and start again. Full table decisions and the future-table checklist are in `docs/SQLITE_POSTGRESQL_MIGRATION_COVERAGE.md`.
 
 ## Environment contract
 
