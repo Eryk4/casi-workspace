@@ -7,6 +7,7 @@ from app.bootstrap import build_services
 from app.db import get_connection, reset_database
 from app.services.automation_operations_service import (
     AutomationOperationsRegistry,
+    knowledge_processing_health,
     scheduler_health,
     task_reminder_health,
 )
@@ -44,6 +45,45 @@ class AutomationOperationsTests(unittest.TestCase):
 
     def _reminder_item(self):
         return next(item for item in self._dashboard()["items"] if item["automation_key"] == "task_reminders")
+
+    def _knowledge_item(self):
+        return next(item for item in self._dashboard()["items"] if item["automation_key"] == "knowledge_processing")
+
+    def _insert_knowledge_job(
+        self,
+        *,
+        status: str,
+        day: int,
+        organization_id: int | None = None,
+        error: str | None = None,
+        job_type: str = "ingest",
+    ) -> int:
+        timestamp = f"2026-02-{day:02d}T10:00:00+00:00"
+        with get_connection() as connection:
+            cursor = connection.execute(
+                """INSERT INTO knowledge_processing_jobs (
+                    organization_id, knowledge_document_id, job_type, status, source_storage_key,
+                    source_file_name, source_mime_type, source_type, source_content_hash,
+                    supplemental_text, error_message, attempts, max_attempts, created_by_user_id,
+                    started_at, finished_at, created_at, updated_at
+                ) VALUES (?, NULL, ?, ?, ?, ?, 'text/plain', 'manual', ?, ?, ?, ?, 3, NULL, ?, ?, ?, ?)""",
+                (
+                    organization_id or self.organization_id,
+                    job_type,
+                    status,
+                    "private/storage/key.txt",
+                    "tajny_dokument_klienta.txt",
+                    f"hash-{day}",
+                    "Poufna treść dokumentu i OCR.",
+                    error,
+                    1 if status != "pending" else 0,
+                    timestamp if status in {"processing", "completed", "failed"} else None,
+                    timestamp if status in {"completed", "failed"} else None,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            return int(cursor.lastrowid)
 
     def _insert_reminder(self, *, status: str, outcome: str | None = None, error: str | None = None) -> int:
         task = self.services["task_service"].create_task(
@@ -170,12 +210,17 @@ class AutomationOperationsTests(unittest.TestCase):
             before = {
                 table: [dict(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()]
                 for table in (
+                    "knowledge_processing_jobs", "knowledge_folder_watchers", "knowledge_documents",
+                    "knowledge_document_versions", "knowledge_document_comments",
                     "task_reminder_outbox", "task_reminder_outbox_attempts", "task_reminder_worker_heartbeats", "tasks",
                     "automation_rules", "automation_executions",
                     "internal_notification_schedules", "internal_notification_schedule_runs",
                     "internal_notifications", "internal_notification_state_events", "event_logs",
-                    "billing_transactions", "billing_charges", "billing_payment_matches",
-                    "billing_payer_ledger_entries", "billing_next_step_events",
+                    "billing_bank_accounts", "billing_charge_batches", "billing_charges", "billing_contact_events",
+                    "billing_models", "billing_next_step_events", "billing_notes", "billing_payer_charge_state",
+                    "billing_payer_ledger_entries", "billing_payers", "billing_payment_matches",
+                    "billing_payment_review_events", "billing_schools", "billing_statement_imports",
+                    "billing_student_charge_state", "billing_students", "billing_transactions", "billing_work_queue_events",
                 )
             }
         self._dashboard()
@@ -221,6 +266,16 @@ class AutomationOperationsTests(unittest.TestCase):
             AutomationOperationsRegistry((adapter, adapter))
         with self.assertRaises(ValueError):
             AutomationOperationsRegistry.validate_operation({"automation_key": "incomplete"})
+        registry = self.services["automation_operations_registry"]
+        self.assertEqual(
+            [item.automation_key for item in registry.adapters],
+            ["internal_notification_scheduler", "task_reminders", "knowledge_processing"],
+        )
+        self.assertEqual(len({item.automation_key for item in registry.adapters}), 3)
+        self.assertTrue(all(item.scope and item.capabilities for item in registry.adapters))
+        extended = AutomationOperationsRegistry((*registry.adapters, adapter))
+        self.assertEqual(len(extended.adapters), 4)
+        self.assertEqual(extended.adapters[:3], registry.adapters)
 
     def test_health_mapping_is_explicit(self) -> None:
         self.assertEqual(scheduler_health(schedule_exists=False, enabled=False, last_terminal_status=None), ("not_configured", "disabled", "schedule_not_configured"))
@@ -230,6 +285,84 @@ class AutomationOperationsTests(unittest.TestCase):
         self.assertEqual(task_reminder_health(enabled=True, failed_count=0, latest_attempt_status=None)[1], "never_run")
         self.assertEqual(task_reminder_health(enabled=True, failed_count=0, latest_attempt_status="sent")[1], "healthy")
         self.assertEqual(task_reminder_health(enabled=True, failed_count=1, latest_attempt_status="sent")[1], "attention")
+        self.assertEqual(knowledge_processing_health(latest_terminal_status=None, watcher_status=None)[1], "never_run")
+        self.assertEqual(knowledge_processing_health(latest_terminal_status="completed", watcher_status="ok")[1], "healthy")
+        self.assertEqual(knowledge_processing_health(latest_terminal_status="failed", watcher_status="ok")[1], "attention")
+        self.assertEqual(knowledge_processing_health(latest_terminal_status="completed", watcher_status="error")[1], "attention")
+
+    def test_knowledge_processing_health_queue_history_privacy_and_no_n_plus_one(self) -> None:
+        item = self._knowledge_item()
+        self.assertTrue(item["enabled"])
+        self.assertEqual((item["status"], item["health"], item["runtime_status"]), ("enabled", "never_run", "unknown"))
+
+        self._insert_knowledge_job(status="pending", day=10)
+        self._insert_knowledge_job(status="processing", day=11)
+        self._insert_knowledge_job(status="completed", day=12)
+        failed_id = self._insert_knowledge_job(
+            status="failed",
+            day=13,
+            error="Traceback token=secret DSN=postgres://private C:\\Users\\private\\document.txt",
+            job_type="replace",
+        )
+        self.services["knowledge_repository"].upsert_watch_status(
+            self.organization_id,
+            {
+                "watch_mode": "polling",
+                "last_scan_started_at": "2026-02-13T09:59:00+00:00",
+                "last_scan_completed_at": "2026-02-13T10:01:00+00:00",
+                "last_scan_status": "ok",
+            },
+        )
+        with patch.object(
+            self.services["knowledge_repository"],
+            "list_jobs_read_only",
+            side_effect=AssertionError("dashboard loaded history"),
+        ):
+            item = self._knowledge_item()
+        self.assertEqual((item["pending_count"], item["processing_count"], item["succeeded_count"], item["failed_count"]), (1, 1, 1, 1))
+        self.assertEqual((item["health"], item["last_job_status"], item["watcher_count"]), ("attention", "failed", 1))
+        self.assertEqual(item["runtime_status"], "unknown")
+        self.assertNotIn("secret", str(item).lower())
+
+        detail = self.operations.detail(
+            "knowledge_processing",
+            organization_id=self.organization_id,
+            recipient_user_id=self.user_id,
+            actor_user=self.user,
+            history_limit=500,
+        )
+        self.assertEqual(detail["history_limit"], 50)
+        self.assertEqual(detail["history"][0]["job_id"], failed_id)
+        self.assertEqual(detail["history"][0]["history_type"], "knowledge_job")
+        self.assertEqual(len(detail["watchers"]), 1)
+        serialized = str(detail).lower()
+        for forbidden in ("tajny_dokument", "poufna treść", "storage/key", "c:\\users", "dsn=", "token="):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_knowledge_processing_completed_job_is_healthy_and_last_activity_is_stable(self) -> None:
+        self._insert_knowledge_job(status="completed", day=8)
+        item = self._knowledge_item()
+        self.assertEqual((item["health"], item["health_reason_code"]), ("healthy", "last_job_completed"))
+        self.assertEqual(item["succeeded_count"], 1)
+        self.assertEqual(item["last_success_at"], "2026-02-08T10:00:00+00:00")
+        self.assertEqual(item["last_activity_at"], "2026-02-08T10:00:00+00:00")
+
+    def test_knowledge_processing_scope_and_watcher_error_are_organization_scoped(self) -> None:
+        other = self.services["organization_service"].create_organization(
+            {"name": "Knowledge Other", "slug": "knowledge-other", "is_active": 1},
+            actor_user=self.admin,
+            actor_login="admin",
+        )
+        self._insert_knowledge_job(status="failed", day=20, organization_id=int(other["organization_id"]), error="other org error")
+        own = self._knowledge_item()
+        self.assertEqual(own["failed_count"], 0)
+        self.services["knowledge_repository"].upsert_watch_status(
+            self.organization_id,
+            {"last_scan_status": "error", "last_error": "C:\\Users\\private\\folder\\scan.txt", "last_scan_completed_at": "2026-02-21T10:00:00+00:00"},
+        )
+        own = self._knowledge_item()
+        self.assertEqual((own["health"], own["health_reason_code"]), ("attention", "last_folder_scan_failed"))
+        self.assertEqual(own["last_error_summary"], "Błąd wykonania. Szczegóły techniczne zostały ukryte.")
 
     def test_task_reminders_health_queue_history_and_sanitization(self) -> None:
         self.assertEqual((self._reminder_item()["status"], self._reminder_item()["health"]), ("disabled", "disabled"))

@@ -114,6 +114,13 @@ export function AutomationOperationsPage() {
                   <div><dt>Kolejka / przetwarzane</dt><dd>{item.pendingCount} / {item.processingCount}</dd></div>
                   <div><dt>Wysłane / błędy</dt><dd>{item.sentCount} / {item.failedCount}</dd></div>
                   <div><dt>Ostatni heartbeat</dt><dd>{dateTime(item.lastHeartbeatAt)} (informacyjnie)</dd></div>
+                </> : item.automationType === "knowledge_processing" ? <>
+                  <div><dt>Runtime</dt><dd>Nieznany</dd></div>
+                  <div><dt>Ostatnia aktywność</dt><dd>{dateTime(item.lastActivityAt)}</dd></div>
+                  <div><dt>Ostatni job</dt><dd>{dateTime(item.lastJobAt)} · {item.lastJobStatus ?? "—"}</dd></div>
+                  <div><dt>Queued / processing</dt><dd>{item.pendingCount} / {item.processingCount}</dd></div>
+                  <div><dt>Completed / failed</dt><dd>{item.succeededCount} / {item.failedCount}</dd></div>
+                  <div><dt>Watchery / ostatni skan</dt><dd>{item.watcherCount} / {dateTime(item.lastScanAt)}</dd></div>
                 </> : <>
                   <div><dt>Następne uruchomienie</dt><dd>{dateTime(item.nextRunAt)}</dd></div>
                   <div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>

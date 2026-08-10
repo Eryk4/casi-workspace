@@ -43,6 +43,7 @@ from app.services.automation_operations_service import (
     AutomationOperationsRegistry,
     AutomationOperationsService,
     InternalNotificationSchedulerOperationsAdapter,
+    KnowledgeProcessingOperationsAdapter,
     TaskRemindersOperationsAdapter,
 )
 from app.services.billing_ledger_service import BillingLedgerService
@@ -260,6 +261,7 @@ def build_services(*, initialize_default_organization: bool = True) -> dict[str,
                 task_reminder_outbox_repository,
                 task_reminder_service,
             ),
+            KnowledgeProcessingOperationsAdapter(knowledge_repository),
         )
     )
     automation_operations_service = AutomationOperationsService(

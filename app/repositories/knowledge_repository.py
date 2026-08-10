@@ -673,6 +673,112 @@ class KnowledgeRepository:
             ).fetchone()
         return dict(row) if row else None
 
+    def get_operations_snapshot(self, organization_id: int) -> dict[str, Any]:
+        """Return bounded, organization-scoped operational data without document content."""
+        with get_connection() as connection:
+            counts_row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_count,
+                    COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_count,
+                    COALESCE(SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END), 0) AS processing_count,
+                    COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed_count,
+                    COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count
+                FROM knowledge_processing_jobs
+                WHERE organization_id = ?
+                """,
+                (organization_id,),
+            ).fetchone()
+            latest_job_row = connection.execute(
+                """
+                SELECT knowledge_processing_job_id, job_type, status, attempts, max_attempts,
+                       started_at, finished_at, created_at, updated_at, error_message
+                FROM knowledge_processing_jobs
+                WHERE organization_id = ?
+                ORDER BY created_at DESC, knowledge_processing_job_id DESC
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+            latest_terminal_row = connection.execute(
+                """
+                SELECT knowledge_processing_job_id, job_type, status, attempts, max_attempts,
+                       started_at, finished_at, created_at, updated_at, error_message
+                FROM knowledge_processing_jobs
+                WHERE organization_id = ? AND status IN ('completed', 'failed')
+                ORDER BY COALESCE(finished_at, updated_at, created_at) DESC, knowledge_processing_job_id DESC
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+            latest_success_row = connection.execute(
+                """
+                SELECT finished_at, updated_at
+                FROM knowledge_processing_jobs
+                WHERE organization_id = ? AND status = 'completed'
+                ORDER BY COALESCE(finished_at, updated_at, created_at) DESC, knowledge_processing_job_id DESC
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+            latest_failure_row = connection.execute(
+                """
+                SELECT finished_at, updated_at, error_message
+                FROM knowledge_processing_jobs
+                WHERE organization_id = ? AND status = 'failed'
+                ORDER BY COALESCE(finished_at, updated_at, created_at) DESC, knowledge_processing_job_id DESC
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+            recent_failures_row = connection.execute(
+                """
+                SELECT COALESCE(SUM(CASE WHEN recent.status = 'failed' THEN 1 ELSE 0 END), 0) AS failure_count
+                FROM (
+                    SELECT status
+                    FROM knowledge_processing_jobs
+                    WHERE organization_id = ?
+                    ORDER BY created_at DESC, knowledge_processing_job_id DESC
+                    LIMIT 20
+                ) AS recent
+                """,
+                (organization_id,),
+            ).fetchone()
+            watcher_row = connection.execute(
+                """
+                SELECT knowledge_folder_watcher_id, watch_mode, last_scan_started_at,
+                       last_scan_completed_at, last_scan_status, last_error, updated_at
+                FROM knowledge_folder_watchers
+                WHERE organization_id = ?
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+        return {
+            "counts": dict(counts_row) if counts_row else {},
+            "latest_job": dict(latest_job_row) if latest_job_row else None,
+            "latest_terminal_job": dict(latest_terminal_row) if latest_terminal_row else None,
+            "latest_success": dict(latest_success_row) if latest_success_row else None,
+            "latest_failure": dict(latest_failure_row) if latest_failure_row else None,
+            "recent_failure_count": int(recent_failures_row["failure_count"] or 0) if recent_failures_row else 0,
+            "watcher": dict(watcher_row) if watcher_row else None,
+        }
+
+    def list_jobs_read_only(self, *, organization_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT knowledge_processing_job_id, job_type, status, attempts, max_attempts,
+                       started_at, finished_at, created_at, updated_at, error_message
+                FROM knowledge_processing_jobs
+                WHERE organization_id = ?
+                ORDER BY created_at DESC, knowledge_processing_job_id DESC
+                LIMIT ?
+                """,
+                (organization_id, max(1, min(int(limit), 50))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def upsert_watch_status(self, organization_id: int, fields: dict[str, Any]) -> None:
         timestamp = now_iso()
         existing = self.get_watch_status(organization_id)

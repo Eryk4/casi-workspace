@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from app.repositories.internal_notification_schedule_repository import InternalNotificationScheduleRepository
+from app.repositories.knowledge_repository import KnowledgeRepository
 from app.repositories.task_reminder_outbox_repository import TaskReminderOutboxRepository
 from app.services.internal_notification_service import (
     INTERNAL_NOTIFICATION_SOURCE_BILLING_ATTENTION,
@@ -15,6 +16,7 @@ from app.services.task_reminder_service import TaskReminderService
 
 INTERNAL_NOTIFICATION_SCHEDULER_KEY = "internal_notification_scheduler"
 TASK_REMINDERS_KEY = "task_reminders"
+KNOWLEDGE_PROCESSING_KEY = "knowledge_processing"
 AUTOMATION_CONFIGURATION_STATUSES = {"enabled", "disabled", "not_configured"}
 AUTOMATION_HEALTH_STATUSES = {"healthy", "attention", "never_run", "disabled"}
 REQUIRED_OPERATION_FIELDS = {
@@ -39,6 +41,7 @@ _SENSITIVE_ERROR_TEXT = re.compile(
     r"(?:traceback|stack trace|password|passwd|secret|token|authorization|connection string|database_url|dsn)",
     re.IGNORECASE,
 )
+_ABSOLUTE_PATH_TEXT = re.compile(r"(?:[a-z]:\\|/(?:home|users|var|tmp|srv|opt)/)", re.IGNORECASE)
 
 
 class AutomationOperationNotFoundError(ValueError):
@@ -319,6 +322,131 @@ class TaskRemindersOperationsAdapter:
         )
 
 
+def knowledge_processing_health(
+    *,
+    latest_terminal_status: str | None,
+    watcher_status: str | None,
+) -> tuple[str, str, str]:
+    if latest_terminal_status == "failed":
+        return "enabled", "attention", "last_job_failed"
+    if watcher_status in {"failed", "error"}:
+        return "enabled", "attention", "last_folder_scan_failed"
+    if latest_terminal_status == "completed":
+        return "enabled", "healthy", "last_job_completed"
+    return "enabled", "never_run", "no_terminal_job"
+
+
+class KnowledgeProcessingOperationsAdapter:
+    automation_key = KNOWLEDGE_PROCESSING_KEY
+    scope = "organization"
+    capabilities = frozenset({"summary", "history", "queue", "watcher_status"})
+
+    def __init__(self, repository: KnowledgeRepository) -> None:
+        self.repository = repository
+
+    def get_operation(self, *, organization_id: int, recipient_user_id: int) -> dict[str, Any]:
+        del recipient_user_id
+        snapshot = self.repository.get_operations_snapshot(organization_id)
+        counts = snapshot["counts"]
+        latest_job = snapshot["latest_job"]
+        terminal_job = snapshot["latest_terminal_job"]
+        watcher = snapshot["watcher"]
+        terminal_status = str(terminal_job.get("status") or "") or None if terminal_job else None
+        watcher_status = str(watcher.get("last_scan_status") or "") or None if watcher else None
+        status, health, reason = knowledge_processing_health(
+            latest_terminal_status=terminal_status,
+            watcher_status=watcher_status,
+        )
+        latest_status = str(latest_job.get("status") or "") or None if latest_job else None
+        error_value = None
+        error_code = None
+        if terminal_job and terminal_status == "failed":
+            error_value = terminal_job.get("error_message")
+            error_code = "knowledge_processing_failed"
+        elif watcher and watcher_status in {"failed", "error"}:
+            error_value = watcher.get("last_error")
+            error_code = "knowledge_folder_scan_failed"
+        last_job_at = (
+            latest_job.get("finished_at") or latest_job.get("started_at")
+            or latest_job.get("updated_at") or latest_job.get("created_at")
+            if latest_job else None
+        )
+        last_scan_at = (
+            watcher.get("last_scan_completed_at") or watcher.get("last_scan_started_at") or watcher.get("updated_at")
+            if watcher else None
+        )
+        last_activity = _latest_timestamp(last_job_at, last_scan_at)
+        operation = {
+            "automation_key": self.automation_key,
+            "automation_type": "knowledge_processing",
+            "title": "Przetwarzanie bazy wiedzy",
+            "description": "Kolejka przetwarzania dokumentów i ostatni stan skanowania folderu organizacji.",
+            "status": status,
+            "enabled": True,
+            "health": health,
+            "health_reason_code": reason,
+            "schedule_id": None,
+            "run_id": int(latest_job["knowledge_processing_job_id"]) if latest_job else None,
+            "next_run_at": None,
+            "last_run_at": last_job_at,
+            "last_activity_at": last_activity,
+            "last_job_at": last_job_at,
+            "last_run_status": _knowledge_run_status(latest_status),
+            "last_job_status": latest_status,
+            "last_run_duration_ms": _duration_ms(
+                latest_job.get("started_at") if latest_job else None,
+                latest_job.get("finished_at") if latest_job else None,
+            ),
+            "last_attempt_count": int(latest_job.get("attempts") or 0) if latest_job else None,
+            "last_candidates_count": None,
+            "last_created_count": None,
+            "last_existing_count": None,
+            "pending_count": int(counts.get("pending_count") or 0),
+            "processing_count": int(counts.get("processing_count") or 0),
+            "succeeded_count": int(counts.get("completed_count") or 0),
+            "failed_count": int(counts.get("failed_count") or 0),
+            "sent_count": 0,
+            "cancelled_count": 0,
+            "recent_failure_count": int(snapshot["recent_failure_count"]),
+            "last_success_at": _snapshot_time(snapshot.get("latest_success")),
+            "last_failure_at": _snapshot_time(snapshot.get("latest_failure")),
+            "last_error_code": error_code,
+            "last_error_summary": _safe_error_summary(error_value),
+            "watcher_count": 1 if watcher else 0,
+            "last_scan_at": last_scan_at,
+            "last_scan_status": watcher_status,
+            "settings_url": None,
+            "details_url": f"/automatyzacje/{self.automation_key}",
+            "runtime_status": "unknown",
+            "schedule": None,
+            "updated_at": last_activity,
+        }
+        AutomationOperationsRegistry.validate_operation(operation)
+        return operation
+
+    def get_history(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        del recipient_user_id
+        return [_serialize_knowledge_job(row) for row in self.repository.list_jobs_read_only(
+            organization_id=organization_id,
+            limit=limit,
+        )]
+
+    def get_watchers(self, *, organization_id: int, recipient_user_id: int) -> list[dict[str, Any]]:
+        del recipient_user_id
+        watcher = self.repository.get_watch_status(organization_id)
+        if not watcher:
+            return []
+        return [{
+            "watcher_id": int(watcher["knowledge_folder_watcher_id"]),
+            "watch_mode": str(watcher.get("watch_mode") or "polling"),
+            "status": str(watcher.get("last_scan_status") or "idle"),
+            "last_scan_started_at": watcher.get("last_scan_started_at"),
+            "last_scan_completed_at": watcher.get("last_scan_completed_at"),
+            "error_code": "knowledge_folder_scan_failed" if watcher.get("last_error") else None,
+            "error_summary": _safe_error_summary(watcher.get("last_error")),
+        }]
+
+
 class AutomationOperationsService:
     def __init__(
         self,
@@ -400,6 +528,12 @@ class AutomationOperationsService:
                 recipient_user_id=recipient_user_id,
                 limit=normalized_limit,
             )
+        get_watchers = getattr(adapter, "get_watchers", None)
+        if callable(get_watchers):
+            result["watchers"] = get_watchers(
+                organization_id=organization_id,
+                recipient_user_id=recipient_user_id,
+            )
         return result
 
     def _validate_scope(
@@ -433,7 +567,7 @@ def _safe_error_summary(value: Any) -> str | None:
     normalized = " ".join(str(value or "").split())
     if not normalized:
         return None
-    if _SENSITIVE_ERROR_TEXT.search(normalized):
+    if _SENSITIVE_ERROR_TEXT.search(normalized) or _ABSOLUTE_PATH_TEXT.search(normalized):
         return "Błąd wykonania. Szczegóły techniczne zostały ukryte."
     return normalized[:240]
 
@@ -447,6 +581,43 @@ def _duration_ms(started_at: Any, finished_at: Any) -> int | None:
     except ValueError:
         return None
     return max(0, int((finished - started).total_seconds() * 1000))
+
+
+def _latest_timestamp(*values: Any) -> str | None:
+    timestamps = [str(value) for value in values if value]
+    return max(timestamps) if timestamps else None
+
+
+def _snapshot_time(snapshot: dict[str, Any] | None) -> str | None:
+    if not snapshot:
+        return None
+    return snapshot.get("finished_at") or snapshot.get("updated_at")
+
+
+def _knowledge_run_status(status: str | None) -> str | None:
+    return {
+        "pending": "pending",
+        "processing": "running",
+        "completed": "succeeded",
+        "failed": "failed",
+    }.get(str(status or ""))
+
+
+def _serialize_knowledge_job(job: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "history_type": "knowledge_job",
+        "job_id": int(job["knowledge_processing_job_id"]),
+        "job_type": str(job.get("job_type") or "ingest"),
+        "status": str(job["status"]),
+        "attempt_count": int(job.get("attempts") or 0),
+        "max_attempts": int(job.get("max_attempts") or 0),
+        "created_at": job.get("created_at"),
+        "started_at": job.get("started_at"),
+        "finished_at": job.get("finished_at"),
+        "duration_ms": _duration_ms(job.get("started_at"), job.get("finished_at")),
+        "error_code": "knowledge_processing_failed" if job.get("error_message") else None,
+        "error_summary": _safe_error_summary(job.get("error_message")),
+    }
 
 
 def _serialize_run(run: dict[str, Any]) -> dict[str, Any]:

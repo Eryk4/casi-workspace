@@ -2,6 +2,7 @@ export type AutomationConfigurationStatus = "enabled" | "disabled" | "not_config
 export type AutomationHealth = "healthy" | "attention" | "never_run" | "disabled";
 export type AutomationOperationsFilter = "all" | "active" | "disabled" | "attention";
 export type AutomationRunStatus = "pending" | "running" | "succeeded" | "failed";
+export type KnowledgeJobStatus = "pending" | "processing" | "completed" | "failed";
 
 export type AutomationOperation = {
   automationKey: string;
@@ -40,9 +41,17 @@ export type AutomationOperation = {
   pendingCount: number;
   processingCount: number;
   failedCount: number;
+  succeededCount: number;
   sentCount: number;
   cancelledCount: number;
   lastHeartbeatAt: string | null;
+  lastJobAt: string | null;
+  lastJobStatus: KnowledgeJobStatus | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  watcherCount: number;
+  lastScanAt: string | null;
+  lastScanStatus: string | null;
   updatedAt: string | null;
 };
 
@@ -97,10 +106,36 @@ export type ReminderOutboxItem = {
   updatedAt: string;
 };
 
+export type KnowledgeJob = {
+  historyType: "knowledge_job";
+  jobId: number;
+  jobType: string;
+  status: KnowledgeJobStatus;
+  attemptCount: number;
+  maxAttempts: number;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  errorCode: string | null;
+  errorSummary: string | null;
+};
+
+export type KnowledgeWatcher = {
+  watcherId: number;
+  watchMode: string;
+  status: string;
+  lastScanStartedAt: string | null;
+  lastScanCompletedAt: string | null;
+  errorCode: string | null;
+  errorSummary: string | null;
+};
+
 export type AutomationOperationDetail = {
   item: AutomationOperation;
-  history: Array<AutomationRun | ReminderAttempt>;
+  history: Array<AutomationRun | ReminderAttempt | KnowledgeJob>;
   outbox: ReminderOutboxItem[];
+  watchers: KnowledgeWatcher[];
   historyLimit: number;
 };
 
@@ -116,6 +151,7 @@ export const AUTOMATION_OPERATIONS_POLL_INTERVAL = null;
 const CONFIGURATION_STATUSES = new Set<AutomationConfigurationStatus>(["enabled", "disabled", "not_configured"]);
 const HEALTH_STATUSES = new Set<AutomationHealth>(["healthy", "attention", "never_run", "disabled"]);
 const RUN_STATUSES = new Set<AutomationRunStatus>(["pending", "running", "succeeded", "failed"]);
+const KNOWLEDGE_JOB_STATUSES = new Set<KnowledgeJobStatus>(["pending", "processing", "completed", "failed"]);
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Nieprawidłowy kontrakt: ${label}.`);
@@ -151,6 +187,8 @@ function readOperation(value: unknown): AutomationOperation {
   if (typeof item.enabled !== "boolean") throw new Error("Nieprawidłowy kontrakt: enabled.");
   const lastRunStatus = optionalText(item.last_run_status) as AutomationRunStatus | null;
   if (lastRunStatus && !RUN_STATUSES.has(lastRunStatus)) throw new Error("Nieznany status runu.");
+  const lastJobStatus = optionalText(item.last_job_status) as KnowledgeJobStatus | null;
+  if (lastJobStatus && !KNOWLEDGE_JOB_STATUSES.has(lastJobStatus)) throw new Error("Nieznany status joba wiedzy.");
   const schedule = item.schedule === null || item.schedule === undefined ? null : record(item.schedule, "schedule");
   if (item.runtime_status !== "unknown") throw new Error("Nieznany status runtime.");
   return {
@@ -190,9 +228,17 @@ function readOperation(value: unknown): AutomationOperation {
     pendingCount: nonNegativeInteger(item.pending_count ?? 0, "pending_count") as number,
     processingCount: nonNegativeInteger(item.processing_count ?? 0, "processing_count") as number,
     failedCount: nonNegativeInteger(item.failed_count ?? 0, "failed_count") as number,
+    succeededCount: nonNegativeInteger(item.succeeded_count ?? 0, "succeeded_count") as number,
     sentCount: nonNegativeInteger(item.sent_count ?? 0, "sent_count") as number,
     cancelledCount: nonNegativeInteger(item.cancelled_count ?? 0, "cancelled_count") as number,
     lastHeartbeatAt: optionalText(item.last_heartbeat_at),
+    lastJobAt: optionalText(item.last_job_at),
+    lastJobStatus,
+    lastSuccessAt: optionalText(item.last_success_at),
+    lastFailureAt: optionalText(item.last_failure_at),
+    watcherCount: nonNegativeInteger(item.watcher_count ?? 0, "watcher_count") as number,
+    lastScanAt: optionalText(item.last_scan_at),
+    lastScanStatus: optionalText(item.last_scan_status),
     updatedAt: optionalText(item.updated_at),
   };
 }
@@ -236,6 +282,26 @@ function readReminderAttempt(value: unknown): ReminderAttempt {
   };
 }
 
+function readKnowledgeJob(value: unknown): KnowledgeJob {
+  const job = record(value, "knowledge job");
+  const status = text(job.status, "knowledge job status") as KnowledgeJobStatus;
+  if (!KNOWLEDGE_JOB_STATUSES.has(status)) throw new Error("Nieznany status joba wiedzy.");
+  return {
+    historyType: "knowledge_job",
+    jobId: nonNegativeInteger(job.job_id, "job_id") as number,
+    jobType: text(job.job_type, "job_type"),
+    status,
+    attemptCount: nonNegativeInteger(job.attempt_count, "attempt_count") as number,
+    maxAttempts: nonNegativeInteger(job.max_attempts, "max_attempts") as number,
+    createdAt: text(job.created_at, "created_at"),
+    startedAt: optionalText(job.started_at),
+    finishedAt: optionalText(job.finished_at),
+    durationMs: nonNegativeInteger(job.duration_ms, "duration_ms", true),
+    errorCode: optionalText(job.error_code),
+    errorSummary: optionalText(job.error_summary),
+  };
+}
+
 export function readAutomationOperationsDashboard(payload: unknown): AutomationOperationsDashboard {
   const root = record(payload, "automation dashboard");
   const summary = record(root.summary, "summary");
@@ -256,7 +322,12 @@ export function readAutomationOperationDetail(payload: unknown): AutomationOpera
   if (!Array.isArray(root.history)) throw new Error("Nieprawidłowy kontrakt: history.");
   return {
     item: readOperation(root.item),
-    history: root.history.map((entry) => record(entry, "history").history_type === "reminder_attempt" ? readReminderAttempt(entry) : readRun(entry)),
+    history: root.history.map((entry) => {
+      const historyType = record(entry, "history").history_type;
+      if (historyType === "reminder_attempt") return readReminderAttempt(entry);
+      if (historyType === "knowledge_job") return readKnowledgeJob(entry);
+      return readRun(entry);
+    }),
     outbox: Array.isArray(root.outbox) ? root.outbox.map((entry) => {
       const item = record(entry, "outbox");
       return {
@@ -267,6 +338,18 @@ export function readAutomationOperationDetail(payload: unknown): AutomationOpera
         attemptCount: nonNegativeInteger(item.attempt_count, "attempt_count") as number,
         createdAt: text(item.created_at, "created_at"),
         updatedAt: text(item.updated_at, "updated_at"),
+      };
+    }) : [],
+    watchers: Array.isArray(root.watchers) ? root.watchers.map((entry) => {
+      const watcher = record(entry, "knowledge watcher");
+      return {
+        watcherId: nonNegativeInteger(watcher.watcher_id, "watcher_id") as number,
+        watchMode: text(watcher.watch_mode, "watch_mode"),
+        status: text(watcher.status, "watcher status"),
+        lastScanStartedAt: optionalText(watcher.last_scan_started_at),
+        lastScanCompletedAt: optionalText(watcher.last_scan_completed_at),
+        errorCode: optionalText(watcher.error_code),
+        errorSummary: optionalText(watcher.error_summary),
       };
     }) : [],
     historyLimit: nonNegativeInteger(root.history_limit, "history_limit") as number,

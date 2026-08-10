@@ -76,6 +76,38 @@ assert.equal(multi.items.length, 2);
 assert.equal(multi.items[1].pendingCount, 1);
 assert.equal(multi.items[1].settingsUrl, null);
 
+const knowledge = operation({
+  automation_key: "knowledge_processing", automation_type: "knowledge_processing", title: "Przetwarzanie bazy wiedzy",
+  description: "Kolejka wiedzy", health: "attention", health_reason_code: "last_job_failed", schedule_id: null,
+  run_id: 13, next_run_at: null, last_run_at: "2026-02-13T10:00:00+00:00", last_run_status: "failed",
+  last_run_duration_ms: 2500, last_attempt_count: 1, last_candidates_count: null, last_created_count: null,
+  last_existing_count: null, settings_url: null, details_url: "/automatyzacje/knowledge_processing", schedule: null,
+  last_activity_at: "2026-02-13T10:01:00+00:00", last_job_at: "2026-02-13T10:00:00+00:00",
+  last_job_status: "failed", last_success_at: "2026-02-12T10:00:00+00:00", last_failure_at: "2026-02-13T10:00:00+00:00",
+  pending_count: 1, processing_count: 1, succeeded_count: 4, failed_count: 1, watcher_count: 1,
+  last_scan_at: "2026-02-13T10:01:00+00:00", last_scan_status: "ok", last_error_code: "knowledge_processing_failed",
+  last_error_summary: "Błąd wykonania. Szczegóły techniczne zostały ukryte.",
+});
+const threeAdapters = model.readAutomationOperationsDashboard({
+  summary: { active_count: 3, disabled_count: 0, attention_count: 2, recent_failure_count: 2 },
+  items: [operation(), reminders, knowledge],
+});
+assert.deepEqual(threeAdapters.items.map((item) => item.automationKey), ["internal_notification_scheduler", "task_reminders", "knowledge_processing"]);
+assert.equal(threeAdapters.items[2].watcherCount, 1);
+assert.equal(threeAdapters.items[2].succeededCount, 4);
+const knowledgeStates = model.readAutomationOperationsDashboard({
+  summary: { active_count: 3, disabled_count: 1, attention_count: 1, recent_failure_count: 1 },
+  items: [
+    knowledge,
+    { ...knowledge, automation_key: "knowledge_never", health: "never_run", health_reason_code: "no_terminal_job" },
+    { ...knowledge, automation_key: "knowledge_healthy", health: "healthy", health_reason_code: "last_job_completed" },
+    { ...knowledge, automation_key: "knowledge_disabled", status: "disabled", enabled: false, health: "disabled", health_reason_code: "runtime_disabled" },
+  ],
+});
+assert.equal(model.filterAutomationOperations(knowledgeStates.items, "active").length, 3);
+assert.equal(model.filterAutomationOperations(knowledgeStates.items, "disabled").length, 1);
+assert.equal(model.filterAutomationOperations(knowledgeStates.items, "attention").length, 1);
+
 const detail = model.readAutomationOperationDetail({
   item: operation(),
   history_limit: 20,
@@ -93,6 +125,15 @@ const reminderDetail = model.readAutomationOperationDetail({ item: reminders, hi
 }], outbox: [{ task_reminder_outbox_id: 8, status: "failed", delivery_channel: "telegram", available_at: "2026-01-15T07:00:00+00:00", attempt_count: 2, created_at: "2026-01-15T07:00:00+00:00", updated_at: "2026-01-15T07:01:00+00:00" }] });
 assert.equal(reminderDetail.history[0].historyType, "reminder_attempt");
 assert.equal(reminderDetail.outbox[0].status, "failed");
+const knowledgeDetail = model.readAutomationOperationDetail({ item: knowledge, history_limit: 20, history: [{
+  history_type: "knowledge_job", job_id: 13, job_type: "replace", status: "failed", attempt_count: 1, max_attempts: 3,
+  created_at: "2026-02-13T09:59:00+00:00", started_at: "2026-02-13T10:00:00+00:00",
+  finished_at: "2026-02-13T10:00:02.500+00:00", duration_ms: 2500,
+  error_code: "knowledge_processing_failed", error_summary: "Błąd wykonania. Szczegóły techniczne zostały ukryte.",
+}], watchers: [{ watcher_id: 2, watch_mode: "polling", status: "ok", last_scan_started_at: "2026-02-13T10:00:00+00:00", last_scan_completed_at: "2026-02-13T10:01:00+00:00", error_code: null, error_summary: null }] });
+assert.equal(knowledgeDetail.history[0].historyType, "knowledge_job");
+assert.equal(knowledgeDetail.watchers[0].status, "ok");
+assert.doesNotMatch(JSON.stringify(knowledgeDetail), /source_storage_key|source_file_name|content_text|ocr|c:\\users/i);
 assert.doesNotMatch(JSON.stringify(reminderDetail), /payload|secret|token/i);
 assert.throws(() => model.readAutomationOperationsDashboard({ summary: {}, items: [] }), /kontrakt/i);
 assert.throws(() => model.readAutomationOperationsDashboard({ summary: { active_count: 0, disabled_count: 0, attention_count: 0, recent_failure_count: 0 }, items: [operation({ settings_url: "https://evil.test" })] }), /bezpieczny link/i);
@@ -102,7 +143,7 @@ const pageSource = fs.readFileSync(path.join(__dirname, "..", "src", "modules", 
 const detailSource = fs.readFileSync(path.join(__dirname, "..", "src", "modules", "automations", "AutomationOperationDetailPage.tsx"), "utf8");
 const navigationSource = fs.readFileSync(path.join(__dirname, "..", "src", "config", "navigation.ts"), "utf8");
 assert.match(apiSource, /automationOperations:[\s\S]*apiRequest[\s\S]*\/automations\/operations/);
-assert.doesNotMatch(pageSource + detailSource, /setInterval|Uruchom teraz|method:\s*["']POST["']/);
+assert.doesNotMatch(pageSource + detailSource, /setInterval|Uruchom teraz|Skanuj teraz|Reprocess|Run now|Scan now|method:\s*["']POST["']/);
 assert.match(pageSource, /setDashboard\(null\)/);
 assert.match(detailSource, /Nieznany — centrum nie monitoruje procesu workera/);
 assert.match(navigationSource, /id:\s*["']automations["'][\s\S]*label:\s*["']Automatyzacje["'][\s\S]*path:\s*["']\/automatyzacje["']/);

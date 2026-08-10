@@ -44,16 +44,28 @@ const reminderOperation = {
   pending_count: 1, processing_count: 0, failed_count: 1, sent_count: 2, cancelled_count: 0, last_heartbeat_at: "2026-01-15T07:00:00+00:00",
   details_url: "/automatyzacje/task_reminders", last_error_summary: "Bezpieczny błąd przypomnienia",
 };
+const knowledgeOperation = {
+  ...operation, automation_key: "knowledge_processing", automation_type: "knowledge_processing", title: "Przetwarzanie bazy wiedzy", description: "Kolejka przetwarzania dokumentów",
+  health: "attention", health_reason_code: "last_job_failed", schedule_id: null, run_id: 13, next_run_at: null,
+  last_run_at: "2026-02-13T10:00:00+00:00", last_run_status: "failed", last_run_duration_ms: 2500,
+  last_attempt_count: 1, last_candidates_count: null, last_created_count: null, last_existing_count: null, schedule: null, settings_url: null,
+  last_activity_at: "2026-02-13T10:01:00+00:00", last_job_at: "2026-02-13T10:00:00+00:00", last_job_status: "failed",
+  last_success_at: "2026-02-12T10:00:00+00:00", last_failure_at: "2026-02-13T10:00:00+00:00",
+  pending_count: 1, processing_count: 1, succeeded_count: 4, failed_count: 1, watcher_count: 1,
+  last_scan_at: "2026-02-13T10:01:00+00:00", last_scan_status: "ok", last_error_code: "knowledge_processing_failed",
+  last_error_summary: "Błąd wykonania. Szczegóły techniczne zostały ukryte.", details_url: "/automatyzacje/knowledge_processing",
+};
 const api = {
   automationOperations: async (query) => {
     dashboardCalls += 1;
     if (failDashboard) throw new Error("Kontrolowany błąd centrum");
     if (String(query.organization_id) !== organizationId) throw new Error("Stary scope organizacji");
-    return { summary: { active_count: 2, disabled_count: 0, attention_count: 2, recent_failure_count: 2 }, items: [operation, reminderOperation] };
+    return { summary: { active_count: 3, disabled_count: 0, attention_count: 3, recent_failure_count: 3 }, items: [operation, reminderOperation, knowledgeOperation] };
   },
   automationOperationDetail: async (automationKey) => {
     if (detailNotFound) throw new ApiError("Nie znaleziono", 404, {});
     if (automationKey === "task_reminders") return { item: reminderOperation, history_limit: 20, history: [{ history_type: "reminder_attempt", attempt_id: 9, outbox_id: 8, channel: "telegram", attempt_no: 2, status: "dead_letter", attempted_at: "2026-01-15T07:01:00+00:00", error_code: "task_reminder_delivery_failed", error_summary: "Bezpieczny błąd przypomnienia" }], outbox: [{ task_reminder_outbox_id: 8, status: "failed", delivery_channel: "telegram", available_at: "2026-01-15T07:00:00+00:00", attempt_count: 2, created_at: "2026-01-15T07:00:00+00:00", updated_at: "2026-01-15T07:01:00+00:00" }] };
+    if (automationKey === "knowledge_processing") return { item: knowledgeOperation, history_limit: 20, history: [{ history_type: "knowledge_job", job_id: 13, job_type: "replace", status: "failed", attempt_count: 1, max_attempts: 3, created_at: "2026-02-13T09:59:00+00:00", started_at: "2026-02-13T10:00:00+00:00", finished_at: "2026-02-13T10:00:02.500+00:00", duration_ms: 2500, error_code: "knowledge_processing_failed", error_summary: "Błąd wykonania. Szczegóły techniczne zostały ukryte." }], watchers: [{ watcher_id: 2, watch_mode: "polling", status: "ok", last_scan_started_at: "2026-02-13T10:00:00+00:00", last_scan_completed_at: "2026-02-13T10:01:00+00:00", error_code: null, error_summary: null }] };
     return { item: operation, history_limit: 20, history: [{ run_id: 2, schedule_id: 1, scheduled_local_date: "2026-01-15", as_of_date: "2026-01-15", scheduled_for_utc: "2026-01-15T07:00:00+00:00", status: "failed", attempt_count: 2, candidates_count: 7, created_count: 3, existing_count: 4, error_code: "materialization_failed", error_summary: "Bezpieczne podsumowanie błędu", started_at: "2026-01-15T07:00:00+00:00", finished_at: "2026-01-15T07:00:01+00:00", duration_ms: 1000 }] };
   },
 };
@@ -80,7 +92,8 @@ async function run() {
   const container = document.getElementById("root"); const root = createRoot(container);
   await act(async () => root.render(React.createElement(AutomationOperationsPage))); await settle();
   assert.match(container.textContent, /Automatyzacje/); assert.match(container.textContent, /Przypomnienia zadań/); assert.match(container.textContent, /Bezpieczny błąd przypomnienia/);
-  assert.equal(container.querySelectorAll(".automation-card").length, 2);
+  assert.match(container.textContent, /Przetwarzanie bazy wiedzy/);
+  assert.equal(container.querySelectorAll(".automation-card").length, 3);
   assert.equal(container.querySelector('a[href="/automatyzacje/internal_notification_scheduler"]').textContent, "Szczegóły");
   assert.equal(container.querySelector('a[href="/powiadomienia"]').textContent, "Ustawienia");
   assert.ok(button(container, "Odśwież")); assert.ok(!container.textContent.includes("Uruchom teraz"));
@@ -97,6 +110,10 @@ async function run() {
   assert.match(container.textContent, /Historia ostatnich uruchomień/); assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/); assert.equal(container.querySelectorAll("tbody tr").length, 1); assert.ok(!container.textContent.includes("lease"));
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "task_reminders" }))); await settle();
   assert.match(container.textContent, /Ostatnie próby/); assert.match(container.textContent, /Ostatnie wpisy kolejki/); assert.match(container.textContent, /bez oceny online\/offline/); assert.ok(!container.textContent.match(/Retry|Uruchom teraz|Wyślij ponownie/));
+  await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "knowledge_processing" }))); await settle();
+  assert.match(container.textContent, /Ostatnie joby/); assert.match(container.textContent, /Watchery folderów/); assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/);
+  assert.match(container.textContent, /replace/); assert.match(container.textContent, /polling/);
+  assert.ok(!container.textContent.match(/Retry|Reprocess|Uruchom teraz|Skanuj teraz|Run now|Scan now|C:\\Users|OCR text|treść dokumentu/i));
   detailNotFound = true; await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "unknown" }))); await settle(); assert.match(container.textContent, /Nie znaleziono automatyzacji/);
   await act(async () => root.unmount());
   console.log("Automation operations DOM tests passed.");
