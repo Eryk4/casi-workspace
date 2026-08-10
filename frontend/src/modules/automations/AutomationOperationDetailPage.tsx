@@ -70,19 +70,26 @@ export function AutomationOperationDetailPage({ automationKey }: Props) {
             <p>{detail.item.description}</p>
             <dl className="automation-detail-grid">
               <div><dt>Stan konfiguracji</dt><dd>{detail.item.status}</dd></div><div><dt>Runtime</dt><dd>Nieznany — centrum nie monitoruje procesu workera</dd></div>
-              <div><dt>Harmonogram</dt><dd>{detail.item.schedule.cadence}, {detail.item.schedule.localTime}</dd></div><div><dt>Strefa czasowa</dt><dd>{detail.item.schedule.timezoneName}</dd></div>
-              <div><dt>Następne uruchomienie</dt><dd>{dateTime(detail.item.nextRunAt)}</dd></div><div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(detail.item.lastRunAt)}</dd></div>
-              <div><dt>Czas ostatniego runu</dt><dd>{detail.item.lastRunDurationMs === null ? "—" : `${detail.item.lastRunDurationMs} ms`}</dd></div><div><dt>Próba</dt><dd>{detail.item.lastAttemptCount ?? "—"}</dd></div>
-              <div><dt>Kandydaci</dt><dd>{detail.item.lastCandidatesCount ?? "—"}</dd></div><div><dt>Nowe / istniejące</dt><dd>{detail.item.lastCreatedCount ?? "—"} / {detail.item.lastExistingCount ?? "—"}</dd></div>
+              {detail.item.automationType === "task_reminders" ? <>
+                <div><dt>Powód wyłączenia</dt><dd>{detail.item.disabledReason ?? "—"}</dd></div><div><dt>Ostatnia aktywność</dt><dd>{dateTime(detail.item.lastActivityAt)}</dd></div>
+                <div><dt>Ostatnia próba</dt><dd>{dateTime(detail.item.lastAttemptAt)} · {detail.item.lastAttemptStatus ?? "—"}</dd></div><div><dt>Ostatni heartbeat</dt><dd>{dateTime(detail.item.lastHeartbeatAt)} (bez oceny online/offline)</dd></div>
+                <div><dt>Queued / processing</dt><dd>{detail.item.pendingCount} / {detail.item.processingCount}</dd></div><div><dt>Sent / failed / cancelled</dt><dd>{detail.item.sentCount} / {detail.item.failedCount} / {detail.item.cancelledCount}</dd></div>
+              </> : <>
+                <div><dt>Harmonogram</dt><dd>{detail.item.schedule?.cadence}, {detail.item.schedule?.localTime}</dd></div><div><dt>Strefa czasowa</dt><dd>{detail.item.schedule?.timezoneName}</dd></div>
+                <div><dt>Następne uruchomienie</dt><dd>{dateTime(detail.item.nextRunAt)}</dd></div><div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(detail.item.lastRunAt)}</dd></div>
+                <div><dt>Czas ostatniego runu</dt><dd>{detail.item.lastRunDurationMs === null ? "—" : `${detail.item.lastRunDurationMs} ms`}</dd></div><div><dt>Próba</dt><dd>{detail.item.lastAttemptCount ?? "—"}</dd></div>
+                <div><dt>Kandydaci</dt><dd>{detail.item.lastCandidatesCount ?? "—"}</dd></div><div><dt>Nowe / istniejące</dt><dd>{detail.item.lastCreatedCount ?? "—"} / {detail.item.lastExistingCount ?? "—"}</dd></div>
+              </>}
             </dl>
             {detail.item.lastErrorSummary ? <p className="automation-card__error">{detail.item.lastErrorCode ? `${detail.item.lastErrorCode}: ` : ""}{detail.item.lastErrorSummary}</p> : null}
-            <Link href={detail.item.settingsUrl}>Przejdź do ustawień</Link>
+            {detail.item.settingsUrl ? <Link href={detail.item.settingsUrl}>Przejdź do ustawień</Link> : <p>Ustawienia nie są jeszcze dostępne w osobnym widoku.</p>}
           </article>
-          <section className="automation-history" aria-labelledby="automation-history-title"><h3 id="automation-history-title">Historia ostatnich uruchomień</h3>
+          <section className="automation-history" aria-labelledby="automation-history-title"><h3 id="automation-history-title">{detail.item.automationType === "task_reminders" ? "Ostatnie próby" : "Historia ostatnich uruchomień"}</h3>
             {detail.history.length === 0 ? <div className="empty-state"><h4>Brak uruchomień</h4><p>Automatyzacja nie ma jeszcze zapisanej historii.</p></div> : (
-              <div className="table-shell"><table><thead><tr><th>Plan</th><th>Start</th><th>Koniec</th><th>Status</th><th>Próba</th><th>Kandydaci</th><th>Nowe</th><th>Istniejące</th><th>Czas</th><th>Błąd</th></tr></thead><tbody>{detail.history.map((run) => <tr key={run.runId}><td>{dateTime(run.scheduledForUtc)}</td><td>{dateTime(run.startedAt)}</td><td>{dateTime(run.finishedAt)}</td><td>{automationRunLabel(run.status)}</td><td>{run.attemptCount}</td><td>{run.candidatesCount ?? "—"}</td><td>{run.createdCount ?? "—"}</td><td>{run.existingCount ?? "—"}</td><td>{run.durationMs === null ? "—" : `${run.durationMs} ms`}</td><td>{run.errorSummary ?? "—"}</td></tr>)}</tbody></table></div>
+              <div className="table-shell"><table><thead><tr>{detail.item.automationType === "task_reminders" ? <><th>Czas</th><th>Status</th><th>Próba</th><th>Kanał</th><th>Błąd</th></> : <><th>Plan</th><th>Start</th><th>Koniec</th><th>Status</th><th>Próba</th><th>Kandydaci</th><th>Nowe</th><th>Istniejące</th><th>Czas</th><th>Błąd</th></>}</tr></thead><tbody>{detail.history.map((entry) => entry.historyType === "reminder_attempt" ? <tr key={`attempt-${entry.attemptId}`}><td>{dateTime(entry.attemptedAt)}</td><td>{entry.status}</td><td>{entry.attemptNo}</td><td>{entry.channel}</td><td>{entry.errorSummary ?? "—"}</td></tr> : <tr key={entry.runId}><td>{dateTime(entry.scheduledForUtc)}</td><td>{dateTime(entry.startedAt)}</td><td>{dateTime(entry.finishedAt)}</td><td>{automationRunLabel(entry.status)}</td><td>{entry.attemptCount}</td><td>{entry.candidatesCount ?? "—"}</td><td>{entry.createdCount ?? "—"}</td><td>{entry.existingCount ?? "—"}</td><td>{entry.durationMs === null ? "—" : `${entry.durationMs} ms`}</td><td>{entry.errorSummary ?? "—"}</td></tr>)}</tbody></table></div>
             )}
           </section>
+          {detail.item.automationType === "task_reminders" ? <section className="automation-history"><h3>Ostatnie wpisy kolejki</h3>{detail.outbox.length === 0 ? <div className="empty-state"><p>Kolejka jest pusta.</p></div> : <div className="table-shell"><table><thead><tr><th>ID</th><th>Status</th><th>Kanał</th><th>Dostępne od</th><th>Próby</th></tr></thead><tbody>{detail.outbox.map((item) => <tr key={item.outboxId}><td>{item.outboxId}</td><td>{item.status}</td><td>{item.channel}</td><td>{dateTime(item.availableAt)}</td><td>{item.attemptCount}</td></tr>)}</tbody></table></div>}</section> : null}
         </>
       ) : null}
     </section>

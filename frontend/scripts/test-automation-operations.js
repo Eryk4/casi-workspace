@@ -61,6 +61,21 @@ assert.deepEqual(model.filterAutomationOperations(parsed.items, "attention").map
 assert.equal(model.AUTOMATION_OPERATIONS_POLL_INTERVAL, null);
 assert.equal(model.automationHealthLabel("never_run"), "Jeszcze nie uruchomiono");
 
+const reminders = operation({
+  automation_key: "task_reminders", automation_type: "task_reminders", title: "Przypomnienia zadań",
+  description: "Kolejka", status: "enabled", enabled: true, health: "attention", health_reason_code: "failed_outbox_present",
+  schedule_id: null, run_id: null, next_run_at: null, last_run_at: "2026-01-15T07:01:00+00:00", last_run_status: "failed",
+  last_run_duration_ms: null, last_attempt_count: 2, last_candidates_count: null, last_created_count: null, last_existing_count: null,
+  disabled_reason: null, last_activity_at: "2026-01-15T07:01:00+00:00", last_attempt_at: "2026-01-15T07:01:00+00:00",
+  last_attempt_status: "dead_letter", pending_count: 1, processing_count: 0, failed_count: 1, sent_count: 3, cancelled_count: 0,
+  last_heartbeat_at: "2026-01-15T07:00:00+00:00", settings_url: null, details_url: "/automatyzacje/task_reminders", schedule: null,
+  last_error_code: "task_reminder_delivery_failed", last_error_summary: "Bezpieczny błąd",
+});
+const multi = model.readAutomationOperationsDashboard({ summary: { active_count: 2, disabled_count: 0, attention_count: 1, recent_failure_count: 1 }, items: [operation(), reminders] });
+assert.equal(multi.items.length, 2);
+assert.equal(multi.items[1].pendingCount, 1);
+assert.equal(multi.items[1].settingsUrl, null);
+
 const detail = model.readAutomationOperationDetail({
   item: operation(),
   history_limit: 20,
@@ -72,6 +87,13 @@ const detail = model.readAutomationOperationDetail({
   }],
 });
 assert.equal(detail.history[0].durationMs, 1000);
+const reminderDetail = model.readAutomationOperationDetail({ item: reminders, history_limit: 20, history: [{
+  history_type: "reminder_attempt", attempt_id: 9, outbox_id: 8, channel: "telegram", attempt_no: 2,
+  status: "dead_letter", attempted_at: "2026-01-15T07:01:00+00:00", error_code: "task_reminder_delivery_failed", error_summary: "Bezpieczny błąd",
+}], outbox: [{ task_reminder_outbox_id: 8, status: "failed", delivery_channel: "telegram", available_at: "2026-01-15T07:00:00+00:00", attempt_count: 2, created_at: "2026-01-15T07:00:00+00:00", updated_at: "2026-01-15T07:01:00+00:00" }] });
+assert.equal(reminderDetail.history[0].historyType, "reminder_attempt");
+assert.equal(reminderDetail.outbox[0].status, "failed");
+assert.doesNotMatch(JSON.stringify(reminderDetail), /payload|secret|token/i);
 assert.throws(() => model.readAutomationOperationsDashboard({ summary: {}, items: [] }), /kontrakt/i);
 assert.throws(() => model.readAutomationOperationsDashboard({ summary: { active_count: 0, disabled_count: 0, attention_count: 0, recent_failure_count: 0 }, items: [operation({ settings_url: "https://evil.test" })] }), /bezpieczny link/i);
 

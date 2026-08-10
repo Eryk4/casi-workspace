@@ -107,13 +107,22 @@ export function AutomationOperationsPage() {
               <p>{item.description}</p>
               <dl>
                 <div><dt>Konfiguracja</dt><dd>{item.status === "enabled" ? "Włączona" : item.status === "disabled" ? "Wyłączona" : "Nieskonfigurowana"}</dd></div>
-                <div><dt>Następne uruchomienie</dt><dd>{dateTime(item.nextRunAt)}</dd></div>
-                <div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
-                <div><dt>Ostatni wynik</dt><dd>{automationRunLabel(item.lastRunStatus)}</dd></div>
-                <div><dt>Utworzone / istniejące</dt><dd>{item.lastCreatedCount ?? "—"} / {item.lastExistingCount ?? "—"}</dd></div>
+                {item.automationType === "task_reminders" ? <>
+                  <div><dt>Runtime</dt><dd>Nieznany</dd></div>
+                  <div><dt>Ostatnia aktywność</dt><dd>{dateTime(item.lastActivityAt)}</dd></div>
+                  <div><dt>Ostatnia próba</dt><dd>{dateTime(item.lastAttemptAt)} · {item.lastAttemptStatus ?? "—"}</dd></div>
+                  <div><dt>Kolejka / przetwarzane</dt><dd>{item.pendingCount} / {item.processingCount}</dd></div>
+                  <div><dt>Wysłane / błędy</dt><dd>{item.sentCount} / {item.failedCount}</dd></div>
+                  <div><dt>Ostatni heartbeat</dt><dd>{dateTime(item.lastHeartbeatAt)} (informacyjnie)</dd></div>
+                </> : <>
+                  <div><dt>Następne uruchomienie</dt><dd>{dateTime(item.nextRunAt)}</dd></div>
+                  <div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
+                  <div><dt>Ostatni wynik</dt><dd>{automationRunLabel(item.lastRunStatus)}</dd></div>
+                  <div><dt>Utworzone / istniejące</dt><dd>{item.lastCreatedCount ?? "—"} / {item.lastExistingCount ?? "—"}</dd></div>
+                </>}
               </dl>
               {item.lastErrorSummary ? <p className="automation-card__error">{item.lastErrorSummary}</p> : null}
-              <div className="automation-card__links"><Link href={item.detailsUrl}>Szczegóły</Link><Link href={item.settingsUrl}>Ustawienia</Link></div>
+              <div className="automation-card__links"><Link href={item.detailsUrl}>Szczegóły</Link>{item.settingsUrl ? <Link href={item.settingsUrl}>Ustawienia</Link> : null}</div>
             </article>
           ))}
         </div>

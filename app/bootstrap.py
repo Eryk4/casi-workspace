@@ -43,6 +43,7 @@ from app.services.automation_operations_service import (
     AutomationOperationsRegistry,
     AutomationOperationsService,
     InternalNotificationSchedulerOperationsAdapter,
+    TaskRemindersOperationsAdapter,
 )
 from app.services.billing_ledger_service import BillingLedgerService
 from app.services.dashboard_view_service import DashboardViewService
@@ -254,6 +255,10 @@ def build_services(*, initialize_default_organization: bool = True) -> dict[str,
         (
             InternalNotificationSchedulerOperationsAdapter(
                 internal_notification_schedule_repository
+            ),
+            TaskRemindersOperationsAdapter(
+                task_reminder_outbox_repository,
+                task_reminder_service,
             ),
         )
     )

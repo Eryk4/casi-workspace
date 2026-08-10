@@ -5,13 +5,16 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from app.repositories.internal_notification_schedule_repository import InternalNotificationScheduleRepository
+from app.repositories.task_reminder_outbox_repository import TaskReminderOutboxRepository
 from app.services.internal_notification_service import (
     INTERNAL_NOTIFICATION_SOURCE_BILLING_ATTENTION,
     InternalNotificationService,
 )
+from app.services.task_reminder_service import TaskReminderService
 
 
 INTERNAL_NOTIFICATION_SCHEDULER_KEY = "internal_notification_scheduler"
+TASK_REMINDERS_KEY = "task_reminders"
 AUTOMATION_CONFIGURATION_STATUSES = {"enabled", "disabled", "not_configured"}
 AUTOMATION_HEALTH_STATUSES = {"healthy", "attention", "never_run", "disabled"}
 REQUIRED_OPERATION_FIELDS = {
@@ -44,6 +47,8 @@ class AutomationOperationNotFoundError(ValueError):
 
 class AutomationOperationsAdapter(Protocol):
     automation_key: str
+    scope: str
+    capabilities: frozenset[str]
 
     def get_operation(self, *, organization_id: int, recipient_user_id: int) -> dict[str, Any]: ...
 
@@ -63,6 +68,10 @@ class AutomationOperationsRegistry:
             raise ValueError("Każdy adapter Centrum Automatyzacji musi mieć automation_key.")
         if len(keys) != len(set(keys)):
             raise ValueError("automation_key adapterów Centrum Automatyzacji muszą być unikalne.")
+        if any(not str(getattr(adapter, "scope", "")).strip() for adapter in adapters):
+            raise ValueError("Każdy adapter Centrum Automatyzacji musi deklarować scope.")
+        if any(not getattr(adapter, "capabilities", None) for adapter in adapters):
+            raise ValueError("Każdy adapter Centrum Automatyzacji musi deklarować capabilities.")
         self._adapters = adapters
         self._by_key = dict(zip(keys, adapters, strict=True))
 
@@ -105,6 +114,8 @@ def scheduler_health(
 
 class InternalNotificationSchedulerOperationsAdapter:
     automation_key = INTERNAL_NOTIFICATION_SCHEDULER_KEY
+    scope = "organization_recipient"
+    capabilities = frozenset({"summary", "history", "settings"})
 
     def __init__(self, repository: InternalNotificationScheduleRepository) -> None:
         self.repository = repository
@@ -196,6 +207,118 @@ class InternalNotificationSchedulerOperationsAdapter:
         return [_serialize_run(row) for row in rows]
 
 
+def task_reminder_health(*, enabled: bool, failed_count: int, latest_attempt_status: str | None, disabled_reason: str | None = None) -> tuple[str, str, str]:
+    if not enabled:
+        return "disabled", "disabled", disabled_reason or "runtime_disabled"
+    if failed_count > 0:
+        return "enabled", "attention", "failed_outbox_present"
+    if latest_attempt_status in {"failed", "dead_letter", "retry"}:
+        return "enabled", "attention", "last_attempt_failed"
+    if latest_attempt_status == "sent":
+        return "enabled", "healthy", "last_attempt_sent"
+    return "enabled", "never_run", "no_delivery_attempt"
+
+
+class TaskRemindersOperationsAdapter:
+    automation_key = TASK_REMINDERS_KEY
+    scope = "organization_task_visibility"
+    capabilities = frozenset({"summary", "history", "queue", "heartbeat"})
+
+    def __init__(self, repository: TaskReminderOutboxRepository, service: TaskReminderService) -> None:
+        self.repository = repository
+        self.service = service
+
+    def get_operation(self, *, organization_id: int, recipient_user_id: int) -> dict[str, Any]:
+        contract = self.service.runtime_contract(organization_id=organization_id)
+        snapshot = self.repository.get_operations_snapshot(
+            organization_id=organization_id,
+            viewer_user_id=recipient_user_id,
+        )
+        counts = snapshot["counts"]
+        attempt = snapshot["latest_attempt"]
+        outbox = snapshot["latest_outbox"]
+        attempt_status = str(attempt.get("outcome") or "") or None if attempt else None
+        status, health, reason = task_reminder_health(
+            enabled=bool(contract["enabled"]),
+            failed_count=int(counts["failed"]),
+            latest_attempt_status=attempt_status,
+            disabled_reason=contract.get("disabled_reason"),
+        )
+        error_value = attempt.get("error_message") if attempt else None
+        if not error_value and outbox:
+            error_value = outbox.get("last_error")
+        last_activity = None
+        if attempt:
+            last_activity = attempt.get("attempted_at")
+        elif outbox:
+            last_activity = outbox.get("last_attempt_at") or outbox.get("updated_at") or outbox.get("created_at")
+        operation = {
+            "automation_key": self.automation_key,
+            "automation_type": "task_reminders",
+            "title": "Przypomnienia zadań",
+            "description": "Kolejka i historia dostarczania przypomnień Telegram dla widocznych zadań.",
+            "status": status,
+            "enabled": bool(contract["enabled"]),
+            "disabled_reason": contract.get("disabled_reason"),
+            "health": health,
+            "health_reason_code": reason,
+            "schedule_id": None,
+            "run_id": None,
+            "next_run_at": None,
+            "last_run_at": last_activity,
+            "last_activity_at": last_activity,
+            "last_run_status": "succeeded" if attempt_status == "sent" else "failed" if attempt_status in {"failed", "dead_letter", "retry"} else None,
+            "last_attempt_at": attempt.get("attempted_at") if attempt else None,
+            "last_attempt_status": attempt_status,
+            "last_attempt_count": int(attempt.get("attempt_no") or 0) if attempt else None,
+            "last_run_duration_ms": None,
+            "last_candidates_count": None,
+            "last_created_count": None,
+            "last_existing_count": None,
+            "pending_count": int(counts["queued"]),
+            "processing_count": int(counts["processing"]),
+            "failed_count": int(counts["failed"]),
+            "sent_count": int(counts["sent"]),
+            "cancelled_count": int(counts["cancelled"]),
+            "recent_failure_count": int(snapshot["recent_failure_count"]),
+            "last_error_code": "task_reminder_delivery_failed" if error_value else None,
+            "last_error_summary": _safe_error_summary(error_value),
+            "last_heartbeat_at": snapshot["last_heartbeat_at"],
+            "settings_url": None,
+            "details_url": f"/automatyzacje/{self.automation_key}",
+            "runtime_status": "unknown",
+            "schedule": None,
+            "updated_at": last_activity or snapshot["last_heartbeat_at"],
+        }
+        AutomationOperationsRegistry.validate_operation(operation)
+        return operation
+
+    def get_history(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        rows = self.repository.list_attempts_read_only(
+            organization_id=organization_id,
+            viewer_user_id=recipient_user_id,
+            limit=limit,
+        )
+        return [{
+            "history_type": "reminder_attempt",
+            "attempt_id": int(row["task_reminder_outbox_attempt_id"]),
+            "outbox_id": int(row["task_reminder_outbox_id"]),
+            "channel": str(row["delivery_channel"]),
+            "attempt_no": int(row["attempt_no"]),
+            "status": str(row["outcome"]),
+            "attempted_at": row["attempted_at"],
+            "error_code": "task_reminder_delivery_failed" if row.get("error_message") else None,
+            "error_summary": _safe_error_summary(row.get("error_message")),
+        } for row in rows]
+
+    def get_outbox(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        return self.repository.list_outbox_read_only(
+            organization_id=organization_id,
+            viewer_user_id=recipient_user_id,
+            limit=limit,
+        )
+
+
 class AutomationOperationsService:
     def __init__(
         self,
@@ -265,11 +388,19 @@ class AutomationOperationsService:
             recipient_user_id=recipient_user_id,
             limit=normalized_limit,
         )
-        return {
+        result = {
             "item": operation,
             "history": history,
             "history_limit": normalized_limit,
         }
+        get_outbox = getattr(adapter, "get_outbox", None)
+        if callable(get_outbox):
+            result["outbox"] = get_outbox(
+                organization_id=organization_id,
+                recipient_user_id=recipient_user_id,
+                limit=normalized_limit,
+            )
+        return result
 
     def _validate_scope(
         self,
@@ -320,6 +451,7 @@ def _duration_ms(started_at: Any, finished_at: Any) -> int | None:
 
 def _serialize_run(run: dict[str, Any]) -> dict[str, Any]:
     return {
+        "history_type": "scheduler_run",
         "run_id": int(run["internal_notification_schedule_run_id"]),
         "schedule_id": int(run["schedule_id"]),
         "scheduled_local_date": str(run["scheduled_local_date"]),

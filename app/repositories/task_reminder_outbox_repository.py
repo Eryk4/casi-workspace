@@ -568,3 +568,112 @@ class TaskReminderOutboxRepository:
                 """
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_operations_snapshot(self, *, organization_id: int, viewer_user_id: int) -> dict[str, Any]:
+        visibility = """
+            EXISTS (
+                SELECT 1 FROM tasks t
+                WHERE t.task_id = o.task_id
+                  AND (t.owner_user_id = ? OR t.assigned_user_id = ? OR EXISTS (
+                      SELECT 1 FROM task_visibility_users tvu
+                      WHERE tvu.task_id = t.task_id AND tvu.user_id = ?
+                  ))
+            )
+        """
+        with get_connection() as connection:
+            counts = connection.execute(
+                f"""
+                SELECT COUNT(*) AS total,
+                    SUM(CASE WHEN o.status = 'queued' THEN 1 ELSE 0 END) AS queued,
+                    SUM(CASE WHEN o.status = 'processing' THEN 1 ELSE 0 END) AS processing,
+                    SUM(CASE WHEN o.status = 'sent' THEN 1 ELSE 0 END) AS sent,
+                    SUM(CASE WHEN o.status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                    SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled
+                FROM task_reminder_outbox o
+                WHERE o.organization_id = ? AND {visibility}
+                """,
+                (organization_id, viewer_user_id, viewer_user_id, viewer_user_id),
+            ).fetchone()
+            latest_outbox = connection.execute(
+                f"""
+                SELECT o.task_reminder_outbox_id, o.status, o.delivery_channel, o.attempt_count,
+                    o.available_at, o.last_attempt_at, o.last_error, o.created_at, o.updated_at
+                FROM task_reminder_outbox o
+                WHERE o.organization_id = ? AND {visibility}
+                ORDER BY COALESCE(o.last_attempt_at, o.updated_at, o.created_at) DESC,
+                    o.task_reminder_outbox_id DESC LIMIT 1
+                """,
+                (organization_id, viewer_user_id, viewer_user_id, viewer_user_id),
+            ).fetchone()
+            latest_attempt = connection.execute(
+                """
+                SELECT a.task_reminder_outbox_attempt_id, a.task_reminder_outbox_id,
+                    a.delivery_channel, a.attempt_no, a.outcome, a.attempted_at, a.error_message
+                FROM task_reminder_outbox_attempts a
+                JOIN tasks t ON t.task_id = a.task_id
+                WHERE a.organization_id = ?
+                  AND (t.owner_user_id = ? OR t.assigned_user_id = ? OR EXISTS (
+                      SELECT 1 FROM task_visibility_users tvu
+                      WHERE tvu.task_id = t.task_id AND tvu.user_id = ?
+                  ))
+                ORDER BY a.attempted_at DESC, a.task_reminder_outbox_attempt_id DESC LIMIT 1
+                """,
+                (organization_id, viewer_user_id, viewer_user_id, viewer_user_id),
+            ).fetchone()
+            recent_failures = connection.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM task_reminder_outbox_attempts a
+                JOIN tasks t ON t.task_id = a.task_id
+                WHERE a.organization_id = ? AND a.outcome IN ('failed', 'dead_letter', 'retry')
+                  AND (t.owner_user_id = ? OR t.assigned_user_id = ? OR EXISTS (
+                      SELECT 1 FROM task_visibility_users tvu
+                      WHERE tvu.task_id = t.task_id AND tvu.user_id = ?
+                  ))
+                """,
+                (organization_id, viewer_user_id, viewer_user_id, viewer_user_id),
+            ).fetchone()
+            heartbeat = connection.execute(
+                """SELECT last_heartbeat_at FROM task_reminder_worker_heartbeats
+                   ORDER BY last_heartbeat_at DESC, task_reminder_worker_heartbeat_id DESC LIMIT 1"""
+            ).fetchone()
+        return {
+            "counts": {key: int(counts[key] or 0) for key in ("total", "queued", "processing", "sent", "failed", "cancelled")},
+            "latest_outbox": dict(latest_outbox) if latest_outbox else None,
+            "latest_attempt": dict(latest_attempt) if latest_attempt else None,
+            "recent_failure_count": int(recent_failures["total"] or 0) if recent_failures else 0,
+            "last_heartbeat_at": heartbeat["last_heartbeat_at"] if heartbeat else None,
+        }
+
+    def list_attempts_read_only(self, *, organization_id: int, viewer_user_id: int, limit: int) -> list[dict[str, Any]]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT a.task_reminder_outbox_attempt_id, a.task_reminder_outbox_id,
+                    a.delivery_channel, a.attempt_no, a.outcome, a.attempted_at, a.error_message
+                FROM task_reminder_outbox_attempts a
+                JOIN tasks t ON t.task_id = a.task_id
+                WHERE a.organization_id = ?
+                  AND (t.owner_user_id = ? OR t.assigned_user_id = ? OR EXISTS (
+                      SELECT 1 FROM task_visibility_users tvu
+                      WHERE tvu.task_id = t.task_id AND tvu.user_id = ?
+                  ))
+                ORDER BY a.attempted_at DESC, a.task_reminder_outbox_attempt_id DESC LIMIT ?
+                """,
+                (organization_id, viewer_user_id, viewer_user_id, viewer_user_id, max(1, min(int(limit), 50))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_outbox_read_only(self, *, organization_id: int, viewer_user_id: int, limit: int) -> list[dict[str, Any]]:
+        rows = self.list_deliveries(
+            organization_id=organization_id,
+            viewer_user_id=viewer_user_id,
+            limit=max(1, min(int(limit), 50)),
+        )
+        return [
+            {key: row.get(key) for key in (
+                "task_reminder_outbox_id", "status", "delivery_channel", "available_at",
+                "attempt_count", "created_at", "updated_at",
+            )}
+            for row in rows
+        ]

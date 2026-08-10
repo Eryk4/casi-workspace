@@ -4,7 +4,12 @@
 
 Centrum pod adresem `/automatyzacje` jest wyłącznie odczytowym widokiem operacyjnym. Agreguje wiarygodny, trwały stan automatyzacji, ale nie uruchamia workerów, nie zmienia konfiguracji, nie ponawia runów i nie zastępuje mechanizmów wykonawczych.
 
-W v1 zarejestrowany jest tylko `internal_notification_scheduler`. Jest to osobny, jawnie uruchamiany subsystem schedulerowy. Centrum nie przepina go do `automation_rules` i nie tworzy drugiego silnika wykonawczego.
+W v1 zarejestrowane są dwa natywne subsystemy: `internal_notification_scheduler` oraz `task_reminders`. Centrum nie przepina ich do `automation_rules` i nie tworzy drugiego silnika wykonawczego.
+
+| Źródło | automation_key | Scope | Konfiguracja | Historia | Health | Runtime | Ustawienia | Status |
+|---|---|---|---|---|---|---|---|---|
+| Scheduler powiadomień | `internal_notification_scheduler` | organizacja + odbiorca | schedule settings | schedule runs | ostatni terminalny run | `unknown` | `/powiadomienia` | wdrożony |
+| Przypomnienia zadań | `task_reminders` | organizacja + widoczność zadania | `TaskReminderService.runtime_contract()` | outbox + attempts | runtime gate, failed outbox i ostatnia próba | `unknown`; heartbeat historyczny | brak osobnego widoku | wdrożony read-only |
 
 ## Kontrakt adaptera
 
@@ -34,7 +39,6 @@ Stan procesu workera jest prezentowany jako `unknown`. Aplikacja nie udaje monit
 ## Świadomie odłożone źródła
 
 - `automation_rules` i `automation_executions` pozostają istniejącym, niezależnym silnikiem event → actions. Nie mają jeszcze wspólnego kontraktu harmonogramu, następnego runu i bezpiecznej prezentacji błędów dla centrum.
-- przypomnienia zadań mają rozdzielony outbox, próby i heartbeat zależny od runtime. Ich centralny kontrakt enabled wymaga jednocześnie jawnie włączonego `INVOICE_ENABLE_TELEGRAM_TASK_REMINDERS`, skonfigurowanego wysyłania Telegram oraz zgodnego providera organizacji. Flaga jest nadrzędnym kill switchem; sama obecność tokenu nie włącza mechanizmu;
 - joby i watchery bazy wiedzy nie mają wspólnego, trwałego kontraktu enabled/next-run/history;
 - importy e-mail i KSeF mają historie operacyjne, ale nie stanowią jednego skonfigurowanego kontraktu automatyzacji, a część stanu e-mail jest procesowa;
 - samodzielne pętle i konfiguracja platformowa nie są raportowane, ponieważ bez dedykowanego źródła prawdy taki stan byłby mylący.
@@ -47,7 +51,11 @@ Dodanie tych źródeł wymaga najpierw spełnienia kontraktu adaptera. Nie wolno
 
 Outbox i ograniczona historia attempts mogą w przyszłości zasilać read-only health. Heartbeat jest wyłącznie informacyjny: nie ma zdefiniowanego TTL i nie może być interpretowany jako dowód, że worker działa. Centrum nie powinno ujawniać payloadów, odbiorców ani surowych błędów i nie może dodawać retry lub run-now.
 
-Adapter Task Reminders do Automation Operations Center wymaga tego kontraktu i będzie realizowany w osobnym etapie. Task Reminders nie są jeszcze zarejestrowane w Centrum ani przepięte do `automation_rules`.
+Adapter Task Reminders czyta wyłącznie natywne dane outbox/attempts. Nie pokazuje payloadu, treści zadania, identyfikatora Telegram odbiorcy ani surowych błędów. Heartbeat nie wpływa na health i jest prezentowany jedynie jako ostatni historyczny timestamp. Centrum nie udostępnia retry, run-now, enable/disable ani żadnego innego write path.
+
+`automation_rules` i `automation_executions` pozostają niezależnym subsystemem event → actions; Task Reminders nie są przez niego wykonywane.
+
+Trzecie źródło musi otrzymać unikalny `automation_key`, zadeklarować scope i capabilities oraz dostarczyć read-only adapter z deterministycznym health, limitowaną historią i sanitarnymi błędami. Dodanie adaptera odbywa się wyłącznie w centralnym registry; frontend nie utrzymuje listy kluczy automatyzacji.
 
 ## Bezpieczeństwo
 

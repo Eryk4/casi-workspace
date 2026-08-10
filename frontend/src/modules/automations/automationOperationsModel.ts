@@ -25,14 +25,24 @@ export type AutomationOperation = {
   recentFailureCount: number;
   lastErrorCode: string | null;
   lastErrorSummary: string | null;
-  settingsUrl: string;
+  settingsUrl: string | null;
   detailsUrl: string;
   runtimeStatus: "unknown";
   schedule: {
     cadence: string;
     timezoneName: string;
     localTime: string;
-  };
+  } | null;
+  disabledReason: string | null;
+  lastActivityAt: string | null;
+  lastAttemptAt: string | null;
+  lastAttemptStatus: string | null;
+  pendingCount: number;
+  processingCount: number;
+  failedCount: number;
+  sentCount: number;
+  cancelledCount: number;
+  lastHeartbeatAt: string | null;
   updatedAt: string | null;
 };
 
@@ -47,6 +57,7 @@ export type AutomationOperationsDashboard = {
 };
 
 export type AutomationRun = {
+  historyType: "scheduler_run";
   runId: number;
   scheduleId: number;
   scheduledLocalDate: string;
@@ -64,9 +75,32 @@ export type AutomationRun = {
   durationMs: number | null;
 };
 
+export type ReminderAttempt = {
+  historyType: "reminder_attempt";
+  attemptId: number;
+  outboxId: number;
+  channel: string;
+  attemptNo: number;
+  status: string;
+  attemptedAt: string;
+  errorCode: string | null;
+  errorSummary: string | null;
+};
+
+export type ReminderOutboxItem = {
+  outboxId: number;
+  status: string;
+  channel: string;
+  availableAt: string | null;
+  attemptCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AutomationOperationDetail = {
   item: AutomationOperation;
-  history: AutomationRun[];
+  history: Array<AutomationRun | ReminderAttempt>;
+  outbox: ReminderOutboxItem[];
   historyLimit: number;
 };
 
@@ -117,7 +151,7 @@ function readOperation(value: unknown): AutomationOperation {
   if (typeof item.enabled !== "boolean") throw new Error("Nieprawidłowy kontrakt: enabled.");
   const lastRunStatus = optionalText(item.last_run_status) as AutomationRunStatus | null;
   if (lastRunStatus && !RUN_STATUSES.has(lastRunStatus)) throw new Error("Nieznany status runu.");
-  const schedule = record(item.schedule, "schedule");
+  const schedule = item.schedule === null || item.schedule === undefined ? null : record(item.schedule, "schedule");
   if (item.runtime_status !== "unknown") throw new Error("Nieznany status runtime.");
   return {
     automationKey: text(item.automation_key, "automation_key"),
@@ -141,14 +175,24 @@ function readOperation(value: unknown): AutomationOperation {
     recentFailureCount: nonNegativeInteger(item.recent_failure_count, "recent_failure_count") as number,
     lastErrorCode: optionalText(item.last_error_code),
     lastErrorSummary: optionalText(item.last_error_summary),
-    settingsUrl: safePath(item.settings_url, "settings_url"),
+    settingsUrl: item.settings_url === null ? null : safePath(item.settings_url, "settings_url"),
     detailsUrl: safePath(item.details_url, "details_url"),
     runtimeStatus: "unknown",
-    schedule: {
+    schedule: schedule ? {
       cadence: text(schedule.cadence, "schedule.cadence"),
       timezoneName: text(schedule.timezone_name, "schedule.timezone_name"),
       localTime: text(schedule.local_time, "schedule.local_time"),
-    },
+    } : null,
+    disabledReason: optionalText(item.disabled_reason),
+    lastActivityAt: optionalText(item.last_activity_at ?? item.last_run_at),
+    lastAttemptAt: optionalText(item.last_attempt_at),
+    lastAttemptStatus: optionalText(item.last_attempt_status),
+    pendingCount: nonNegativeInteger(item.pending_count ?? 0, "pending_count") as number,
+    processingCount: nonNegativeInteger(item.processing_count ?? 0, "processing_count") as number,
+    failedCount: nonNegativeInteger(item.failed_count ?? 0, "failed_count") as number,
+    sentCount: nonNegativeInteger(item.sent_count ?? 0, "sent_count") as number,
+    cancelledCount: nonNegativeInteger(item.cancelled_count ?? 0, "cancelled_count") as number,
+    lastHeartbeatAt: optionalText(item.last_heartbeat_at),
     updatedAt: optionalText(item.updated_at),
   };
 }
@@ -158,6 +202,7 @@ function readRun(value: unknown): AutomationRun {
   const status = text(run.status, "run.status") as AutomationRunStatus;
   if (!RUN_STATUSES.has(status)) throw new Error("Nieznany status historii runu.");
   return {
+    historyType: "scheduler_run",
     runId: nonNegativeInteger(run.run_id, "run_id") as number,
     scheduleId: nonNegativeInteger(run.schedule_id, "schedule_id") as number,
     scheduledLocalDate: text(run.scheduled_local_date, "scheduled_local_date"),
@@ -173,6 +218,21 @@ function readRun(value: unknown): AutomationRun {
     startedAt: optionalText(run.started_at),
     finishedAt: optionalText(run.finished_at),
     durationMs: nonNegativeInteger(run.duration_ms, "duration_ms", true),
+  };
+}
+
+function readReminderAttempt(value: unknown): ReminderAttempt {
+  const attempt = record(value, "reminder attempt");
+  return {
+    historyType: "reminder_attempt",
+    attemptId: nonNegativeInteger(attempt.attempt_id, "attempt_id") as number,
+    outboxId: nonNegativeInteger(attempt.outbox_id, "outbox_id") as number,
+    channel: text(attempt.channel, "channel"),
+    attemptNo: nonNegativeInteger(attempt.attempt_no, "attempt_no") as number,
+    status: text(attempt.status, "status"),
+    attemptedAt: text(attempt.attempted_at, "attempted_at"),
+    errorCode: optionalText(attempt.error_code),
+    errorSummary: optionalText(attempt.error_summary),
   };
 }
 
@@ -196,7 +256,19 @@ export function readAutomationOperationDetail(payload: unknown): AutomationOpera
   if (!Array.isArray(root.history)) throw new Error("Nieprawidłowy kontrakt: history.");
   return {
     item: readOperation(root.item),
-    history: root.history.map(readRun),
+    history: root.history.map((entry) => record(entry, "history").history_type === "reminder_attempt" ? readReminderAttempt(entry) : readRun(entry)),
+    outbox: Array.isArray(root.outbox) ? root.outbox.map((entry) => {
+      const item = record(entry, "outbox");
+      return {
+        outboxId: nonNegativeInteger(item.task_reminder_outbox_id, "outbox_id") as number,
+        status: text(item.status, "status"),
+        channel: text(item.delivery_channel, "delivery_channel"),
+        availableAt: optionalText(item.available_at),
+        attemptCount: nonNegativeInteger(item.attempt_count, "attempt_count") as number,
+        createdAt: text(item.created_at, "created_at"),
+        updatedAt: text(item.updated_at, "updated_at"),
+      };
+    }) : [],
     historyLimit: nonNegativeInteger(root.history_limit, "history_limit") as number,
   };
 }

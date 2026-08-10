@@ -36,15 +36,24 @@ const operation = {
   last_error_code: "materialization_failed", last_error_summary: "Bezpieczne podsumowanie błędu", settings_url: "/powiadomienia",
   details_url: "/automatyzacje/internal_notification_scheduler", runtime_status: "unknown", schedule: { cadence: "daily", timezone_name: "Europe/Warsaw", local_time: "08:00" }, updated_at: "2026-01-15T07:00:01+00:00",
 };
+const reminderOperation = {
+  ...operation, automation_key: "task_reminders", automation_type: "task_reminders", title: "Przypomnienia zadań", description: "Kolejka przypomnień",
+  health: "attention", health_reason_code: "failed_outbox_present", schedule_id: null, run_id: null, next_run_at: null,
+  last_run_duration_ms: null, last_candidates_count: null, last_created_count: null, last_existing_count: null, schedule: null, settings_url: null,
+  disabled_reason: null, last_activity_at: "2026-01-15T07:01:00+00:00", last_attempt_at: "2026-01-15T07:01:00+00:00", last_attempt_status: "dead_letter",
+  pending_count: 1, processing_count: 0, failed_count: 1, sent_count: 2, cancelled_count: 0, last_heartbeat_at: "2026-01-15T07:00:00+00:00",
+  details_url: "/automatyzacje/task_reminders", last_error_summary: "Bezpieczny błąd przypomnienia",
+};
 const api = {
   automationOperations: async (query) => {
     dashboardCalls += 1;
     if (failDashboard) throw new Error("Kontrolowany błąd centrum");
     if (String(query.organization_id) !== organizationId) throw new Error("Stary scope organizacji");
-    return { summary: { active_count: 1, disabled_count: 0, attention_count: 1, recent_failure_count: 1 }, items: [operation] };
+    return { summary: { active_count: 2, disabled_count: 0, attention_count: 2, recent_failure_count: 2 }, items: [operation, reminderOperation] };
   },
-  automationOperationDetail: async () => {
+  automationOperationDetail: async (automationKey) => {
     if (detailNotFound) throw new ApiError("Nie znaleziono", 404, {});
+    if (automationKey === "task_reminders") return { item: reminderOperation, history_limit: 20, history: [{ history_type: "reminder_attempt", attempt_id: 9, outbox_id: 8, channel: "telegram", attempt_no: 2, status: "dead_letter", attempted_at: "2026-01-15T07:01:00+00:00", error_code: "task_reminder_delivery_failed", error_summary: "Bezpieczny błąd przypomnienia" }], outbox: [{ task_reminder_outbox_id: 8, status: "failed", delivery_channel: "telegram", available_at: "2026-01-15T07:00:00+00:00", attempt_count: 2, created_at: "2026-01-15T07:00:00+00:00", updated_at: "2026-01-15T07:01:00+00:00" }] };
     return { item: operation, history_limit: 20, history: [{ run_id: 2, schedule_id: 1, scheduled_local_date: "2026-01-15", as_of_date: "2026-01-15", scheduled_for_utc: "2026-01-15T07:00:00+00:00", status: "failed", attempt_count: 2, candidates_count: 7, created_count: 3, existing_count: 4, error_code: "materialization_failed", error_summary: "Bezpieczne podsumowanie błędu", started_at: "2026-01-15T07:00:00+00:00", finished_at: "2026-01-15T07:00:01+00:00", duration_ms: 1000 }] };
   },
 };
@@ -70,7 +79,8 @@ function button(container, label) { return [...container.querySelectorAll("butto
 async function run() {
   const container = document.getElementById("root"); const root = createRoot(container);
   await act(async () => root.render(React.createElement(AutomationOperationsPage))); await settle();
-  assert.match(container.textContent, /Automatyzacje/); assert.match(container.textContent, /Wymaga uwagi/); assert.match(container.textContent, /Bezpieczne podsumowanie/);
+  assert.match(container.textContent, /Automatyzacje/); assert.match(container.textContent, /Przypomnienia zadań/); assert.match(container.textContent, /Bezpieczny błąd przypomnienia/);
+  assert.equal(container.querySelectorAll(".automation-card").length, 2);
   assert.equal(container.querySelector('a[href="/automatyzacje/internal_notification_scheduler"]').textContent, "Szczegóły");
   assert.equal(container.querySelector('a[href="/powiadomienia"]').textContent, "Ustawienia");
   assert.ok(button(container, "Odśwież")); assert.ok(!container.textContent.includes("Uruchom teraz"));
@@ -85,6 +95,8 @@ async function run() {
 
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "internal_notification_scheduler" }))); await settle();
   assert.match(container.textContent, /Historia ostatnich uruchomień/); assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/); assert.equal(container.querySelectorAll("tbody tr").length, 1); assert.ok(!container.textContent.includes("lease"));
+  await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "task_reminders" }))); await settle();
+  assert.match(container.textContent, /Ostatnie próby/); assert.match(container.textContent, /Ostatnie wpisy kolejki/); assert.match(container.textContent, /bez oceny online\/offline/); assert.ok(!container.textContent.match(/Retry|Uruchom teraz|Wyślij ponownie/));
   detailNotFound = true; await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "unknown" }))); await settle(); assert.match(container.textContent, /Nie znaleziono automatyzacji/);
   await act(async () => root.unmount());
   console.log("Automation operations DOM tests passed.");

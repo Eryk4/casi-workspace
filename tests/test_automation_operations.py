@@ -8,6 +8,7 @@ from app.db import get_connection, reset_database
 from app.services.automation_operations_service import (
     AutomationOperationsRegistry,
     scheduler_health,
+    task_reminder_health,
 )
 
 
@@ -39,6 +40,39 @@ class AutomationOperationsTests(unittest.TestCase):
         self.user_id = int(self.user["user_id"])
         self.operations = self.services["automation_operations_service"]
         self.scheduler = self.services["internal_notification_scheduler_service"]
+        self.reminders = self.services["task_reminder_service"]
+
+    def _reminder_item(self):
+        return next(item for item in self._dashboard()["items"] if item["automation_key"] == "task_reminders")
+
+    def _insert_reminder(self, *, status: str, outcome: str | None = None, error: str | None = None) -> int:
+        task = self.services["task_service"].create_task(
+            {"title": "Widoczne przypomnienie", "task_type": "zadanie", "status": "nowe", "priority": "normalny",
+             "due_at": "2099-01-01T10:00", "remind_at": "2000-01-01T09:00", "assigned_user_id": self.user_id,
+             "visibility_scope": "organizacja"},
+            actor_user=self.user, actor="automation-user", organization_id=self.organization_id,
+        )
+        with get_connection() as connection:
+            cursor = connection.execute(
+                """INSERT INTO task_reminder_outbox (
+                    organization_id, task_id, delivery_channel, delivery_key, delivery_anchor_at,
+                    recipient_user_id, recipient_telegram_user_id, available_at, status, retryable,
+                    attempt_count, last_attempt_at, last_error, sent_at, payload, created_at, updated_at
+                ) VALUES (?, ?, 'telegram', ?, '2026-01-15T07:00', ?, 'fake-user', '2026-01-15T07:00', ?, 0, 1,
+                    '2026-01-15T07:01', ?, ?, '{}', '2026-01-15T07:00', '2026-01-15T07:01')""",
+                (self.organization_id, int(task["task_id"]), f"test-{task['task_id']}", self.user_id, status, error,
+                 "2026-01-15T07:01" if status == "sent" else None),
+            )
+            outbox_id = int(cursor.lastrowid)
+            if outcome:
+                connection.execute(
+                    """INSERT INTO task_reminder_outbox_attempts (
+                        task_reminder_outbox_id, organization_id, task_id, delivery_channel, attempt_no,
+                        outcome, attempted_at, worker_name, error_message, details, created_at
+                    ) VALUES (?, ?, ?, 'telegram', 1, ?, '2026-01-15T07:01', 'mock-worker', ?, '{}', '2026-01-15T07:01')""",
+                    (outbox_id, self.organization_id, int(task["task_id"]), outcome, error),
+                )
+        return outbox_id
 
     def _dashboard(self):
         return self.operations.dashboard(
@@ -134,8 +168,10 @@ class AutomationOperationsTests(unittest.TestCase):
             )
         with get_connection() as connection:
             before = {
-                table: int(connection.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"])
+                table: [dict(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()]
                 for table in (
+                    "task_reminder_outbox", "task_reminder_outbox_attempts", "task_reminder_worker_heartbeats", "tasks",
+                    "automation_rules", "automation_executions",
                     "internal_notification_schedules", "internal_notification_schedule_runs",
                     "internal_notifications", "internal_notification_state_events", "event_logs",
                     "billing_transactions", "billing_charges", "billing_payment_matches",
@@ -145,7 +181,7 @@ class AutomationOperationsTests(unittest.TestCase):
         self._dashboard()
         with get_connection() as connection:
             after = {
-                table: int(connection.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"])
+                table: [dict(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()]
                 for table in before
             }
         self.assertEqual(after, before)
@@ -169,6 +205,8 @@ class AutomationOperationsTests(unittest.TestCase):
     def test_registry_contract_is_extensible_and_keys_are_unique(self) -> None:
         class Adapter:
             automation_key = "future_adapter"
+            scope = "organization"
+            capabilities = frozenset({"summary"})
 
             def get_operation(self, **kwargs):
                 return {}
@@ -188,6 +226,60 @@ class AutomationOperationsTests(unittest.TestCase):
         self.assertEqual(scheduler_health(schedule_exists=False, enabled=False, last_terminal_status=None), ("not_configured", "disabled", "schedule_not_configured"))
         self.assertEqual(scheduler_health(schedule_exists=True, enabled=True, last_terminal_status="succeeded")[1], "healthy")
         self.assertEqual(scheduler_health(schedule_exists=True, enabled=True, last_terminal_status="failed")[1], "attention")
+        self.assertEqual(task_reminder_health(enabled=False, failed_count=0, latest_attempt_status=None)[1], "disabled")
+        self.assertEqual(task_reminder_health(enabled=True, failed_count=0, latest_attempt_status=None)[1], "never_run")
+        self.assertEqual(task_reminder_health(enabled=True, failed_count=0, latest_attempt_status="sent")[1], "healthy")
+        self.assertEqual(task_reminder_health(enabled=True, failed_count=1, latest_attempt_status="sent")[1], "attention")
+
+    def test_task_reminders_health_queue_history_and_sanitization(self) -> None:
+        self.assertEqual((self._reminder_item()["status"], self._reminder_item()["health"]), ("disabled", "disabled"))
+        self.reminders.runtime_enabled = True
+        self.reminders.telegram_adapter.bot_token = "fake-token"
+        self.assertEqual(self._reminder_item()["health"], "never_run")
+        self._insert_reminder(status="sent", outcome="sent")
+        item = self._reminder_item()
+        self.assertEqual(item["health"], "healthy")
+        self.assertEqual(item["sent_count"], 1)
+        self._insert_reminder(status="failed", outcome="dead_letter", error="Traceback token=secret DSN=postgres://private")
+        item = self._reminder_item()
+        self.assertEqual(item["health"], "attention")
+        self.assertEqual(item["failed_count"], 1)
+        self.assertNotIn("secret", item["last_error_summary"].lower())
+        detail = self.operations.detail("task_reminders", organization_id=self.organization_id,
+            recipient_user_id=self.user_id, actor_user=self.user, history_limit=100)
+        self.assertEqual(detail["history_limit"], 50)
+        self.assertEqual(len(detail["history"]), 2)
+        self.assertEqual(len(detail["outbox"]), 2)
+        self.assertNotIn("payload", str(detail).lower())
+        self.assertNotIn("secret", str(detail).lower())
+
+    def test_task_reminders_respect_private_task_visibility(self) -> None:
+        other = self.services["auth_service"].create_user(
+            {"login": "private-reminder-user", "display_name": "Private User", "password": "Automation123!",
+             "role": "organization_admin", "organization_id": self.organization_id, "is_active": 1},
+            actor_login="admin", actor_user_id=int(self.admin["user_id"]), actor_user=self.admin,
+        )
+        task = self.services["task_service"].create_task(
+            {"title": "Prywatne przypomnienie", "task_type": "zadanie", "status": "nowe", "priority": "normalny",
+             "due_at": "2099-01-01T10:00", "remind_at": "2000-01-01T09:00", "visibility_scope": "prywatne"},
+            actor_user=other, actor="Private User", organization_id=self.organization_id,
+        )
+        with get_connection() as connection:
+            connection.execute(
+                """INSERT INTO task_reminder_outbox (organization_id, task_id, delivery_channel, delivery_key,
+                    delivery_anchor_at, recipient_user_id, recipient_telegram_user_id, available_at, status,
+                    retryable, attempt_count, payload, created_at, updated_at)
+                    VALUES (?, ?, 'telegram', ?, '2026-01-15T07:00', ?, 'fake', '2026-01-15T07:00',
+                    'queued', 1, 0, '{}', '2026-01-15T07:00', '2026-01-15T07:00')""",
+                (self.organization_id, int(task["task_id"]), f"private-{task['task_id']}", int(other["user_id"])),
+            )
+        self.reminders.runtime_enabled = True
+        self.reminders.telegram_adapter.bot_token = "fake-token"
+        self.assertEqual(self._reminder_item()["pending_count"], 0)
+        other_dashboard = self.operations.dashboard(organization_id=self.organization_id,
+            recipient_user_id=int(other["user_id"]), actor_user=other)
+        other_item = next(item for item in other_dashboard["items"] if item["automation_key"] == "task_reminders")
+        self.assertEqual(other_item["pending_count"], 1)
 
 
 if __name__ == "__main__":
