@@ -55,17 +55,30 @@ const knowledgeOperation = {
   last_scan_at: "2026-02-13T10:01:00+00:00", last_scan_status: "ok", last_error_code: "knowledge_processing_failed",
   last_error_summary: "Błąd wykonania. Szczegóły techniczne zostały ukryte.", details_url: "/automatyzacje/knowledge_processing",
 };
+const emailImportOperation = {
+  ...operation, automation_key: "email_import", automation_type: "email_import", title: "Import e-maili", description: "Bezpieczny monitoring importu",
+  health: "attention", health_reason_code: "last_email_import_run_requires_attention", schedule_id: null, run_id: 21, next_run_at: null,
+  last_run_at: "2026-03-11T10:00:00+00:00", last_run_status: "failed", last_run_duration_ms: 2000,
+  last_attempt_count: null, last_candidates_count: 4, last_created_count: 2, last_existing_count: 1, schedule: null,
+  settings_url: "/ustawienia", details_url: "/automatyzacje/email_import", last_activity_at: "2026-03-11T10:00:00+00:00",
+  last_success_at: "2026-03-10T10:00:00+00:00", last_failure_at: "2026-03-11T10:00:00+00:00",
+  checked_message_count: 7, matched_message_count: 5, matched_attachment_count: 4, imported_count: 2, duplicate_count: 1,
+  failed_count: 1, total_imported_count: 8, total_duplicate_count: 3, total_failed_count: 1, runs_count: 4,
+  configured_connections_count: 1, enabled_connections_count: 1, last_error_code: "email_import_completed_with_issues",
+  last_error_summary: "Część dokumentów z importu e-mail wymaga uwagi.",
+};
 const api = {
   automationOperations: async (query) => {
     dashboardCalls += 1;
     if (failDashboard) throw new Error("Kontrolowany błąd centrum");
     if (String(query.organization_id) !== organizationId) throw new Error("Stary scope organizacji");
-    return { summary: { active_count: 3, disabled_count: 0, attention_count: 3, recent_failure_count: 3 }, items: [operation, reminderOperation, knowledgeOperation] };
+    return { summary: { active_count: 4, disabled_count: 0, attention_count: 4, recent_failure_count: 4 }, items: [operation, reminderOperation, knowledgeOperation, emailImportOperation] };
   },
   automationOperationDetail: async (automationKey) => {
     if (detailNotFound) throw new ApiError("Nie znaleziono", 404, {});
     if (automationKey === "task_reminders") return { item: reminderOperation, history_limit: 20, history: [{ history_type: "reminder_attempt", attempt_id: 9, outbox_id: 8, channel: "telegram", attempt_no: 2, status: "dead_letter", attempted_at: "2026-01-15T07:01:00+00:00", error_code: "task_reminder_delivery_failed", error_summary: "Bezpieczny błąd przypomnienia" }], outbox: [{ task_reminder_outbox_id: 8, status: "failed", delivery_channel: "telegram", available_at: "2026-01-15T07:00:00+00:00", attempt_count: 2, created_at: "2026-01-15T07:00:00+00:00", updated_at: "2026-01-15T07:01:00+00:00" }] };
     if (automationKey === "knowledge_processing") return { item: knowledgeOperation, history_limit: 20, history: [{ history_type: "knowledge_job", job_id: 13, job_type: "replace", status: "failed", attempt_count: 1, max_attempts: 3, created_at: "2026-02-13T09:59:00+00:00", started_at: "2026-02-13T10:00:00+00:00", finished_at: "2026-02-13T10:00:02.500+00:00", duration_ms: 2500, error_code: "knowledge_processing_failed", error_summary: "Błąd wykonania. Szczegóły techniczne zostały ukryte." }], watchers: [{ watcher_id: 2, watch_mode: "polling", status: "ok", last_scan_started_at: "2026-02-13T10:00:00+00:00", last_scan_completed_at: "2026-02-13T10:01:00+00:00", error_code: null, error_summary: null }] };
+    if (automationKey === "email_import") return { item: emailImportOperation, history_limit: 20, history: [{ history_type: "email_import_run", run_id: 21, trigger_mode: "automatic", result_status: "completed_with_issues", status: "failed", started_at: "2026-03-11T09:59:58+00:00", finished_at: "2026-03-11T10:00:00+00:00", duration_ms: 2000, checked_message_count: 7, matched_message_count: 5, matched_attachment_count: 4, imported_count: 2, duplicate_count: 1, failed_count: 1, error_code: "email_import_completed_with_issues", error_summary: "Część dokumentów z importu e-mail wymaga uwagi." }] };
     return { item: operation, history_limit: 20, history: [{ run_id: 2, schedule_id: 1, scheduled_local_date: "2026-01-15", as_of_date: "2026-01-15", scheduled_for_utc: "2026-01-15T07:00:00+00:00", status: "failed", attempt_count: 2, candidates_count: 7, created_count: 3, existing_count: 4, error_code: "materialization_failed", error_summary: "Bezpieczne podsumowanie błędu", started_at: "2026-01-15T07:00:00+00:00", finished_at: "2026-01-15T07:00:01+00:00", duration_ms: 1000 }] };
   },
 };
@@ -93,7 +106,8 @@ async function run() {
   await act(async () => root.render(React.createElement(AutomationOperationsPage))); await settle();
   assert.match(container.textContent, /Automatyzacje/); assert.match(container.textContent, /Przypomnienia zadań/); assert.match(container.textContent, /Bezpieczny błąd przypomnienia/);
   assert.match(container.textContent, /Przetwarzanie bazy wiedzy/);
-  assert.equal(container.querySelectorAll(".automation-card").length, 3);
+  assert.match(container.textContent, /Import e-maili/);
+  assert.equal(container.querySelectorAll(".automation-card").length, 4);
   assert.equal(container.querySelector('a[href="/automatyzacje/internal_notification_scheduler"]').textContent, "Szczegóły");
   assert.equal(container.querySelector('a[href="/powiadomienia"]').textContent, "Ustawienia");
   assert.ok(button(container, "Odśwież")); assert.ok(!container.textContent.includes("Uruchom teraz"));
@@ -111,9 +125,15 @@ async function run() {
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "task_reminders" }))); await settle();
   assert.match(container.textContent, /Ostatnie próby/); assert.match(container.textContent, /Ostatnie wpisy kolejki/); assert.match(container.textContent, /bez oceny online\/offline/); assert.ok(!container.textContent.match(/Retry|Uruchom teraz|Wyślij ponownie/));
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "knowledge_processing" }))); await settle();
-  assert.match(container.textContent, /Ostatnie joby/); assert.match(container.textContent, /Watchery folderów/); assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/);
+  assert.match(container.textContent, /Ostatnie zadania przetwarzania/); assert.match(container.textContent, /Watchery folderów/); assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/);
   assert.match(container.textContent, /replace/); assert.match(container.textContent, /polling/);
   assert.ok(!container.textContent.match(/Retry|Reprocess|Uruchom teraz|Skanuj teraz|Run now|Scan now|C:\\Users|OCR text|treść dokumentu/i));
+  await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "email_import" }))); await settle();
+  assert.match(container.textContent, /Import e-maili/); assert.match(container.textContent, /Automatyczny/); assert.match(container.textContent, /Zakończony z uwagami/);
+  assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/);
+  for (const forbidden of ["email_import", "subject", "sender@", "recipient@", "message_id", "attachment", "token", "Importuj teraz", "Uruchom teraz"]) {
+    assert.ok(!container.textContent.toLowerCase().includes(forbidden.toLowerCase()), `UI ujawnia zakazany tekst: ${forbidden}`);
+  }
   detailNotFound = true; await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "unknown" }))); await settle(); assert.match(container.textContent, /Nie znaleziono automatyzacji/);
   await act(async () => root.unmount());
   console.log("Automation operations DOM tests passed.");

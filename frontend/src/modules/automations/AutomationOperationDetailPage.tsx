@@ -7,7 +7,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useActiveOrganization } from "@/context/ActiveOrganizationContext";
 import { ApiError, api, withOrganizationQuery } from "@/lib/api";
 
-import { automationHealthLabel, automationRunLabel, readAutomationOperationDetail, type AutomationOperationDetail } from "./automationOperationsModel";
+import {
+  automationConfigurationLabel,
+  automationHealthLabel,
+  automationRunLabel,
+  automationTypeLabel,
+  emailImportResultLabel,
+  emailImportTriggerLabel,
+  readAutomationOperationDetail,
+  type AutomationOperationDetail,
+} from "./automationOperationsModel";
 
 type Props = { automationKey: string };
 
@@ -66,11 +75,16 @@ export function AutomationOperationDetailPage({ automationKey }: Props) {
       {!loading && !error && detail ? (
         <>
           <article className="automation-detail-card">
-            <div className="automation-card__heading"><div><span className="eyebrow">{detail.item.automationType}</span><h3>{detail.item.title}</h3></div><span className={`badge badge--${detail.item.health}`}>{automationHealthLabel(detail.item.health)}</span></div>
+            <div className="automation-card__heading"><div><span className="eyebrow">{automationTypeLabel(detail.item.automationType)}</span><h3>{detail.item.title}</h3></div><span className={`badge badge--${detail.item.health}`}>{automationHealthLabel(detail.item.health)}</span></div>
             <p>{detail.item.description}</p>
             <dl className="automation-detail-grid">
-              <div><dt>Stan konfiguracji</dt><dd>{detail.item.status}</dd></div><div><dt>Runtime</dt><dd>Nieznany — centrum nie monitoruje procesu workera</dd></div>
-              {detail.item.automationType === "task_reminders" ? <>
+              <div><dt>Stan konfiguracji</dt><dd>{automationConfigurationLabel(detail.item.status)}</dd></div><div><dt>Runtime</dt><dd>Nieznany — centrum nie monitoruje procesu workera</dd></div>
+              {detail.item.automationType === "email_import" ? <>
+                <div><dt>Skonfigurowane połączenia</dt><dd>{detail.item.configuredConnectionsCount}</dd></div><div><dt>Ostatnia aktywność</dt><dd>{dateTime(detail.item.lastActivityAt)}</dd></div>
+                <div><dt>Ostatni sukces</dt><dd>{dateTime(detail.item.lastSuccessAt)}</dd></div><div><dt>Ostatni błąd</dt><dd>{dateTime(detail.item.lastFailureAt)}</dd></div>
+                <div><dt>Sprawdzone / dopasowane wiadomości</dt><dd>{detail.item.checkedMessageCount} / {detail.item.matchedMessageCount}</dd></div><div><dt>Dopasowane załączniki</dt><dd>{detail.item.matchedAttachmentCount}</dd></div>
+                <div><dt>Zaimportowane / duplikaty / błędy</dt><dd>{detail.item.importedCount} / {detail.item.duplicateCount} / {detail.item.failedCount}</dd></div><div><dt>Liczba uruchomień</dt><dd>{detail.item.runsCount}</dd></div>
+              </> : detail.item.automationType === "task_reminders" ? <>
                 <div><dt>Powód wyłączenia</dt><dd>{detail.item.disabledReason ?? "—"}</dd></div><div><dt>Ostatnia aktywność</dt><dd>{dateTime(detail.item.lastActivityAt)}</dd></div>
                 <div><dt>Ostatnia próba</dt><dd>{dateTime(detail.item.lastAttemptAt)} · {detail.item.lastAttemptStatus ?? "—"}</dd></div><div><dt>Ostatni heartbeat</dt><dd>{dateTime(detail.item.lastHeartbeatAt)} (bez oceny online/offline)</dd></div>
                 <div><dt>Queued / processing</dt><dd>{detail.item.pendingCount} / {detail.item.processingCount}</dd></div><div><dt>Sent / failed / cancelled</dt><dd>{detail.item.sentCount} / {detail.item.failedCount} / {detail.item.cancelledCount}</dd></div>
@@ -86,12 +100,12 @@ export function AutomationOperationDetailPage({ automationKey }: Props) {
                 <div><dt>Kandydaci</dt><dd>{detail.item.lastCandidatesCount ?? "—"}</dd></div><div><dt>Nowe / istniejące</dt><dd>{detail.item.lastCreatedCount ?? "—"} / {detail.item.lastExistingCount ?? "—"}</dd></div>
               </>}
             </dl>
-            {detail.item.lastErrorSummary ? <p className="automation-card__error">{detail.item.lastErrorCode ? `${detail.item.lastErrorCode}: ` : ""}{detail.item.lastErrorSummary}</p> : null}
+            {detail.item.lastErrorSummary ? <p className="automation-card__error">{detail.item.automationType !== "email_import" && detail.item.lastErrorCode ? `${detail.item.lastErrorCode}: ` : ""}{detail.item.lastErrorSummary}</p> : null}
             {detail.item.settingsUrl ? <Link href={detail.item.settingsUrl}>Przejdź do ustawień</Link> : <p>Ustawienia nie są jeszcze dostępne w osobnym widoku.</p>}
           </article>
-          <section className="automation-history" aria-labelledby="automation-history-title"><h3 id="automation-history-title">{detail.item.automationType === "task_reminders" ? "Ostatnie próby" : detail.item.automationType === "knowledge_processing" ? "Ostatnie joby" : "Historia ostatnich uruchomień"}</h3>
+          <section className="automation-history" aria-labelledby="automation-history-title"><h3 id="automation-history-title">{detail.item.automationType === "task_reminders" ? "Ostatnie próby" : detail.item.automationType === "knowledge_processing" ? "Ostatnie zadania przetwarzania" : "Historia ostatnich uruchomień"}</h3>
             {detail.history.length === 0 ? <div className="empty-state"><h4>Brak uruchomień</h4><p>Automatyzacja nie ma jeszcze zapisanej historii.</p></div> : (
-              <div className="table-shell"><table><thead><tr>{detail.item.automationType === "task_reminders" ? <><th>Czas</th><th>Status</th><th>Próba</th><th>Kanał</th><th>Błąd</th></> : detail.item.automationType === "knowledge_processing" ? <><th>ID</th><th>Typ</th><th>Utworzono</th><th>Start</th><th>Koniec</th><th>Status</th><th>Próba</th><th>Czas</th><th>Błąd</th></> : <><th>Plan</th><th>Start</th><th>Koniec</th><th>Status</th><th>Próba</th><th>Kandydaci</th><th>Nowe</th><th>Istniejące</th><th>Czas</th><th>Błąd</th></>}</tr></thead><tbody>{detail.history.map((entry) => entry.historyType === "reminder_attempt" ? <tr key={`attempt-${entry.attemptId}`}><td>{dateTime(entry.attemptedAt)}</td><td>{entry.status}</td><td>{entry.attemptNo}</td><td>{entry.channel}</td><td>{entry.errorSummary ?? "—"}</td></tr> : entry.historyType === "knowledge_job" ? <tr key={`knowledge-${entry.jobId}`}><td>{entry.jobId}</td><td>{entry.jobType}</td><td>{dateTime(entry.createdAt)}</td><td>{dateTime(entry.startedAt)}</td><td>{dateTime(entry.finishedAt)}</td><td>{entry.status}</td><td>{entry.attemptCount} / {entry.maxAttempts}</td><td>{entry.durationMs === null ? "—" : `${entry.durationMs} ms`}</td><td>{entry.errorSummary ?? "—"}</td></tr> : <tr key={entry.runId}><td>{dateTime(entry.scheduledForUtc)}</td><td>{dateTime(entry.startedAt)}</td><td>{dateTime(entry.finishedAt)}</td><td>{automationRunLabel(entry.status)}</td><td>{entry.attemptCount}</td><td>{entry.candidatesCount ?? "—"}</td><td>{entry.createdCount ?? "—"}</td><td>{entry.existingCount ?? "—"}</td><td>{entry.durationMs === null ? "—" : `${entry.durationMs} ms`}</td><td>{entry.errorSummary ?? "—"}</td></tr>)}</tbody></table></div>
+              <div className="table-shell"><table><thead><tr>{detail.item.automationType === "task_reminders" ? <><th>Czas</th><th>Status</th><th>Próba</th><th>Kanał</th><th>Błąd</th></> : detail.item.automationType === "knowledge_processing" ? <><th>ID</th><th>Typ</th><th>Utworzono</th><th>Start</th><th>Koniec</th><th>Status</th><th>Próba</th><th>Czas</th><th>Błąd</th></> : detail.item.automationType === "email_import" ? <><th>ID</th><th>Tryb</th><th>Start</th><th>Koniec</th><th>Wynik</th><th>Wiadomości</th><th>Importy</th><th>Duplikaty</th><th>Błędy</th></> : <><th>Plan</th><th>Start</th><th>Koniec</th><th>Status</th><th>Próba</th><th>Kandydaci</th><th>Nowe</th><th>Istniejące</th><th>Czas</th><th>Błąd</th></>}</tr></thead><tbody>{detail.history.map((entry) => entry.historyType === "reminder_attempt" ? <tr key={`attempt-${entry.attemptId}`}><td>{dateTime(entry.attemptedAt)}</td><td>{entry.status}</td><td>{entry.attemptNo}</td><td>{entry.channel}</td><td>{entry.errorSummary ?? "—"}</td></tr> : entry.historyType === "knowledge_job" ? <tr key={`knowledge-${entry.jobId}`}><td>{entry.jobId}</td><td>{entry.jobType}</td><td>{dateTime(entry.createdAt)}</td><td>{dateTime(entry.startedAt)}</td><td>{dateTime(entry.finishedAt)}</td><td>{entry.status}</td><td>{entry.attemptCount} / {entry.maxAttempts}</td><td>{entry.durationMs === null ? "—" : `${entry.durationMs} ms`}</td><td>{entry.errorSummary ?? "—"}</td></tr> : entry.historyType === "email_import_run" ? <tr key={`email-${entry.runId}`}><td>{entry.runId}</td><td>{emailImportTriggerLabel(entry.triggerMode)}</td><td>{dateTime(entry.startedAt)}</td><td>{dateTime(entry.finishedAt)}</td><td>{emailImportResultLabel(entry.resultStatus)}</td><td>{entry.checkedMessageCount}</td><td>{entry.importedCount}</td><td>{entry.duplicateCount}</td><td>{entry.failedCount}</td></tr> : <tr key={entry.runId}><td>{dateTime(entry.scheduledForUtc)}</td><td>{dateTime(entry.startedAt)}</td><td>{dateTime(entry.finishedAt)}</td><td>{automationRunLabel(entry.status)}</td><td>{entry.attemptCount}</td><td>{entry.candidatesCount ?? "—"}</td><td>{entry.createdCount ?? "—"}</td><td>{entry.existingCount ?? "—"}</td><td>{entry.durationMs === null ? "—" : `${entry.durationMs} ms`}</td><td>{entry.errorSummary ?? "—"}</td></tr>)}</tbody></table></div>
             )}
           </section>
           {detail.item.automationType === "task_reminders" ? <section className="automation-history"><h3>Ostatnie wpisy kolejki</h3>{detail.outbox.length === 0 ? <div className="empty-state"><p>Kolejka jest pusta.</p></div> : <div className="table-shell"><table><thead><tr><th>ID</th><th>Status</th><th>Kanał</th><th>Dostępne od</th><th>Próby</th></tr></thead><tbody>{detail.outbox.map((item) => <tr key={item.outboxId}><td>{item.outboxId}</td><td>{item.status}</td><td>{item.channel}</td><td>{dateTime(item.availableAt)}</td><td>{item.attemptCount}</td></tr>)}</tbody></table></div>}</section> : null}

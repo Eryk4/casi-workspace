@@ -9,8 +9,10 @@ import { api, withOrganizationQuery } from "@/lib/api";
 
 import {
   AUTOMATION_OPERATIONS_FILTERS,
+  automationConfigurationLabel,
   automationHealthLabel,
   automationRunLabel,
+  automationTypeLabel,
   filterAutomationOperations,
   readAutomationOperationsDashboard,
   type AutomationOperationsDashboard,
@@ -103,11 +105,18 @@ export function AutomationOperationsPage() {
         <div className="automation-grid">
           {items.map((item) => (
             <article className="automation-card" data-health={item.health} key={item.automationKey}>
-              <div className="automation-card__heading"><div><span className="eyebrow">{item.automationType}</span><h3>{item.title}</h3></div><span className={`badge badge--${item.health}`}>{automationHealthLabel(item.health)}</span></div>
+              <div className="automation-card__heading"><div><span className="eyebrow">{automationTypeLabel(item.automationType)}</span><h3>{item.title}</h3></div><span className={`badge badge--${item.health}`}>{automationHealthLabel(item.health)}</span></div>
               <p>{item.description}</p>
               <dl>
-                <div><dt>Konfiguracja</dt><dd>{item.status === "enabled" ? "Włączona" : item.status === "disabled" ? "Wyłączona" : "Nieskonfigurowana"}</dd></div>
-                {item.automationType === "task_reminders" ? <>
+                <div><dt>Konfiguracja</dt><dd>{automationConfigurationLabel(item.status)}</dd></div>
+                {item.automationType === "email_import" ? <>
+                  <div><dt>Runtime</dt><dd>Nieznany</dd></div>
+                  <div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
+                  <div><dt>Ostatni wynik</dt><dd>{automationRunLabel(item.lastRunStatus)}</dd></div>
+                  <div><dt>Sprawdzone / dopasowane wiadomości</dt><dd>{item.checkedMessageCount} / {item.matchedMessageCount}</dd></div>
+                  <div><dt>Zaimportowane / duplikaty / błędy</dt><dd>{item.importedCount} / {item.duplicateCount} / {item.failedCount}</dd></div>
+                  <div><dt>Skonfigurowane połączenia</dt><dd>{item.configuredConnectionsCount}</dd></div>
+                </> : item.automationType === "task_reminders" ? <>
                   <div><dt>Runtime</dt><dd>Nieznany</dd></div>
                   <div><dt>Ostatnia aktywność</dt><dd>{dateTime(item.lastActivityAt)}</dd></div>
                   <div><dt>Ostatnia próba</dt><dd>{dateTime(item.lastAttemptAt)} · {item.lastAttemptStatus ?? "—"}</dd></div>

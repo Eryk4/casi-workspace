@@ -42,6 +42,7 @@ from app.services.automation_service import AutomationService
 from app.services.automation_operations_service import (
     AutomationOperationsRegistry,
     AutomationOperationsService,
+    EmailImportOperationsAdapter,
     InternalNotificationSchedulerOperationsAdapter,
     KnowledgeProcessingOperationsAdapter,
     TaskRemindersOperationsAdapter,
@@ -262,6 +263,10 @@ def build_services(*, initialize_default_organization: bool = True) -> dict[str,
                 task_reminder_service,
             ),
             KnowledgeProcessingOperationsAdapter(knowledge_repository),
+            EmailImportOperationsAdapter(
+                email_import_repository,
+                invoice_service.email_scheduler_status,
+            ),
         )
     )
     automation_operations_service = AutomationOperationsService(

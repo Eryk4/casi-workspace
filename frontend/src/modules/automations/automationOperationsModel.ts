@@ -3,6 +3,7 @@ export type AutomationHealth = "healthy" | "attention" | "never_run" | "disabled
 export type AutomationOperationsFilter = "all" | "active" | "disabled" | "attention";
 export type AutomationRunStatus = "pending" | "running" | "succeeded" | "failed";
 export type KnowledgeJobStatus = "pending" | "processing" | "completed" | "failed";
+export type EmailImportResultStatus = "running" | "completed" | "completed_with_issues" | "no_new_documents" | "failed";
 
 export type AutomationOperation = {
   automationKey: string;
@@ -52,6 +53,17 @@ export type AutomationOperation = {
   watcherCount: number;
   lastScanAt: string | null;
   lastScanStatus: string | null;
+  checkedMessageCount: number;
+  matchedMessageCount: number;
+  matchedAttachmentCount: number;
+  importedCount: number;
+  duplicateCount: number;
+  totalImportedCount: number;
+  totalDuplicateCount: number;
+  totalFailedCount: number;
+  runsCount: number;
+  configuredConnectionsCount: number;
+  enabledConnectionsCount: number;
   updatedAt: string | null;
 };
 
@@ -131,9 +143,28 @@ export type KnowledgeWatcher = {
   errorSummary: string | null;
 };
 
+export type EmailImportRun = {
+  historyType: "email_import_run";
+  runId: number;
+  triggerMode: "manual" | "automatic";
+  resultStatus: EmailImportResultStatus;
+  status: AutomationRunStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  checkedMessageCount: number;
+  matchedMessageCount: number;
+  matchedAttachmentCount: number;
+  importedCount: number;
+  duplicateCount: number;
+  failedCount: number;
+  errorCode: string | null;
+  errorSummary: string | null;
+};
+
 export type AutomationOperationDetail = {
   item: AutomationOperation;
-  history: Array<AutomationRun | ReminderAttempt | KnowledgeJob>;
+  history: Array<AutomationRun | ReminderAttempt | KnowledgeJob | EmailImportRun>;
   outbox: ReminderOutboxItem[];
   watchers: KnowledgeWatcher[];
   historyLimit: number;
@@ -152,6 +183,7 @@ const CONFIGURATION_STATUSES = new Set<AutomationConfigurationStatus>(["enabled"
 const HEALTH_STATUSES = new Set<AutomationHealth>(["healthy", "attention", "never_run", "disabled"]);
 const RUN_STATUSES = new Set<AutomationRunStatus>(["pending", "running", "succeeded", "failed"]);
 const KNOWLEDGE_JOB_STATUSES = new Set<KnowledgeJobStatus>(["pending", "processing", "completed", "failed"]);
+const EMAIL_IMPORT_RESULT_STATUSES = new Set<EmailImportResultStatus>(["running", "completed", "completed_with_issues", "no_new_documents", "failed"]);
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Nieprawidłowy kontrakt: ${label}.`);
@@ -239,6 +271,17 @@ function readOperation(value: unknown): AutomationOperation {
     watcherCount: nonNegativeInteger(item.watcher_count ?? 0, "watcher_count") as number,
     lastScanAt: optionalText(item.last_scan_at),
     lastScanStatus: optionalText(item.last_scan_status),
+    checkedMessageCount: nonNegativeInteger(item.checked_message_count ?? 0, "checked_message_count") as number,
+    matchedMessageCount: nonNegativeInteger(item.matched_message_count ?? 0, "matched_message_count") as number,
+    matchedAttachmentCount: nonNegativeInteger(item.matched_attachment_count ?? 0, "matched_attachment_count") as number,
+    importedCount: nonNegativeInteger(item.imported_count ?? 0, "imported_count") as number,
+    duplicateCount: nonNegativeInteger(item.duplicate_count ?? 0, "duplicate_count") as number,
+    totalImportedCount: nonNegativeInteger(item.total_imported_count ?? 0, "total_imported_count") as number,
+    totalDuplicateCount: nonNegativeInteger(item.total_duplicate_count ?? 0, "total_duplicate_count") as number,
+    totalFailedCount: nonNegativeInteger(item.total_failed_count ?? 0, "total_failed_count") as number,
+    runsCount: nonNegativeInteger(item.runs_count ?? 0, "runs_count") as number,
+    configuredConnectionsCount: nonNegativeInteger(item.configured_connections_count ?? 0, "configured_connections_count") as number,
+    enabledConnectionsCount: nonNegativeInteger(item.enabled_connections_count ?? 0, "enabled_connections_count") as number,
     updatedAt: optionalText(item.updated_at),
   };
 }
@@ -302,6 +345,33 @@ function readKnowledgeJob(value: unknown): KnowledgeJob {
   };
 }
 
+function readEmailImportRun(value: unknown): EmailImportRun {
+  const run = record(value, "email import run");
+  const resultStatus = text(run.result_status, "email import result status") as EmailImportResultStatus;
+  const status = text(run.status, "email import status") as AutomationRunStatus;
+  const triggerMode = text(run.trigger_mode, "email import trigger mode") as "manual" | "automatic";
+  if (!EMAIL_IMPORT_RESULT_STATUSES.has(resultStatus) || !RUN_STATUSES.has(status)) throw new Error("Nieznany status importu e-mail.");
+  if (triggerMode !== "manual" && triggerMode !== "automatic") throw new Error("Nieznany tryb importu e-mail.");
+  return {
+    historyType: "email_import_run",
+    runId: nonNegativeInteger(run.run_id, "run_id") as number,
+    triggerMode,
+    resultStatus,
+    status,
+    startedAt: optionalText(run.started_at),
+    finishedAt: optionalText(run.finished_at),
+    durationMs: nonNegativeInteger(run.duration_ms, "duration_ms", true),
+    checkedMessageCount: nonNegativeInteger(run.checked_message_count, "checked_message_count") as number,
+    matchedMessageCount: nonNegativeInteger(run.matched_message_count, "matched_message_count") as number,
+    matchedAttachmentCount: nonNegativeInteger(run.matched_attachment_count, "matched_attachment_count") as number,
+    importedCount: nonNegativeInteger(run.imported_count, "imported_count") as number,
+    duplicateCount: nonNegativeInteger(run.duplicate_count, "duplicate_count") as number,
+    failedCount: nonNegativeInteger(run.failed_count, "failed_count") as number,
+    errorCode: optionalText(run.error_code),
+    errorSummary: optionalText(run.error_summary),
+  };
+}
+
 export function readAutomationOperationsDashboard(payload: unknown): AutomationOperationsDashboard {
   const root = record(payload, "automation dashboard");
   const summary = record(root.summary, "summary");
@@ -326,6 +396,7 @@ export function readAutomationOperationDetail(payload: unknown): AutomationOpera
       const historyType = record(entry, "history").history_type;
       if (historyType === "reminder_attempt") return readReminderAttempt(entry);
       if (historyType === "knowledge_job") return readKnowledgeJob(entry);
+      if (historyType === "email_import_run") return readEmailImportRun(entry);
       return readRun(entry);
     }),
     outbox: Array.isArray(root.outbox) ? root.outbox.map((entry) => {
@@ -379,4 +450,29 @@ export function automationRunLabel(status: AutomationRunStatus | null): string {
   if (status === "running") return "W toku";
   if (status === "pending") return "Oczekuje";
   return "Brak uruchomień";
+}
+
+export function automationConfigurationLabel(status: AutomationConfigurationStatus): string {
+  if (status === "enabled") return "Włączona";
+  if (status === "disabled") return "Wyłączona";
+  return "Nieskonfigurowana";
+}
+
+export function automationTypeLabel(automationType: string): string {
+  if (automationType === "email_import") return "Źródło operacyjne";
+  if (automationType === "task_reminders") return "Przypomnienia";
+  if (automationType === "knowledge_processing") return "Przetwarzanie wiedzy";
+  return "Harmonogram";
+}
+
+export function emailImportResultLabel(status: EmailImportResultStatus): string {
+  if (status === "completed") return "Zakończony";
+  if (status === "completed_with_issues") return "Zakończony z uwagami";
+  if (status === "no_new_documents") return "Brak nowych wiadomości";
+  if (status === "failed") return "Błąd";
+  return "W toku";
+}
+
+export function emailImportTriggerLabel(mode: "manual" | "automatic"): string {
+  return mode === "automatic" ? "Automatyczny" : "Ręczny";
 }

@@ -7,6 +7,7 @@ from app.bootstrap import build_services
 from app.db import get_connection, reset_database
 from app.services.automation_operations_service import (
     AutomationOperationsRegistry,
+    email_import_health,
     knowledge_processing_health,
     scheduler_health,
     task_reminder_health,
@@ -48,6 +49,54 @@ class AutomationOperationsTests(unittest.TestCase):
 
     def _knowledge_item(self):
         return next(item for item in self._dashboard()["items"] if item["automation_key"] == "knowledge_processing")
+
+    def _email_item(self):
+        return next(item for item in self._dashboard()["items"] if item["automation_key"] == "email_import")
+
+    def _configure_email_import(self, *, runtime_enabled: bool = True, mailbox_configured: bool = True) -> None:
+        self.services["organization_repository"].update(
+            self.organization_id,
+            {"email_integration_enabled": 1, "email_inbox_address": "route-a@example.invalid"},
+        )
+        adapter = self.services["automation_operations_registry"].get("email_import")
+        assert adapter is not None
+        adapter.configuration_status_provider = lambda: {
+            "enabled": runtime_enabled,
+            "configured": mailbox_configured,
+        }
+
+    def _insert_email_run(self, *, status: str, day: int, organization_id: int | None = None) -> int:
+        timestamp = f"2026-03-{day:02d}T10:00:00+00:00"
+        with get_connection() as connection:
+            cursor = connection.execute(
+                """INSERT INTO email_import_runs (
+                    organization_id, mailbox_address, inbox_address, trigger_mode, actor, routing_mode,
+                    started_at, finished_at, status, checked_message_count, matched_message_count,
+                    matched_attachment_count, imported_invoice_count, skipped_existing_count,
+                    skipped_error_count, summary_message, details
+                ) VALUES (?, 'private-mailbox@example.invalid', 'private-route@example.invalid', 'automatic',
+                    'mock-worker', 'central_mailbox', ?, ?, ?, 7, 5, 4, 2, 1, 1, ?, ?)""",
+                (
+                    organization_id or self.organization_id,
+                    timestamp,
+                    None if status == "running" else timestamp,
+                    status,
+                    "Private subject sender@example.invalid attachment.pdf token=secret",
+                    '{"subject":"private","message_id":"<private@example.invalid>","body":"secret"}',
+                ),
+            )
+            run_id = int(cursor.lastrowid)
+            connection.execute(
+                """INSERT INTO email_import_items (
+                    email_import_run_id, organization_id, imap_uid, message_id, sender_email, subject,
+                    recipients, matched_recipient, attachment_name, attachment_type, attachment_index,
+                    source_external_id, item_status, invoice_id, reason, created_at
+                ) VALUES (?, ?, '123', '<private@example.invalid>', 'sender@example.invalid', 'Private subject',
+                    '["recipient@example.invalid"]', 'recipient@example.invalid', 'private-attachment.pdf',
+                    'application/pdf', 1, 'private-source', 'skipped_error', NULL, 'Private failure', ?)""",
+                (run_id, organization_id or self.organization_id, timestamp),
+            )
+        return run_id
 
     def _insert_knowledge_job(
         self,
@@ -210,6 +259,7 @@ class AutomationOperationsTests(unittest.TestCase):
             before = {
                 table: [dict(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()]
                 for table in (
+                    "organizations", "email_import_runs", "email_import_items",
                     "knowledge_processing_jobs", "knowledge_folder_watchers", "knowledge_documents",
                     "knowledge_document_versions", "knowledge_document_comments",
                     "task_reminder_outbox", "task_reminder_outbox_attempts", "task_reminder_worker_heartbeats", "tasks",
@@ -269,13 +319,13 @@ class AutomationOperationsTests(unittest.TestCase):
         registry = self.services["automation_operations_registry"]
         self.assertEqual(
             [item.automation_key for item in registry.adapters],
-            ["internal_notification_scheduler", "task_reminders", "knowledge_processing"],
+            ["internal_notification_scheduler", "task_reminders", "knowledge_processing", "email_import"],
         )
-        self.assertEqual(len({item.automation_key for item in registry.adapters}), 3)
+        self.assertEqual(len({item.automation_key for item in registry.adapters}), 4)
         self.assertTrue(all(item.scope and item.capabilities for item in registry.adapters))
         extended = AutomationOperationsRegistry((*registry.adapters, adapter))
-        self.assertEqual(len(extended.adapters), 4)
-        self.assertEqual(extended.adapters[:3], registry.adapters)
+        self.assertEqual(len(extended.adapters), 5)
+        self.assertEqual(extended.adapters[:4], registry.adapters)
 
     def test_health_mapping_is_explicit(self) -> None:
         self.assertEqual(scheduler_health(schedule_exists=False, enabled=False, last_terminal_status=None), ("not_configured", "disabled", "schedule_not_configured"))
@@ -289,6 +339,59 @@ class AutomationOperationsTests(unittest.TestCase):
         self.assertEqual(knowledge_processing_health(latest_terminal_status="completed", watcher_status="ok")[1], "healthy")
         self.assertEqual(knowledge_processing_health(latest_terminal_status="failed", watcher_status="ok")[1], "attention")
         self.assertEqual(knowledge_processing_health(latest_terminal_status="completed", watcher_status="error")[1], "attention")
+        self.assertEqual(email_import_health(runtime_enabled=False, organization_configured=True, mailbox_configured=True, last_terminal_status=None)[1], "disabled")
+        self.assertEqual(email_import_health(runtime_enabled=True, organization_configured=True, mailbox_configured=True, last_terminal_status=None)[1], "never_run")
+        self.assertEqual(email_import_health(runtime_enabled=True, organization_configured=True, mailbox_configured=True, last_terminal_status="no_new_documents")[1], "healthy")
+        self.assertEqual(email_import_health(runtime_enabled=True, organization_configured=True, mailbox_configured=True, last_terminal_status="completed_with_issues")[1], "attention")
+
+    def test_email_import_health_metrics_history_privacy_and_no_n_plus_one(self) -> None:
+        self._configure_email_import()
+        item = self._email_item()
+        self.assertEqual((item["status"], item["health"], item["runtime_status"]), ("enabled", "never_run", "unknown"))
+        self.assertEqual(item["configured_connections_count"], 1)
+        self._insert_email_run(status="no_new_documents", day=10)
+        healthy = self._email_item()
+        self.assertEqual((healthy["health"], healthy["last_run_status"]), ("healthy", "succeeded"))
+        self.assertEqual((healthy["checked_message_count"], healthy["matched_message_count"]), (7, 5))
+        failed_id = self._insert_email_run(status="completed_with_issues", day=11)
+        with patch.object(
+            self.services["email_import_repository"],
+            "list_runs_read_only",
+            side_effect=AssertionError("dashboard loaded e-mail history"),
+        ):
+            attention = self._email_item()
+        self.assertEqual((attention["health"], attention["failed_count"]), ("attention", 1))
+        self.assertEqual(attention["last_error_code"], "email_import_completed_with_issues")
+        detail = self.operations.detail(
+            "email_import",
+            organization_id=self.organization_id,
+            recipient_user_id=self.user_id,
+            actor_user=self.user,
+            history_limit=500,
+        )
+        self.assertEqual(detail["history_limit"], 50)
+        self.assertEqual(detail["history"][0]["run_id"], failed_id)
+        self.assertEqual(detail["history"][0]["history_type"], "email_import_run")
+        serialized = str(detail).lower()
+        for forbidden in ("private subject", "sender@", "recipient@", "message_id", "private-attachment", "token=", "body"):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_email_import_disabled_configuration_and_organization_isolation(self) -> None:
+        self._configure_email_import(runtime_enabled=False)
+        self.assertEqual((self._email_item()["status"], self._email_item()["health"]), ("disabled", "disabled"))
+        self._configure_email_import(runtime_enabled=True, mailbox_configured=False)
+        self.assertEqual(self._email_item()["status"], "not_configured")
+        self._configure_email_import()
+        other = self.services["organization_service"].create_organization(
+            {"name": "Email Other", "slug": "email-other", "is_active": 1, "email_integration_enabled": 1,
+             "email_inbox_address": "route-b@example.invalid"},
+            actor_user=self.admin,
+            actor_login="admin",
+        )
+        self._insert_email_run(status="failed", day=20, organization_id=int(other["organization_id"]))
+        own = self._email_item()
+        self.assertEqual(own["runs_count"], 0)
+        self.assertEqual(own["failed_count"], 0)
 
     def test_knowledge_processing_health_queue_history_privacy_and_no_n_plus_one(self) -> None:
         item = self._knowledge_item()

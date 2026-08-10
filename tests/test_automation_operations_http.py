@@ -31,6 +31,7 @@ class AutomationOperationsHttpTests(HttpServerTestCase):
     @staticmethod
     def _counts() -> dict[str, list[dict[str, object]]]:
         tables = (
+            "organizations", "email_import_runs", "email_import_items",
             "knowledge_processing_jobs", "knowledge_folder_watchers", "knowledge_documents",
             "knowledge_document_versions", "knowledge_document_comments",
             "task_reminder_outbox", "task_reminder_outbox_attempts", "task_reminder_worker_heartbeats", "tasks",
@@ -50,10 +51,11 @@ class AutomationOperationsHttpTests(HttpServerTestCase):
         response, payload = self._request("GET", f"/api/automations/operations?organization_id={self.organization_id}", headers=self.headers)
         self.assertEqual(response.status, 200, payload.decode())
         dashboard = json.loads(payload)
-        self.assertEqual(len(dashboard["items"]), 3)
+        self.assertEqual(len(dashboard["items"]), 4)
         self.assertEqual(dashboard["items"][0]["automation_key"], "internal_notification_scheduler")
         self.assertEqual(dashboard["items"][1]["automation_key"], "task_reminders")
         self.assertEqual(dashboard["items"][2]["automation_key"], "knowledge_processing")
+        self.assertEqual(dashboard["items"][3]["automation_key"], "email_import")
         response, payload = self._request("GET", f"/api/automations/operations/internal_notification_scheduler?organization_id={self.organization_id}&limit=20", headers=self.headers)
         self.assertEqual(response.status, 200, payload.decode())
         self.assertEqual(json.loads(payload)["history"], [])
@@ -65,6 +67,11 @@ class AutomationOperationsHttpTests(HttpServerTestCase):
         knowledge = json.loads(payload)
         self.assertEqual(knowledge["history"], [])
         self.assertEqual(knowledge["watchers"], [])
+        response, payload = self._request("GET", f"/api/automations/operations/email_import?organization_id={self.organization_id}&limit=20", headers=self.headers)
+        self.assertEqual(response.status, 200, payload.decode())
+        email_import = json.loads(payload)
+        self.assertEqual(email_import["history"], [])
+        self.assertEqual(email_import["item"]["runtime_status"], "unknown")
         self.assertEqual(self._counts(), before)
 
     def test_unknown_key_recipient_override_and_cross_org_are_rejected(self) -> None:
@@ -73,9 +80,11 @@ class AutomationOperationsHttpTests(HttpServerTestCase):
         response, _ = self._request("GET", f"/api/automations/operations?organization_id={self.organization_id}&recipient_user_id=1", headers=self.headers)
         self.assertEqual(response.status, 400)
         response, payload = self._request("GET", f"/api/automations/operations?organization_id={int(self.other['organization_id'])}", headers=self.headers)
-        self.assertIn(response.status, {403, 404}, payload.decode())
+        self.assertEqual(response.status, 404, payload.decode())
         response, payload = self._request("GET", f"/api/automations/operations/knowledge_processing?organization_id={int(self.other['organization_id'])}", headers=self.headers)
-        self.assertIn(response.status, {403, 404}, payload.decode())
+        self.assertEqual(response.status, 404, payload.decode())
+        response, payload = self._request("GET", f"/api/automations/operations/email_import?organization_id={int(self.other['organization_id'])}", headers=self.headers)
+        self.assertEqual(response.status, 404, payload.decode())
 
 
 if __name__ == "__main__":

@@ -1343,12 +1343,18 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     return
                 if self._query_one(query, "recipient_id") or self._query_one(query, "recipient_user_id"):
                     return self._send_json({"error": "Odbiorca jest ustalany po stronie serwera."}, status=400)
+                requested_organization_id = self._requested_organization_id(query)
+                if (
+                    requested_organization_id is not None
+                    and not user.get("is_global_admin")
+                    and int(requested_organization_id) != int(user.get("organization_id") or 0)
+                ):
+                    return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:
                     return
                 if organization_id is None:
                     return self._send_json({"error": "Wybierz organizacje dla Centrum Automatyzacji."}, status=400)
-                requested_organization_id = self._requested_organization_id(query)
                 if requested_organization_id is not None and int(requested_organization_id) != int(organization_id):
                     return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
                 try:
@@ -1371,12 +1377,18 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 automation_key = path.removeprefix("/api/automations/operations/").strip("/")
                 if not automation_key or "/" in automation_key:
                     return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
+                requested_organization_id = self._requested_organization_id(query)
+                if (
+                    requested_organization_id is not None
+                    and not user.get("is_global_admin")
+                    and int(requested_organization_id) != int(user.get("organization_id") or 0)
+                ):
+                    return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
                 organization_id = self._resolve_data_scope(user, query)
                 if organization_id is ...:
                     return
                 if organization_id is None:
                     return self._send_json({"error": "Wybierz organizacje dla Centrum Automatyzacji."}, status=400)
-                requested_organization_id = self._requested_organization_id(query)
                 if requested_organization_id is not None and int(requested_organization_id) != int(organization_id):
                     return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
                 limit = self._parse_optional_int(self._query_one(query, "limit")) or 20

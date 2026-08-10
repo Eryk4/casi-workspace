@@ -88,13 +88,29 @@ const knowledge = operation({
   last_scan_at: "2026-02-13T10:01:00+00:00", last_scan_status: "ok", last_error_code: "knowledge_processing_failed",
   last_error_summary: "Błąd wykonania. Szczegóły techniczne zostały ukryte.",
 });
-const threeAdapters = model.readAutomationOperationsDashboard({
-  summary: { active_count: 3, disabled_count: 0, attention_count: 2, recent_failure_count: 2 },
-  items: [operation(), reminders, knowledge],
+const emailImport = operation({
+  automation_key: "email_import", automation_type: "email_import", title: "Import e-maili",
+  description: "Bezpieczny monitoring importu", health: "attention", health_reason_code: "last_email_import_run_requires_attention",
+  schedule_id: null, run_id: 21, next_run_at: null, last_run_at: "2026-03-11T10:00:00+00:00", last_run_status: "failed",
+  last_run_duration_ms: 2000, last_attempt_count: null, last_candidates_count: 4, last_created_count: 2,
+  last_existing_count: 1, settings_url: "/ustawienia", details_url: "/automatyzacje/email_import", schedule: null,
+  last_activity_at: "2026-03-11T10:00:00+00:00", last_success_at: "2026-03-10T10:00:00+00:00",
+  last_failure_at: "2026-03-11T10:00:00+00:00", checked_message_count: 7, matched_message_count: 5,
+  matched_attachment_count: 4, imported_count: 2, duplicate_count: 1, failed_count: 1,
+  total_imported_count: 8, total_duplicate_count: 3, total_failed_count: 1, runs_count: 4,
+  configured_connections_count: 1, enabled_connections_count: 1, last_error_code: "email_import_completed_with_issues",
+  last_error_summary: "Część dokumentów z importu e-mail wymaga uwagi.",
 });
-assert.deepEqual(threeAdapters.items.map((item) => item.automationKey), ["internal_notification_scheduler", "task_reminders", "knowledge_processing"]);
-assert.equal(threeAdapters.items[2].watcherCount, 1);
-assert.equal(threeAdapters.items[2].succeededCount, 4);
+const fourAdapters = model.readAutomationOperationsDashboard({
+  summary: { active_count: 4, disabled_count: 0, attention_count: 3, recent_failure_count: 3 },
+  items: [operation(), reminders, knowledge, emailImport],
+});
+assert.deepEqual(fourAdapters.items.map((item) => item.automationKey), ["internal_notification_scheduler", "task_reminders", "knowledge_processing", "email_import"]);
+assert.equal(fourAdapters.items[2].watcherCount, 1);
+assert.equal(fourAdapters.items[2].succeededCount, 4);
+assert.equal(fourAdapters.items[3].configuredConnectionsCount, 1);
+assert.equal(model.automationTypeLabel("email_import"), "Źródło operacyjne");
+assert.equal(model.emailImportResultLabel("no_new_documents"), "Brak nowych wiadomości");
 const knowledgeStates = model.readAutomationOperationsDashboard({
   summary: { active_count: 3, disabled_count: 1, attention_count: 1, recent_failure_count: 1 },
   items: [
@@ -133,6 +149,16 @@ const knowledgeDetail = model.readAutomationOperationDetail({ item: knowledge, h
 }], watchers: [{ watcher_id: 2, watch_mode: "polling", status: "ok", last_scan_started_at: "2026-02-13T10:00:00+00:00", last_scan_completed_at: "2026-02-13T10:01:00+00:00", error_code: null, error_summary: null }] });
 assert.equal(knowledgeDetail.history[0].historyType, "knowledge_job");
 assert.equal(knowledgeDetail.watchers[0].status, "ok");
+const emailDetail = model.readAutomationOperationDetail({ item: emailImport, history_limit: 20, history: [{
+  history_type: "email_import_run", run_id: 21, trigger_mode: "automatic", result_status: "completed_with_issues",
+  status: "failed", started_at: "2026-03-11T09:59:58+00:00", finished_at: "2026-03-11T10:00:00+00:00",
+  duration_ms: 2000, checked_message_count: 7, matched_message_count: 5, matched_attachment_count: 4,
+  imported_count: 2, duplicate_count: 1, failed_count: 1, error_code: "email_import_completed_with_issues",
+  error_summary: "Część dokumentów z importu e-mail wymaga uwagi.",
+}] });
+assert.equal(emailDetail.history[0].historyType, "email_import_run");
+assert.equal(emailDetail.history[0].importedCount, 2);
+assert.doesNotMatch(JSON.stringify(emailDetail), /subject|sender|recipient|message_id|attachment_name|credentials|token|body/i);
 assert.doesNotMatch(JSON.stringify(knowledgeDetail), /source_storage_key|source_file_name|content_text|ocr|c:\\users/i);
 assert.doesNotMatch(JSON.stringify(reminderDetail), /payload|secret|token/i);
 assert.throws(() => model.readAutomationOperationsDashboard({ summary: {}, items: [] }), /kontrakt/i);
@@ -144,6 +170,7 @@ const detailSource = fs.readFileSync(path.join(__dirname, "..", "src", "modules"
 const navigationSource = fs.readFileSync(path.join(__dirname, "..", "src", "config", "navigation.ts"), "utf8");
 assert.match(apiSource, /automationOperations:[\s\S]*apiRequest[\s\S]*\/automations\/operations/);
 assert.doesNotMatch(pageSource + detailSource, /setInterval|Uruchom teraz|Skanuj teraz|Reprocess|Run now|Scan now|method:\s*["']POST["']/);
+assert.doesNotMatch(pageSource + detailSource, />\s*email_import\s*</);
 assert.match(pageSource, /setDashboard\(null\)/);
 assert.match(detailSource, /Nieznany — centrum nie monitoruje procesu workera/);
 assert.match(navigationSource, /id:\s*["']automations["'][\s\S]*label:\s*["']Automatyzacje["'][\s\S]*path:\s*["']\/automatyzacje["']/);

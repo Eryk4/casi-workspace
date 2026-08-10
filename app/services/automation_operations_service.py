@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
+from app.repositories.email_import_repository import EmailImportRepository
 from app.repositories.internal_notification_schedule_repository import InternalNotificationScheduleRepository
 from app.repositories.knowledge_repository import KnowledgeRepository
 from app.repositories.task_reminder_outbox_repository import TaskReminderOutboxRepository
@@ -17,6 +18,7 @@ from app.services.task_reminder_service import TaskReminderService
 INTERNAL_NOTIFICATION_SCHEDULER_KEY = "internal_notification_scheduler"
 TASK_REMINDERS_KEY = "task_reminders"
 KNOWLEDGE_PROCESSING_KEY = "knowledge_processing"
+EMAIL_IMPORT_KEY = "email_import"
 AUTOMATION_CONFIGURATION_STATUSES = {"enabled", "disabled", "not_configured"}
 AUTOMATION_HEALTH_STATUSES = {"healthy", "attention", "never_run", "disabled"}
 REQUIRED_OPERATION_FIELDS = {
@@ -113,6 +115,28 @@ def scheduler_health(
     if last_terminal_status == "succeeded":
         return "enabled", "healthy", "last_run_succeeded"
     raise ValueError("Nieznany terminalny status runu schedulera.")
+
+
+def email_import_health(
+    *,
+    runtime_enabled: bool,
+    organization_configured: bool,
+    mailbox_configured: bool,
+    last_terminal_status: str | None,
+) -> tuple[str, str, str]:
+    if not runtime_enabled:
+        return "disabled", "disabled", "email_import_runtime_disabled"
+    if not organization_configured:
+        return "not_configured", "disabled", "organization_email_not_configured"
+    if not mailbox_configured:
+        return "not_configured", "disabled", "system_mailbox_not_configured"
+    if last_terminal_status is None:
+        return "enabled", "never_run", "no_terminal_email_import_run"
+    if last_terminal_status in {"failed", "completed_with_issues"}:
+        return "enabled", "attention", "last_email_import_run_requires_attention"
+    if last_terminal_status in {"completed", "no_new_documents"}:
+        return "enabled", "healthy", "last_email_import_run_succeeded"
+    raise ValueError("Nieznany terminalny status importu e-mail.")
 
 
 class InternalNotificationSchedulerOperationsAdapter:
@@ -447,6 +471,101 @@ class KnowledgeProcessingOperationsAdapter:
         }]
 
 
+class EmailImportOperationsAdapter:
+    automation_key = EMAIL_IMPORT_KEY
+    scope = "organization"
+    capabilities = frozenset({"summary", "history", "settings"})
+
+    def __init__(
+        self,
+        repository: EmailImportRepository,
+        configuration_status_provider: Callable[[], dict[str, Any]],
+    ) -> None:
+        self.repository = repository
+        self.configuration_status_provider = configuration_status_provider
+
+    def get_operation(self, *, organization_id: int, recipient_user_id: int) -> dict[str, Any]:
+        del recipient_user_id
+        snapshot = self.repository.get_operations_snapshot(organization_id)
+        organization = snapshot["organization"] or {}
+        latest_run = snapshot["latest_run"]
+        terminal_run = snapshot["latest_terminal_run"]
+        aggregates = snapshot["aggregates"]
+        item_counts = snapshot["item_counts"]
+        runtime = self.configuration_status_provider()
+        organization_configured = bool(
+            int(organization.get("is_active") or 0)
+            and int(organization.get("email_integration_enabled") or 0)
+            and int(organization.get("has_inbox") or 0)
+        )
+        runtime_enabled = bool(runtime.get("enabled"))
+        mailbox_configured = bool(runtime.get("configured"))
+        terminal_status = str(terminal_run.get("status") or "") or None if terminal_run else None
+        status, health, reason = email_import_health(
+            runtime_enabled=runtime_enabled,
+            organization_configured=organization_configured,
+            mailbox_configured=mailbox_configured,
+            last_terminal_status=terminal_status,
+        )
+        latest_status = str(latest_run.get("status") or "") or None if latest_run else None
+        last_error_code, last_error_summary = _email_import_error(terminal_status)
+        operation = {
+            "automation_key": self.automation_key,
+            "automation_type": "email_import",
+            "title": "Import e-maili",
+            "description": "Monitoruje organizacyjny import faktur z centralnej skrzynki bez ujawniania treści wiadomości.",
+            "status": status,
+            "enabled": status == "enabled",
+            "health": health,
+            "health_reason_code": reason,
+            "schedule_id": None,
+            "run_id": int(latest_run["email_import_run_id"]) if latest_run else None,
+            "next_run_at": None,
+            "last_run_at": _email_import_run_time(latest_run),
+            "last_activity_at": _email_import_run_time(latest_run),
+            "last_run_status": _email_import_run_status(latest_status),
+            "last_run_duration_ms": _duration_ms(
+                latest_run.get("started_at") if latest_run else None,
+                latest_run.get("finished_at") if latest_run else None,
+            ),
+            "last_attempt_count": None,
+            "last_candidates_count": int(latest_run.get("matched_attachment_count") or 0) if latest_run else None,
+            "last_created_count": int(latest_run.get("imported_invoice_count") or 0) if latest_run else None,
+            "last_existing_count": int(latest_run.get("skipped_existing_count") or 0) if latest_run else None,
+            "checked_message_count": int(latest_run.get("checked_message_count") or 0) if latest_run else 0,
+            "matched_message_count": int(latest_run.get("matched_message_count") or 0) if latest_run else 0,
+            "matched_attachment_count": int(latest_run.get("matched_attachment_count") or 0) if latest_run else 0,
+            "imported_count": int(latest_run.get("imported_invoice_count") or 0) if latest_run else 0,
+            "duplicate_count": int(latest_run.get("skipped_existing_count") or 0) if latest_run else 0,
+            "failed_count": int(latest_run.get("skipped_error_count") or 0) if latest_run else 0,
+            "total_imported_count": int(item_counts.get("imported_count") or 0),
+            "total_duplicate_count": int(item_counts.get("duplicate_count") or 0),
+            "total_failed_count": int(item_counts.get("failed_count") or 0),
+            "runs_count": int(aggregates.get("runs_count") or 0),
+            "recent_failure_count": int(aggregates.get("recent_failure_count") or 0),
+            "last_success_at": aggregates.get("last_success_at"),
+            "last_failure_at": aggregates.get("last_failure_at"),
+            "last_error_code": last_error_code,
+            "last_error_summary": last_error_summary,
+            "configured_connections_count": 1 if organization_configured and mailbox_configured else 0,
+            "enabled_connections_count": 1 if status == "enabled" else 0,
+            "settings_url": "/ustawienia",
+            "details_url": f"/automatyzacje/{self.automation_key}",
+            "runtime_status": "unknown",
+            "schedule": None,
+            "updated_at": _email_import_run_time(latest_run),
+        }
+        AutomationOperationsRegistry.validate_operation(operation)
+        return operation
+
+    def get_history(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        del recipient_user_id
+        return [
+            _serialize_email_import_run(run)
+            for run in self.repository.list_runs_read_only(organization_id=organization_id, limit=limit)
+        ]
+
+
 class AutomationOperationsService:
     def __init__(
         self,
@@ -601,6 +720,53 @@ def _knowledge_run_status(status: str | None) -> str | None:
         "completed": "succeeded",
         "failed": "failed",
     }.get(str(status or ""))
+
+
+def _email_import_run_status(status: str | None) -> str | None:
+    if status == "running":
+        return "running"
+    if status in {"completed", "no_new_documents"}:
+        return "succeeded"
+    if status in {"failed", "completed_with_issues"}:
+        return "failed"
+    return None
+
+
+def _email_import_run_time(run: dict[str, Any] | None) -> str | None:
+    if not run:
+        return None
+    return run.get("finished_at") or run.get("started_at")
+
+
+def _email_import_error(status: str | None) -> tuple[str | None, str | None]:
+    if status == "failed":
+        return "email_import_failed", "Import e-maili zakończył się błędem. Sprawdź konfigurację połączenia."
+    if status == "completed_with_issues":
+        return "email_import_completed_with_issues", "Część dokumentów z importu e-mail wymaga uwagi."
+    return None, None
+
+
+def _serialize_email_import_run(run: dict[str, Any]) -> dict[str, Any]:
+    status = str(run.get("status") or "")
+    error_code, error_summary = _email_import_error(status)
+    return {
+        "history_type": "email_import_run",
+        "run_id": int(run["email_import_run_id"]),
+        "trigger_mode": str(run.get("trigger_mode") or "manual"),
+        "result_status": status,
+        "status": _email_import_run_status(status) or "running",
+        "started_at": run.get("started_at"),
+        "finished_at": run.get("finished_at"),
+        "duration_ms": _duration_ms(run.get("started_at"), run.get("finished_at")),
+        "checked_message_count": int(run.get("checked_message_count") or 0),
+        "matched_message_count": int(run.get("matched_message_count") or 0),
+        "matched_attachment_count": int(run.get("matched_attachment_count") or 0),
+        "imported_count": int(run.get("imported_invoice_count") or 0),
+        "duplicate_count": int(run.get("skipped_existing_count") or 0),
+        "failed_count": int(run.get("skipped_error_count") or 0),
+        "error_code": error_code,
+        "error_summary": error_summary,
+    }
 
 
 def _serialize_knowledge_job(job: dict[str, Any]) -> dict[str, Any]:

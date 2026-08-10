@@ -7,6 +7,130 @@ from app.utils import json_dumps, now_iso
 
 
 class EmailImportRepository:
+    def get_operations_snapshot(self, organization_id: int) -> dict[str, Any]:
+        """Return an organization-scoped, read-only operational snapshot.
+
+        The projection deliberately excludes mailbox addresses, message metadata,
+        item payloads and importer details because Automation Operations monitors
+        the process rather than e-mail content.
+        """
+        with get_connection() as connection:
+            organization = connection.execute(
+                """
+                SELECT
+                    organization_id,
+                    is_active,
+                    email_integration_enabled,
+                    CASE WHEN COALESCE(TRIM(email_inbox_address), '') <> '' THEN 1 ELSE 0 END AS has_inbox
+                FROM organizations
+                WHERE organization_id = ?
+                """,
+                (organization_id,),
+            ).fetchone()
+            latest_run = connection.execute(
+                """
+                SELECT
+                    email_import_run_id,
+                    trigger_mode,
+                    started_at,
+                    finished_at,
+                    status,
+                    checked_message_count,
+                    matched_message_count,
+                    matched_attachment_count,
+                    imported_invoice_count,
+                    skipped_existing_count,
+                    skipped_error_count
+                FROM email_import_runs
+                WHERE organization_id = ?
+                ORDER BY COALESCE(finished_at, started_at) DESC, email_import_run_id DESC
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+            latest_terminal_run = connection.execute(
+                """
+                SELECT
+                    email_import_run_id,
+                    started_at,
+                    finished_at,
+                    status
+                FROM email_import_runs
+                WHERE organization_id = ?
+                  AND status <> 'running'
+                ORDER BY COALESCE(finished_at, started_at) DESC, email_import_run_id DESC
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+            aggregates = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS runs_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM (
+                            SELECT status
+                            FROM email_import_runs
+                            WHERE organization_id = ?
+                            ORDER BY COALESCE(finished_at, started_at) DESC, email_import_run_id DESC
+                            LIMIT 50
+                        ) recent_runs
+                        WHERE status IN ('failed', 'completed_with_issues')
+                    ) AS recent_failure_count,
+                    MAX(CASE WHEN status IN ('completed', 'no_new_documents') THEN finished_at END) AS last_success_at,
+                    MAX(CASE WHEN status IN ('failed', 'completed_with_issues') THEN finished_at END) AS last_failure_at
+                FROM email_import_runs
+                WHERE organization_id = ?
+                """,
+                (organization_id, organization_id),
+            ).fetchone()
+            item_counts = connection.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN item_status = 'imported' THEN 1 ELSE 0 END) AS imported_count,
+                    SUM(CASE WHEN item_status = 'skipped_existing' THEN 1 ELSE 0 END) AS duplicate_count,
+                    SUM(CASE WHEN item_status = 'skipped_error' THEN 1 ELSE 0 END) AS failed_count
+                FROM email_import_items
+                WHERE organization_id = ?
+                """,
+                (organization_id,),
+            ).fetchone()
+        return {
+            "organization": dict(organization) if organization else None,
+            "latest_run": dict(latest_run) if latest_run else None,
+            "latest_terminal_run": dict(latest_terminal_run) if latest_terminal_run else None,
+            "aggregates": dict(aggregates) if aggregates else {},
+            "item_counts": dict(item_counts) if item_counts else {},
+        }
+
+    def list_runs_read_only(self, *, organization_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        """List sanitized run-level history without loading e-mail items."""
+        normalized_limit = max(1, min(int(limit), 50))
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    email_import_run_id,
+                    trigger_mode,
+                    started_at,
+                    finished_at,
+                    status,
+                    checked_message_count,
+                    matched_message_count,
+                    matched_attachment_count,
+                    imported_invoice_count,
+                    skipped_existing_count,
+                    skipped_error_count
+                FROM email_import_runs
+                WHERE organization_id = ?
+                ORDER BY COALESCE(finished_at, started_at) DESC, email_import_run_id DESC
+                LIMIT ?
+                """,
+                (organization_id, normalized_limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def start_run(
         self,
         *,
