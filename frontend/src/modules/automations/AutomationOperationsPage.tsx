@@ -109,7 +109,14 @@ export function AutomationOperationsPage() {
               <p>{item.description}</p>
               <dl>
                 <div><dt>Konfiguracja</dt><dd>{automationConfigurationLabel(item.status)}</dd></div>
-                {item.automationType === "email_import" ? <>
+                {item.automationType === "ksef_import" ? <>
+                  <div><dt>Runtime</dt><dd>Nieznany</dd></div>
+                  <div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
+                  <div><dt>Ostatni wynik</dt><dd>{automationRunLabel(item.lastRunStatus)}</dd></div>
+                  <div><dt>Sprawdzone dokumenty</dt><dd>{item.checkedDocumentCount}</dd></div>
+                  <div><dt>Zaimportowane / duplikaty / błędy</dt><dd>{item.importedCount} / {item.duplicateCount} / {item.failedCount}</dd></div>
+                  <div><dt>Skonfigurowane połączenia</dt><dd>{item.configuredConnectionsCount}</dd></div>
+                </> : item.automationType === "email_import" ? <>
                   <div><dt>Runtime</dt><dd>Nieznany</dd></div>
                   <div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
                   <div><dt>Ostatni wynik</dt><dd>{automationRunLabel(item.lastRunStatus)}</dd></div>

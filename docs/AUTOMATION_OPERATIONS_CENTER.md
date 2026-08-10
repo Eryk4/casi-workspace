@@ -4,7 +4,7 @@
 
 Centrum pod adresem `/automatyzacje` jest wyłącznie odczytowym widokiem operacyjnym. Agreguje wiarygodny, trwały stan automatyzacji, ale nie uruchamia workerów, nie zmienia konfiguracji, nie ponawia runów i nie zastępuje mechanizmów wykonawczych.
 
-W v1 zarejestrowane są cztery natywne subsystemy: `internal_notification_scheduler`, `task_reminders`, `knowledge_processing` oraz `email_import`. Centrum nie przepina ich do `automation_rules` i nie tworzy drugiego silnika wykonawczego.
+W v1 zarejestrowanych jest pięć natywnych subsystemów: `internal_notification_scheduler`, `task_reminders`, `knowledge_processing`, `email_import` oraz `ksef_import`. Centrum nie przepina ich do `automation_rules` i nie tworzy drugiego silnika wykonawczego.
 
 Identyfikatory techniczne i kod pozostają w języku angielskim. Warstwa prezentacyjna CASI Workspace używa języka polskiego.
 
@@ -14,6 +14,7 @@ Identyfikatory techniczne i kod pozostają w języku angielskim. Warstwa prezent
 | `task_reminders` | Przypomnienia zadań | organizacja + widoczność zadania | `TaskReminderService.runtime_contract()` | outbox + attempts | runtime gate, failed outbox i ostatnia próba | `unknown`; heartbeat historyczny | brak osobnego widoku | wdrożony read-only |
 | `knowledge_processing` | Przetwarzanie bazy wiedzy | organizacja | subsystem nie ma kill-switcha; serwis jest zawsze dostępny | `knowledge_processing_jobs` + stan ostatniego skanu | ostatni terminalny job i jawny błąd skanu | `unknown`; watcher nie jest heartbeat'em | brak osobnego widoku | wdrożony read-only |
 | `email_import` | Import e-maili | organizacja; jedna konfiguracja routingu na organizację | globalny `EMAIL_AUTOCHECK_ENABLED`, konfiguracja centralnej skrzynki i `organizations.email_integration_enabled` | `email_import_runs`; itemy wyłącznie jako agregaty | ostatni terminalny run i trwałe liczniki wyniku | `unknown`; pętla nie ma heartbeat/TTL/lease | `/ustawienia` | wdrożony read-only |
+| `ksef_import` | Import KSeF | organizacja; jedna konfiguracja podatnika na organizację | `organizations.ksef_integration_enabled`, aktywność organizacji i obecność identyfikatora | `ksef_import_runs`; itemy wyłącznie jako agregaty | ostatni terminalny run i trwałe liczniki wyniku | `unknown`; brak workera, heartbeat/TTL/lease | `/ustawienia` | wdrożony read-only; źródłowy klient pozostaje `mvp_stub` |
 
 ## Kontrakt adaptera
 
@@ -73,10 +74,23 @@ Dashboard pobiera stałą liczbę organizacyjnych agregatów i ostatni run. Deta
 
 Importer e-mail nie jest wykonywany przez `automation_rules` ani `automation_executions`. Centrum nie kopiuje runów do generic automation engine i nie dodaje akcji import-now, retry, connect/disconnect ani enable/disable.
 
+## Import KSeF
+
+`ksef_import_runs` jest organizacyjną historią pojedynczych sprawdzeń KSeF. Obecnie run rozpoczyna ręczna akcja API; kod akceptuje techniczny `trigger_mode=automatic`, ale aplikacja nie uruchamia workera ani pętli KSeF. Trwałe statusy to `running`, `completed`, `completed_with_issues`, `no_new_documents` i `failed`. Brak nowych dokumentów jest sukcesem, a `completed_with_issues` wymaga uwagi.
+
+`ksef_import_items` zapisuje wynik dokumentu jako `imported`, `skipped_existing` albo `skipped_error`. Import nie ma retry ani `max_attempts`. Przed utworzeniem faktury sprawdza organizacyjny `source_external_id` dla źródła KSeF; nie istnieje jednak osobny unikalny indeks bazy dla tego pola, więc ostateczna ochrona deduplikacji pozostaje w serwisie. Centrum nie zmienia tej reguły ani ścieżki tworzenia i aktualizacji faktur.
+
+Enabled wymaga jawnej flagi `organizations.ksef_integration_enabled`; sama obecność identyfikatora nie włącza integracji. Skonfigurowany kontekst wymaga aktywnej organizacji i identyfikatora. Jedna organizacja ma obecnie jedno pole identyfikatora i środowiska, a nie kolekcję wielu połączeń. Źródłowy `KSeFClient` jawnie raportuje tryb `mvp_stub`: adapter monitoruje wyłącznie lokalną historię operacyjną i nie oznacza rzeczywistego połączenia z państwowym KSeF.
+
+Health jest deterministyczny: wyłączona flaga daje `disabled`, brak pełnej konfiguracji daje `not_configured`/`disabled`, brak terminalnego runu daje `never_run`, `completed` i `no_new_documents` dają `healthy`, a `failed` i `completed_with_issues` dają `attention`. Brak heartbeat, lease, TTL i workera oznacza `runtime_status=unknown`; dawny run nie jest dowodem online/offline.
+
+Dashboard pobiera tylko organizacyjny snapshot agregatów i ostatni run. Detail zwraca domyślnie 20, maksymalnie 50 runów. Projekcja nie pobiera listy itemów, `company_identifier`, numerów faktur, NIP, kwot, walut, XML, UPO, pełnych identyfikatorów KSeF, nazw firm, `details`, surowych komunikatów, tokenów ani certyfikatów. Błędy są mapowane na stałe polskie podsumowania.
+
+Importer i korekty KSeF pozostają niezależne od `automation_rules` i `automation_executions`. Invariant `invoice_ksef_field_overrides` nadal wymaga prawidłowego `approval_request_id`, poza istniejącą, jawną ścieżką bezpośredniej autoryzowanej korekty. Adapter nie zapisuje override, approval, faktury, event logu ani runu i nie udostępnia import-now, retry, testu połączenia ani enable/disable.
+
 ## Świadomie odłożone źródła
 
 - `automation_rules` i `automation_executions` pozostają istniejącym, niezależnym silnikiem event → actions. Nie mają jeszcze wspólnego kontraktu harmonogramu, następnego runu i bezpiecznej prezentacji błędów dla centrum.
-- import KSeF ma historię operacyjną, ale nie stanowi jeszcze pełnego kontraktu adaptera Centrum;
 - samodzielne pętle i konfiguracja platformowa nie są raportowane, ponieważ bez dedykowanego źródła prawdy taki stan byłby mylący.
 
 Dodanie tych źródeł wymaga najpierw spełnienia kontraktu adaptera. Nie wolno rozszerzać centrum przez odgadywanie stanu z logów ani przez dodawanie ukrytych write actions.
@@ -91,7 +105,7 @@ Adapter Task Reminders czyta wyłącznie natywne dane outbox/attempts. Nie pokaz
 
 `automation_rules` i `automation_executions` pozostają niezależnym subsystemem event → actions; Task Reminders nie są przez niego wykonywane.
 
-Piąty adapter musi otrzymać unikalny `automation_key`, zadeklarować scope i capabilities oraz dostarczyć read-only snapshot z deterministycznym health, limitowaną historią i sanitarnymi błędami. Musi udowodnić brak write podczas GET, izolację tenantów i brak N+1. Dodanie odbywa się wyłącznie w centralnym registry; nie wymaga modyfikowania istniejących adapterów, a frontend nie utrzymuje osobnej listy kluczy automatyzacji.
+Szósty adapter musi otrzymać unikalny `automation_key`, zadeklarować scope i capabilities oraz dostarczyć read-only snapshot z deterministycznym health, limitowaną historią i sanitarnymi błędami. Musi udowodnić brak write podczas GET, izolację tenantów i brak N+1. Dodanie odbywa się wyłącznie w centralnym registry; nie wymaga modyfikowania istniejących adapterów, a frontend nie utrzymuje osobnej listy kluczy automatyzacji.
 
 ## Bezpieczeństwo
 

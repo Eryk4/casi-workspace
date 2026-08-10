@@ -67,18 +67,31 @@ const emailImportOperation = {
   configured_connections_count: 1, enabled_connections_count: 1, last_error_code: "email_import_completed_with_issues",
   last_error_summary: "Część dokumentów z importu e-mail wymaga uwagi.",
 };
+const ksefImportOperation = {
+  ...operation, automation_key: "ksef_import", automation_type: "ksef_import", title: "Import KSeF", description: "Bezpieczny monitoring importu KSeF",
+  health: "attention", health_reason_code: "last_ksef_import_run_requires_attention", schedule_id: null, run_id: 31, next_run_at: null,
+  last_run_at: "2026-04-11T10:00:00+00:00", last_run_status: "failed", last_run_duration_ms: 2000,
+  last_attempt_count: null, last_candidates_count: 7, last_created_count: 2, last_existing_count: 1, schedule: null,
+  settings_url: "/ustawienia", details_url: "/automatyzacje/ksef_import", last_activity_at: "2026-04-11T10:00:00+00:00",
+  last_success_at: "2026-04-10T10:00:00+00:00", last_failure_at: "2026-04-11T10:00:00+00:00",
+  checked_document_count: 7, imported_count: 2, duplicate_count: 1, failed_count: 1,
+  total_imported_count: 8, total_duplicate_count: 3, total_failed_count: 1, runs_count: 4,
+  configured_connections_count: 1, enabled_connections_count: 1, last_error_code: "ksef_import_completed_with_issues",
+  last_error_summary: "Część dokumentów z importu KSeF wymaga uwagi.",
+};
 const api = {
   automationOperations: async (query) => {
     dashboardCalls += 1;
     if (failDashboard) throw new Error("Kontrolowany błąd centrum");
     if (String(query.organization_id) !== organizationId) throw new Error("Stary scope organizacji");
-    return { summary: { active_count: 4, disabled_count: 0, attention_count: 4, recent_failure_count: 4 }, items: [operation, reminderOperation, knowledgeOperation, emailImportOperation] };
+    return { summary: { active_count: 5, disabled_count: 0, attention_count: 5, recent_failure_count: 5 }, items: [operation, reminderOperation, knowledgeOperation, emailImportOperation, ksefImportOperation] };
   },
   automationOperationDetail: async (automationKey) => {
     if (detailNotFound) throw new ApiError("Nie znaleziono", 404, {});
     if (automationKey === "task_reminders") return { item: reminderOperation, history_limit: 20, history: [{ history_type: "reminder_attempt", attempt_id: 9, outbox_id: 8, channel: "telegram", attempt_no: 2, status: "dead_letter", attempted_at: "2026-01-15T07:01:00+00:00", error_code: "task_reminder_delivery_failed", error_summary: "Bezpieczny błąd przypomnienia" }], outbox: [{ task_reminder_outbox_id: 8, status: "failed", delivery_channel: "telegram", available_at: "2026-01-15T07:00:00+00:00", attempt_count: 2, created_at: "2026-01-15T07:00:00+00:00", updated_at: "2026-01-15T07:01:00+00:00" }] };
     if (automationKey === "knowledge_processing") return { item: knowledgeOperation, history_limit: 20, history: [{ history_type: "knowledge_job", job_id: 13, job_type: "replace", status: "failed", attempt_count: 1, max_attempts: 3, created_at: "2026-02-13T09:59:00+00:00", started_at: "2026-02-13T10:00:00+00:00", finished_at: "2026-02-13T10:00:02.500+00:00", duration_ms: 2500, error_code: "knowledge_processing_failed", error_summary: "Błąd wykonania. Szczegóły techniczne zostały ukryte." }], watchers: [{ watcher_id: 2, watch_mode: "polling", status: "ok", last_scan_started_at: "2026-02-13T10:00:00+00:00", last_scan_completed_at: "2026-02-13T10:01:00+00:00", error_code: null, error_summary: null }] };
     if (automationKey === "email_import") return { item: emailImportOperation, history_limit: 20, history: [{ history_type: "email_import_run", run_id: 21, trigger_mode: "automatic", result_status: "completed_with_issues", status: "failed", started_at: "2026-03-11T09:59:58+00:00", finished_at: "2026-03-11T10:00:00+00:00", duration_ms: 2000, checked_message_count: 7, matched_message_count: 5, matched_attachment_count: 4, imported_count: 2, duplicate_count: 1, failed_count: 1, error_code: "email_import_completed_with_issues", error_summary: "Część dokumentów z importu e-mail wymaga uwagi." }] };
+    if (automationKey === "ksef_import") return { item: ksefImportOperation, history_limit: 20, history: [{ history_type: "ksef_import_run", run_id: 31, trigger_mode: "manual", result_status: "completed_with_issues", status: "failed", started_at: "2026-04-11T09:59:58+00:00", finished_at: "2026-04-11T10:00:00+00:00", duration_ms: 2000, checked_document_count: 7, imported_count: 2, duplicate_count: 1, failed_count: 1, error_code: "ksef_import_completed_with_issues", error_summary: "Część dokumentów z importu KSeF wymaga uwagi." }] };
     return { item: operation, history_limit: 20, history: [{ run_id: 2, schedule_id: 1, scheduled_local_date: "2026-01-15", as_of_date: "2026-01-15", scheduled_for_utc: "2026-01-15T07:00:00+00:00", status: "failed", attempt_count: 2, candidates_count: 7, created_count: 3, existing_count: 4, error_code: "materialization_failed", error_summary: "Bezpieczne podsumowanie błędu", started_at: "2026-01-15T07:00:00+00:00", finished_at: "2026-01-15T07:00:01+00:00", duration_ms: 1000 }] };
   },
 };
@@ -107,7 +120,8 @@ async function run() {
   assert.match(container.textContent, /Automatyzacje/); assert.match(container.textContent, /Przypomnienia zadań/); assert.match(container.textContent, /Bezpieczny błąd przypomnienia/);
   assert.match(container.textContent, /Przetwarzanie bazy wiedzy/);
   assert.match(container.textContent, /Import e-maili/);
-  assert.equal(container.querySelectorAll(".automation-card").length, 4);
+  assert.match(container.textContent, /Import KSeF/);
+  assert.equal(container.querySelectorAll(".automation-card").length, 5);
   assert.equal(container.querySelector('a[href="/automatyzacje/internal_notification_scheduler"]').textContent, "Szczegóły");
   assert.equal(container.querySelector('a[href="/powiadomienia"]').textContent, "Ustawienia");
   assert.ok(button(container, "Odśwież")); assert.ok(!container.textContent.includes("Uruchom teraz"));
@@ -133,6 +147,12 @@ async function run() {
   assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/);
   for (const forbidden of ["email_import", "subject", "sender@", "recipient@", "message_id", "attachment", "token", "Importuj teraz", "Uruchom teraz"]) {
     assert.ok(!container.textContent.toLowerCase().includes(forbidden.toLowerCase()), `UI ujawnia zakazany tekst: ${forbidden}`);
+  }
+  await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "ksef_import" }))); await settle();
+  assert.match(container.textContent, /Import KSeF/); assert.match(container.textContent, /Ręczny/); assert.match(container.textContent, /Zakończony z uwagami/);
+  assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/);
+  for (const forbidden of ["ksef_import", "nip", "numer faktury", "987.65", "xml", "upo", "ksef-id", "token", "certyfikat", "Importuj teraz", "Uruchom teraz", "Ponów"]) {
+    assert.ok(!container.textContent.toLowerCase().includes(forbidden.toLowerCase()), `UI ujawnia zakazany tekst KSeF: ${forbidden}`);
   }
   detailNotFound = true; await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "unknown" }))); await settle(); assert.match(container.textContent, /Nie znaleziono automatyzacji/);
   await act(async () => root.unmount());

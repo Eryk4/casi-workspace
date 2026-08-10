@@ -4,6 +4,7 @@ export type AutomationOperationsFilter = "all" | "active" | "disabled" | "attent
 export type AutomationRunStatus = "pending" | "running" | "succeeded" | "failed";
 export type KnowledgeJobStatus = "pending" | "processing" | "completed" | "failed";
 export type EmailImportResultStatus = "running" | "completed" | "completed_with_issues" | "no_new_documents" | "failed";
+export type KSeFImportResultStatus = EmailImportResultStatus;
 
 export type AutomationOperation = {
   automationKey: string;
@@ -54,6 +55,7 @@ export type AutomationOperation = {
   lastScanAt: string | null;
   lastScanStatus: string | null;
   checkedMessageCount: number;
+  checkedDocumentCount: number;
   matchedMessageCount: number;
   matchedAttachmentCount: number;
   importedCount: number;
@@ -162,9 +164,26 @@ export type EmailImportRun = {
   errorSummary: string | null;
 };
 
+export type KSeFImportRun = {
+  historyType: "ksef_import_run";
+  runId: number;
+  triggerMode: "manual" | "automatic";
+  resultStatus: KSeFImportResultStatus;
+  status: AutomationRunStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  checkedDocumentCount: number;
+  importedCount: number;
+  duplicateCount: number;
+  failedCount: number;
+  errorCode: string | null;
+  errorSummary: string | null;
+};
+
 export type AutomationOperationDetail = {
   item: AutomationOperation;
-  history: Array<AutomationRun | ReminderAttempt | KnowledgeJob | EmailImportRun>;
+  history: Array<AutomationRun | ReminderAttempt | KnowledgeJob | EmailImportRun | KSeFImportRun>;
   outbox: ReminderOutboxItem[];
   watchers: KnowledgeWatcher[];
   historyLimit: number;
@@ -272,6 +291,7 @@ function readOperation(value: unknown): AutomationOperation {
     lastScanAt: optionalText(item.last_scan_at),
     lastScanStatus: optionalText(item.last_scan_status),
     checkedMessageCount: nonNegativeInteger(item.checked_message_count ?? 0, "checked_message_count") as number,
+    checkedDocumentCount: nonNegativeInteger(item.checked_document_count ?? 0, "checked_document_count") as number,
     matchedMessageCount: nonNegativeInteger(item.matched_message_count ?? 0, "matched_message_count") as number,
     matchedAttachmentCount: nonNegativeInteger(item.matched_attachment_count ?? 0, "matched_attachment_count") as number,
     importedCount: nonNegativeInteger(item.imported_count ?? 0, "imported_count") as number,
@@ -372,6 +392,31 @@ function readEmailImportRun(value: unknown): EmailImportRun {
   };
 }
 
+function readKSeFImportRun(value: unknown): KSeFImportRun {
+  const run = record(value, "KSeF import run");
+  const resultStatus = text(run.result_status, "KSeF import result status") as KSeFImportResultStatus;
+  const status = text(run.status, "KSeF import status") as AutomationRunStatus;
+  const triggerMode = text(run.trigger_mode, "KSeF import trigger mode") as "manual" | "automatic";
+  if (!EMAIL_IMPORT_RESULT_STATUSES.has(resultStatus) || !RUN_STATUSES.has(status)) throw new Error("Nieznany status importu KSeF.");
+  if (triggerMode !== "manual" && triggerMode !== "automatic") throw new Error("Nieznany tryb importu KSeF.");
+  return {
+    historyType: "ksef_import_run",
+    runId: nonNegativeInteger(run.run_id, "run_id") as number,
+    triggerMode,
+    resultStatus,
+    status,
+    startedAt: optionalText(run.started_at),
+    finishedAt: optionalText(run.finished_at),
+    durationMs: nonNegativeInteger(run.duration_ms, "duration_ms", true),
+    checkedDocumentCount: nonNegativeInteger(run.checked_document_count, "checked_document_count") as number,
+    importedCount: nonNegativeInteger(run.imported_count, "imported_count") as number,
+    duplicateCount: nonNegativeInteger(run.duplicate_count, "duplicate_count") as number,
+    failedCount: nonNegativeInteger(run.failed_count, "failed_count") as number,
+    errorCode: optionalText(run.error_code),
+    errorSummary: optionalText(run.error_summary),
+  };
+}
+
 export function readAutomationOperationsDashboard(payload: unknown): AutomationOperationsDashboard {
   const root = record(payload, "automation dashboard");
   const summary = record(root.summary, "summary");
@@ -397,6 +442,7 @@ export function readAutomationOperationDetail(payload: unknown): AutomationOpera
       if (historyType === "reminder_attempt") return readReminderAttempt(entry);
       if (historyType === "knowledge_job") return readKnowledgeJob(entry);
       if (historyType === "email_import_run") return readEmailImportRun(entry);
+      if (historyType === "ksef_import_run") return readKSeFImportRun(entry);
       return readRun(entry);
     }),
     outbox: Array.isArray(root.outbox) ? root.outbox.map((entry) => {
@@ -459,7 +505,7 @@ export function automationConfigurationLabel(status: AutomationConfigurationStat
 }
 
 export function automationTypeLabel(automationType: string): string {
-  if (automationType === "email_import") return "Źródło operacyjne";
+  if (automationType === "email_import" || automationType === "ksef_import") return "Źródło operacyjne";
   if (automationType === "task_reminders") return "Przypomnienia";
   if (automationType === "knowledge_processing") return "Przetwarzanie wiedzy";
   return "Harmonogram";
@@ -475,4 +521,9 @@ export function emailImportResultLabel(status: EmailImportResultStatus): string 
 
 export function emailImportTriggerLabel(mode: "manual" | "automatic"): string {
   return mode === "automatic" ? "Automatyczny" : "Ręczny";
+}
+
+export function ksefImportResultLabel(status: KSeFImportResultStatus): string {
+  if (status === "no_new_documents") return "Brak nowych dokumentów";
+  return emailImportResultLabel(status);
 }

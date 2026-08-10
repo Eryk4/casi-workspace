@@ -7,6 +7,116 @@ from app.utils import json_dumps, now_iso
 
 
 class KSeFImportRepository:
+    def get_operations_snapshot(self, organization_id: int) -> dict[str, Any]:
+        """Return a privacy-safe, organization-scoped operational snapshot."""
+        with get_connection() as connection:
+            organization = connection.execute(
+                """
+                SELECT
+                    organization_id,
+                    is_active,
+                    ksef_integration_enabled,
+                    CASE WHEN COALESCE(TRIM(ksef_company_identifier), '') <> '' THEN 1 ELSE 0 END AS has_company_identifier
+                FROM organizations
+                WHERE organization_id = ?
+                """,
+                (organization_id,),
+            ).fetchone()
+            latest_run = connection.execute(
+                """
+                SELECT
+                    ksef_import_run_id,
+                    trigger_mode,
+                    started_at,
+                    finished_at,
+                    status,
+                    checked_document_count,
+                    imported_invoice_count,
+                    skipped_existing_count,
+                    skipped_error_count
+                FROM ksef_import_runs
+                WHERE organization_id = ?
+                ORDER BY COALESCE(finished_at, started_at) DESC, ksef_import_run_id DESC
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+            latest_terminal_run = connection.execute(
+                """
+                SELECT ksef_import_run_id, started_at, finished_at, status
+                FROM ksef_import_runs
+                WHERE organization_id = ? AND status <> 'running'
+                ORDER BY COALESCE(finished_at, started_at) DESC, ksef_import_run_id DESC
+                LIMIT 1
+                """,
+                (organization_id,),
+            ).fetchone()
+            aggregates = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS runs_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM (
+                            SELECT status
+                            FROM ksef_import_runs
+                            WHERE organization_id = ?
+                            ORDER BY COALESCE(finished_at, started_at) DESC, ksef_import_run_id DESC
+                            LIMIT 50
+                        ) recent_runs
+                        WHERE status IN ('failed', 'completed_with_issues')
+                    ) AS recent_failure_count,
+                    MAX(CASE WHEN status IN ('completed', 'no_new_documents') THEN finished_at END) AS last_success_at,
+                    MAX(CASE WHEN status IN ('failed', 'completed_with_issues') THEN finished_at END) AS last_failure_at
+                FROM ksef_import_runs
+                WHERE organization_id = ?
+                """,
+                (organization_id, organization_id),
+            ).fetchone()
+            item_counts = connection.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN item_status = 'imported' THEN 1 ELSE 0 END) AS imported_count,
+                    SUM(CASE WHEN item_status = 'skipped_existing' THEN 1 ELSE 0 END) AS duplicate_count,
+                    SUM(CASE WHEN item_status = 'skipped_error' THEN 1 ELSE 0 END) AS failed_count
+                FROM ksef_import_items
+                WHERE organization_id = ?
+                """,
+                (organization_id,),
+            ).fetchone()
+        return {
+            "organization": dict(organization) if organization else None,
+            "latest_run": dict(latest_run) if latest_run else None,
+            "latest_terminal_run": dict(latest_terminal_run) if latest_terminal_run else None,
+            "aggregates": dict(aggregates) if aggregates else {},
+            "item_counts": dict(item_counts) if item_counts else {},
+        }
+
+    def list_runs_read_only(self, *, organization_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        """List run aggregates without loading identifiers, details or invoice items."""
+        normalized_limit = max(1, min(int(limit), 50))
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    ksef_import_run_id,
+                    trigger_mode,
+                    started_at,
+                    finished_at,
+                    status,
+                    checked_document_count,
+                    imported_invoice_count,
+                    skipped_existing_count,
+                    skipped_error_count
+                FROM ksef_import_runs
+                WHERE organization_id = ?
+                ORDER BY COALESCE(finished_at, started_at) DESC, ksef_import_run_id DESC
+                LIMIT ?
+                """,
+                (organization_id, normalized_limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def start_run(
         self,
         *,

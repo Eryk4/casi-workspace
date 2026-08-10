@@ -101,16 +101,43 @@ const emailImport = operation({
   configured_connections_count: 1, enabled_connections_count: 1, last_error_code: "email_import_completed_with_issues",
   last_error_summary: "Część dokumentów z importu e-mail wymaga uwagi.",
 });
-const fourAdapters = model.readAutomationOperationsDashboard({
-  summary: { active_count: 4, disabled_count: 0, attention_count: 3, recent_failure_count: 3 },
-  items: [operation(), reminders, knowledge, emailImport],
+const ksefImport = operation({
+  automation_key: "ksef_import", automation_type: "ksef_import", title: "Import KSeF",
+  description: "Bezpieczny monitoring importu KSeF", health: "attention", health_reason_code: "last_ksef_import_run_requires_attention",
+  schedule_id: null, run_id: 31, next_run_at: null, last_run_at: "2026-04-11T10:00:00+00:00", last_run_status: "failed",
+  last_run_duration_ms: 2000, last_attempt_count: null, last_candidates_count: 7, last_created_count: 2,
+  last_existing_count: 1, settings_url: "/ustawienia", details_url: "/automatyzacje/ksef_import", schedule: null,
+  last_activity_at: "2026-04-11T10:00:00+00:00", last_success_at: "2026-04-10T10:00:00+00:00",
+  last_failure_at: "2026-04-11T10:00:00+00:00", checked_document_count: 7,
+  imported_count: 2, duplicate_count: 1, failed_count: 1, total_imported_count: 8, total_duplicate_count: 3,
+  total_failed_count: 1, runs_count: 4, configured_connections_count: 1, enabled_connections_count: 1,
+  last_error_code: "ksef_import_completed_with_issues", last_error_summary: "Część dokumentów z importu KSeF wymaga uwagi.",
 });
-assert.deepEqual(fourAdapters.items.map((item) => item.automationKey), ["internal_notification_scheduler", "task_reminders", "knowledge_processing", "email_import"]);
-assert.equal(fourAdapters.items[2].watcherCount, 1);
-assert.equal(fourAdapters.items[2].succeededCount, 4);
-assert.equal(fourAdapters.items[3].configuredConnectionsCount, 1);
+const fiveAdapters = model.readAutomationOperationsDashboard({
+  summary: { active_count: 5, disabled_count: 0, attention_count: 4, recent_failure_count: 4 },
+  items: [operation(), reminders, knowledge, emailImport, ksefImport],
+});
+assert.deepEqual(fiveAdapters.items.map((item) => item.automationKey), ["internal_notification_scheduler", "task_reminders", "knowledge_processing", "email_import", "ksef_import"]);
+assert.equal(fiveAdapters.items[2].watcherCount, 1);
+assert.equal(fiveAdapters.items[2].succeededCount, 4);
+assert.equal(fiveAdapters.items[3].configuredConnectionsCount, 1);
+assert.equal(fiveAdapters.items[4].checkedDocumentCount, 7);
 assert.equal(model.automationTypeLabel("email_import"), "Źródło operacyjne");
+assert.equal(model.automationTypeLabel("ksef_import"), "Źródło operacyjne");
 assert.equal(model.emailImportResultLabel("no_new_documents"), "Brak nowych wiadomości");
+assert.equal(model.ksefImportResultLabel("no_new_documents"), "Brak nowych dokumentów");
+const ksefStates = model.readAutomationOperationsDashboard({
+  summary: { active_count: 3, disabled_count: 1, attention_count: 1, recent_failure_count: 1 },
+  items: [
+    { ...ksefImport, automation_key: "ksef_disabled", status: "disabled", enabled: false, health: "disabled", health_reason_code: "ksef_import_disabled" },
+    { ...ksefImport, automation_key: "ksef_never", health: "never_run", health_reason_code: "no_terminal_ksef_import_run", run_id: null, last_run_at: null, last_run_status: null },
+    { ...ksefImport, automation_key: "ksef_healthy", health: "healthy", health_reason_code: "last_ksef_import_run_succeeded", last_run_status: "succeeded", last_error_code: null, last_error_summary: null },
+    ksefImport,
+  ],
+});
+assert.equal(model.filterAutomationOperations(ksefStates.items, "active").length, 3);
+assert.equal(model.filterAutomationOperations(ksefStates.items, "disabled").length, 1);
+assert.equal(model.filterAutomationOperations(ksefStates.items, "attention").length, 1);
 const knowledgeStates = model.readAutomationOperationsDashboard({
   summary: { active_count: 3, disabled_count: 1, attention_count: 1, recent_failure_count: 1 },
   items: [
@@ -158,6 +185,15 @@ const emailDetail = model.readAutomationOperationDetail({ item: emailImport, his
 }] });
 assert.equal(emailDetail.history[0].historyType, "email_import_run");
 assert.equal(emailDetail.history[0].importedCount, 2);
+const ksefDetail = model.readAutomationOperationDetail({ item: ksefImport, history_limit: 20, history: [{
+  history_type: "ksef_import_run", run_id: 31, trigger_mode: "manual", result_status: "completed_with_issues",
+  status: "failed", started_at: "2026-04-11T09:59:58+00:00", finished_at: "2026-04-11T10:00:00+00:00",
+  duration_ms: 2000, checked_document_count: 7, imported_count: 2, duplicate_count: 1,
+  failed_count: 1, error_code: "ksef_import_completed_with_issues", error_summary: "Część dokumentów z importu KSeF wymaga uwagi.",
+}] });
+assert.equal(ksefDetail.history[0].historyType, "ksef_import_run");
+assert.equal(ksefDetail.history[0].checkedDocumentCount, 7);
+assert.doesNotMatch(JSON.stringify(ksefDetail), /nip|invoice_number|amount|xml|upo|ksef_number|token|certificate/i);
 assert.doesNotMatch(JSON.stringify(emailDetail), /subject|sender|recipient|message_id|attachment_name|credentials|token|body/i);
 assert.doesNotMatch(JSON.stringify(knowledgeDetail), /source_storage_key|source_file_name|content_text|ocr|c:\\users/i);
 assert.doesNotMatch(JSON.stringify(reminderDetail), /payload|secret|token/i);
@@ -169,8 +205,9 @@ const pageSource = fs.readFileSync(path.join(__dirname, "..", "src", "modules", 
 const detailSource = fs.readFileSync(path.join(__dirname, "..", "src", "modules", "automations", "AutomationOperationDetailPage.tsx"), "utf8");
 const navigationSource = fs.readFileSync(path.join(__dirname, "..", "src", "config", "navigation.ts"), "utf8");
 assert.match(apiSource, /automationOperations:[\s\S]*apiRequest[\s\S]*\/automations\/operations/);
-assert.doesNotMatch(pageSource + detailSource, /setInterval|Uruchom teraz|Skanuj teraz|Reprocess|Run now|Scan now|method:\s*["']POST["']/);
+assert.doesNotMatch(pageSource + detailSource, /setInterval|Uruchom teraz|Importuj teraz|Pobierz faktury|Ponów|Skanuj teraz|Reprocess|Run now|Scan now|method:\s*["']POST["']/);
 assert.doesNotMatch(pageSource + detailSource, />\s*email_import\s*</);
+assert.doesNotMatch(pageSource + detailSource, />\s*ksef_import\s*</);
 assert.match(pageSource, /setDashboard\(null\)/);
 assert.match(detailSource, /Nieznany — centrum nie monitoruje procesu workera/);
 assert.match(navigationSource, /id:\s*["']automations["'][\s\S]*label:\s*["']Automatyzacje["'][\s\S]*path:\s*["']\/automatyzacje["']/);

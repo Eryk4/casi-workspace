@@ -43,6 +43,7 @@ from app.services.automation_operations_service import (
     AutomationOperationsRegistry,
     AutomationOperationsService,
     EmailImportOperationsAdapter,
+    KSeFImportOperationsAdapter,
     InternalNotificationSchedulerOperationsAdapter,
     KnowledgeProcessingOperationsAdapter,
     TaskRemindersOperationsAdapter,
@@ -267,6 +268,7 @@ def build_services(*, initialize_default_organization: bool = True) -> dict[str,
                 email_import_repository,
                 invoice_service.email_scheduler_status,
             ),
+            KSeFImportOperationsAdapter(ksef_import_repository),
         )
     )
     automation_operations_service = AutomationOperationsService(
