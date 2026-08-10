@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.bootstrap import build_services
-from app.db import reset_database
+from app.db import get_connection, reset_database
 
 
 class TaskReminderServiceTests(unittest.TestCase):
@@ -59,6 +59,7 @@ class TaskReminderServiceTests(unittest.TestCase):
             actor_user=self.admin,
         )
         self.reminder_service = self.services["task_reminder_service"]
+        self.reminder_service.runtime_enabled = True
         self.reminder_service.telegram_adapter.bot_token = "test-token"
 
     def test_dispatch_due_reminder_sends_only_once(self) -> None:
@@ -105,6 +106,54 @@ class TaskReminderServiceTests(unittest.TestCase):
         assert detail is not None
         self.assertEqual(detail["task"]["reminder_delivery_state"], "wyslane")
         self.assertTrue(detail["task"]["reminder_sent_at"])
+
+    def test_runtime_kill_switch_leaves_tasks_outbox_attempts_and_events_unchanged(self) -> None:
+        created = self.services["task_service"].create_task(
+            {
+                "title": "Przypomnienie z wylaczonym runtime",
+                "task_type": "zadanie",
+                "status": "nowe",
+                "priority": "wysoki",
+                "due_at": "2099-04-10T10:00",
+                "remind_at": "2000-04-10T09:00",
+                "visibility_scope": "wybrane_osoby",
+                "visible_user_ids": [self.assignee["user_id"]],
+                "assigned_user_id": self.assignee["user_id"],
+            },
+            actor_user=self.owner,
+            actor="Ola",
+            organization_id=self.organization["organization_id"],
+        )
+        self.reminder_service.runtime_enabled = False
+
+        def snapshot() -> dict[str, list[dict[str, object]]]:
+            result: dict[str, list[dict[str, object]]] = {}
+            with get_connection() as connection:
+                for table, primary_key in (
+                    ("tasks", "task_id"),
+                    ("task_reminder_outbox", "task_reminder_outbox_id"),
+                    ("task_reminder_outbox_attempts", "task_reminder_outbox_attempt_id"),
+                    ("event_logs", "id"),
+                ):
+                    rows = connection.execute(f"SELECT * FROM {table} ORDER BY {primary_key}").fetchall()
+                    result[table] = [dict(row) for row in rows]
+            return result
+
+        before = snapshot()
+        enqueue = self.reminder_service.enqueue_due_reminders()
+        process = self.reminder_service.process_due_reminders()
+        with self.assertRaisesRegex(ValueError, "wylaczona"):
+            self.reminder_service.send_reminder_now(
+                created["task_id"],
+                organization_id=self.organization["organization_id"],
+                viewer_user_id=self.owner["user_id"],
+                actor="Ola",
+            )
+        after = snapshot()
+
+        self.assertEqual(enqueue["queued"], 0)
+        self.assertEqual(process["processed"], 0)
+        self.assertEqual(before, after)
 
     def test_dispatch_failed_reminder_waits_before_retry(self) -> None:
         self.services["auth_service"].update_user(

@@ -59,7 +59,13 @@ from app.services.task_reminder_service import TaskReminderService
 from app.services.work_item_service import WorkItemService
 from app.services.whiteboard_service import WhiteboardService
 from app.integrations.email_google_oauth import EmailGoogleOAuthAdapter
-from app.config import DEFAULT_ADMIN_LOGIN, REQUIRE_DURABLE_STORAGE, STORAGE_BACKEND, TASK_REMINDER_RETRY_MINUTES
+from app.config import (
+    DEFAULT_ADMIN_LOGIN,
+    ENABLE_TELEGRAM_TASK_REMINDERS,
+    REQUIRE_DURABLE_STORAGE,
+    STORAGE_BACKEND,
+    TASK_REMINDER_RETRY_MINUTES,
+)
 from app.config import TASK_REMINDER_MAX_ATTEMPTS, TASK_REMINDER_PROCESSING_TIMEOUT_MINUTES
 
 
@@ -198,6 +204,7 @@ def build_services(*, initialize_default_organization: bool = True) -> dict[str,
         organization_repository=organization_repository,
         telegram_adapter=invoice_service.telegram_adapter,
         work_item_service=work_item_service,
+        runtime_enabled=ENABLE_TELEGRAM_TASK_REMINDERS,
         retry_minutes=TASK_REMINDER_RETRY_MINUTES,
         processing_timeout_minutes=TASK_REMINDER_PROCESSING_TIMEOUT_MINUTES,
         max_attempts=TASK_REMINDER_MAX_ATTEMPTS,

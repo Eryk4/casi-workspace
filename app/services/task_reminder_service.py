@@ -21,6 +21,7 @@ class TaskReminderService:
         telegram_adapter: TelegramBotAdapter,
         work_item_service: Any | None = None,
         *,
+        runtime_enabled: bool = False,
         retry_minutes: int = 15,
         processing_timeout_minutes: int = 10,
         max_attempts: int = 5,
@@ -31,21 +32,43 @@ class TaskReminderService:
         self.organization_repository = organization_repository
         self.telegram_adapter = telegram_adapter
         self.work_item_service = work_item_service
+        self.runtime_enabled = bool(runtime_enabled)
         self.retry_minutes = max(1, int(retry_minutes))
         self.processing_timeout_minutes = max(1, int(processing_timeout_minutes))
         self.max_attempts = max(1, int(max_attempts))
 
     def is_enabled(self, *, organization_id: int | None = None) -> bool:
-        if not self.telegram_adapter.can_send_messages():
-            return False
-        if organization_id is None:
-            return True
-        return self._organization_uses_telegram(organization_id)
+        return bool(self.runtime_contract(organization_id=organization_id)["enabled"])
 
-    def integration_status(self, *, organization_id: int | None = None) -> dict[str, Any]:
-        enabled = self.is_enabled(organization_id=organization_id)
+    def runtime_contract(self, *, organization_id: int | None = None) -> dict[str, Any]:
+        telegram_configured = bool(self.telegram_adapter.can_send_messages())
+        organization_provider_supported = (
+            True if organization_id is None else self._organization_uses_telegram(organization_id)
+        )
+        enabled = bool(self.runtime_enabled and telegram_configured and organization_provider_supported)
+        disabled_reason = None
+        if not self.runtime_enabled:
+            disabled_reason = "runtime_disabled"
+        elif not telegram_configured:
+            disabled_reason = "telegram_not_configured"
+        elif not organization_provider_supported:
+            disabled_reason = "organization_provider_not_supported"
         return {
             "enabled": enabled,
+            "runtime_enabled": self.runtime_enabled,
+            "telegram_configured": telegram_configured,
+            "organization_provider_supported": organization_provider_supported,
+            "disabled_reason": disabled_reason,
+            "runtime_status": "unknown",
+        }
+
+    def integration_status(self, *, organization_id: int | None = None) -> dict[str, Any]:
+        contract = self.runtime_contract(organization_id=organization_id)
+        enabled = bool(contract["enabled"])
+        return {
+            "status": "enabled" if enabled else "disabled",
+            "enabled": enabled,
+            **contract,
             "mode": "aktywny" if enabled else "wylaczony",
             "delivery_channel": "telegram" if enabled else None,
             "retry_minutes": self.retry_minutes,

@@ -188,6 +188,8 @@ Telegram:
 - [ ] `INVOICE_TELEGRAM_WEBHOOK_SECRET=<secret>`
 - [ ] `INVOICE_ENABLE_TELEGRAM_TASK_REMINDERS=0|1`
 
+`INVOICE_ENABLE_TELEGRAM_TASK_REMINDERS` jest nadrzędnym, domyślnie wyłączonym kill switchem runtime. Wartość `0`/`false` blokuje scheduler, delivery, enqueue i process nawet przy poprawnym tokenie. Wartość `1`/`true` jedynie dopuszcza pracę; nadal są wymagane poprawna konfiguracja Telegram oraz provider organizacji. Heartbeat reminderów nie ma TTL i nie dowodzi, że worker aktualnie działa.
+
 Slack:
 
 - [ ] `INVOICE_SLACK_BOT_TOKEN=<secret>`

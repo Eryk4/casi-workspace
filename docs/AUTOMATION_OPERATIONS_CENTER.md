@@ -34,12 +34,20 @@ Stan procesu workera jest prezentowany jako `unknown`. Aplikacja nie udaje monit
 ## Świadomie odłożone źródła
 
 - `automation_rules` i `automation_executions` pozostają istniejącym, niezależnym silnikiem event → actions. Nie mają jeszcze wspólnego kontraktu harmonogramu, następnego runu i bezpiecznej prezentacji błędów dla centrum.
-- przypomnienia zadań mają rozdzielony outbox, próby i heartbeat zależny od runtime; brak stabilnej konfiguracji odbiorcy i wspólnego `next_run`;
+- przypomnienia zadań mają rozdzielony outbox, próby i heartbeat zależny od runtime. Ich centralny kontrakt enabled wymaga jednocześnie jawnie włączonego `INVOICE_ENABLE_TELEGRAM_TASK_REMINDERS`, skonfigurowanego wysyłania Telegram oraz zgodnego providera organizacji. Flaga jest nadrzędnym kill switchem; sama obecność tokenu nie włącza mechanizmu;
 - joby i watchery bazy wiedzy nie mają wspólnego, trwałego kontraktu enabled/next-run/history;
 - importy e-mail i KSeF mają historie operacyjne, ale nie stanowią jednego skonfigurowanego kontraktu automatyzacji, a część stanu e-mail jest procesowa;
 - samodzielne pętle i konfiguracja platformowa nie są raportowane, ponieważ bez dedykowanego źródła prawdy taki stan byłby mylący.
 
 Dodanie tych źródeł wymaga najpierw spełnienia kontraktu adaptera. Nie wolno rozszerzać centrum przez odgadywanie stanu z logów ani przez dodawanie ukrytych write actions.
+
+### Kontrakt runtime Task Reminders
+
+`TaskReminderService` jest jednym źródłem prawdy dla statusu runtime. Przy wyłączonej fladze nie startują pętle scheduler/delivery, a bezpośrednie wywołania enqueue i process nie wykonują pracy. Status rozróżnia wyłączony gate, brak konfiguracji Telegram i nieobsługiwany provider organizacji; widoczność samego procesu pozostaje `unknown`.
+
+Outbox i ograniczona historia attempts mogą w przyszłości zasilać read-only health. Heartbeat jest wyłącznie informacyjny: nie ma zdefiniowanego TTL i nie może być interpretowany jako dowód, że worker działa. Centrum nie powinno ujawniać payloadów, odbiorców ani surowych błędów i nie może dodawać retry lub run-now.
+
+Adapter Task Reminders do Automation Operations Center wymaga tego kontraktu i będzie realizowany w osobnym etapie. Task Reminders nie są jeszcze zarejestrowane w Centrum ani przepięte do `automation_rules`.
 
 ## Bezpieczeństwo
 

@@ -195,27 +195,29 @@ def main() -> None:
                 print("Automatyczne sprawdzanie e-mail: wylaczone.")
 
     if args.mode in {"standalone", "worker"}:
-        reminder_scheduler_loop = TaskReminderSchedulerLoop(
-            services.get("task_reminder_service"),
-            TASK_REMINDER_POLL_SECONDS,
-        )
-        if reminder_scheduler_loop.start():
+        reminder_service = services.get("task_reminder_service")
+        if reminder_service and reminder_service.is_enabled():
+            reminder_scheduler_loop = TaskReminderSchedulerLoop(
+                reminder_service,
+                TASK_REMINDER_POLL_SECONDS,
+            )
+        if reminder_scheduler_loop and reminder_scheduler_loop.start():
             print(f"Planowanie przypomnien: wlaczone (co {TASK_REMINDER_POLL_SECONDS} s).")
         else:
             print("Planowanie przypomnien: wylaczone.")
 
     if args.mode in {"standalone", "worker"}:
-        reminder_delivery_loop = TaskReminderDeliveryLoop(
-            services.get("task_reminder_service"),
-            TASK_REMINDER_WORKER_POLL_SECONDS,
-        )
-        delivery_started = reminder_delivery_loop.start()
+        reminder_service = services.get("task_reminder_service")
+        if reminder_service and reminder_service.is_enabled():
+            reminder_delivery_loop = TaskReminderDeliveryLoop(
+                reminder_service,
+                TASK_REMINDER_WORKER_POLL_SECONDS,
+            )
+        delivery_started = bool(reminder_delivery_loop and reminder_delivery_loop.start())
         if delivery_started:
             print(f"Dostarczanie przypomnien: wlaczone (co {TASK_REMINDER_WORKER_POLL_SECONDS} s).")
         else:
             print("Dostarczanie przypomnien: wylaczone.")
-            if args.mode == "worker":
-                return
 
     if args.mode in {"standalone", "worker"}:
         knowledge_loop = KnowledgePipelineLoop(
