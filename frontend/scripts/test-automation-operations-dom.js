@@ -27,6 +27,7 @@ Module._resolveFilename = function resolveAlias(request, parent, isMain, options
 let organizationId = "42";
 let failDashboard = false;
 let detailNotFound = false;
+let emptyAttention = false;
 let dashboardCalls = 0;
 const operation = {
   automation_key: "internal_notification_scheduler", automation_type: "scheduler", title: "Automatyczne sprawdzanie powiadomień", description: "Opis operacyjny",
@@ -89,12 +90,17 @@ const automationEngineOperation = {
   enabled_rules_count: 2, disabled_rules_count: 1, total_rules_count: 3, executions_count: 7, succeeded_count: 6, failed_count: 1,
   last_error_code: "automation_execution_failed", last_error_summary: "Ostatnie wykonanie reguły automatyzacji zakończyło się błędem.",
 };
+const attentionItems = [
+  { automation_key: "automation_engine", title: "Reguły automatyzacji", attention_category: "execution", reason_code: "last_execution_failed", occurred_at: "2026-05-11T10:00:00+00:00", summary: "Ostatnie wykonanie reguły automatyzacji zakończyło się błędem.", details_url: "/automatyzacje/automation_engine", settings_url: null },
+  { automation_key: "task_reminders", title: "Przypomnienia zadań", attention_category: "backlog", reason_code: "failed_outbox_present", occurred_at: "2026-01-15T07:01:00+00:00", summary: "Co najmniej jedno przypomnienie wymaga sprawdzenia po nieudanej wysyłce.", details_url: "/automatyzacje/task_reminders", settings_url: null },
+  { automation_key: "email_import", title: "Import e-maili", attention_category: "configuration", reason_code: "system_mailbox_not_configured", occurred_at: null, summary: "Brakuje konfiguracji systemowej skrzynki importu e-maili.", details_url: "/automatyzacje/email_import", settings_url: "/ustawienia" },
+];
 const api = {
   automationOperations: async (query) => {
     dashboardCalls += 1;
     if (failDashboard) throw new Error("Kontrolowany błąd centrum");
     if (String(query.organization_id) !== organizationId) throw new Error("Stary scope organizacji");
-    return { summary: { active_count: 6, disabled_count: 0, attention_count: 6, recent_failure_count: 6 }, items: [operation, reminderOperation, knowledgeOperation, emailImportOperation, ksefImportOperation, automationEngineOperation] };
+    return { summary: { active_count: 6, disabled_count: 0, attention_count: emptyAttention ? 0 : attentionItems.length, recent_failure_count: 6 }, attention_items: emptyAttention ? [] : attentionItems, items: [operation, reminderOperation, knowledgeOperation, emailImportOperation, ksefImportOperation, automationEngineOperation] };
   },
   automationOperationDetail: async (automationKey) => {
     if (detailNotFound) throw new ApiError("Nie znaleziono", 404, {});
@@ -134,17 +140,37 @@ async function run() {
   assert.match(container.textContent, /Import KSeF/);
   assert.match(container.textContent, /Reguły automatyzacji/);
   assert.equal(container.querySelectorAll(".automation-card").length, 6);
+  assert.match(container.textContent, /Wymaga uwagi/);
+  assert.equal(container.querySelectorAll(".automation-attention__item").length, 3);
+  assert.deepEqual([...container.querySelectorAll(".automation-attention__item h4")].map((node) => node.textContent), ["Reguły automatyzacji", "Przypomnienia zadań", "Import e-maili"]);
+  assert.match(container.textContent, /Wykonanie/); assert.match(container.textContent, /Kolejka/); assert.match(container.textContent, /Konfiguracja/);
+  assert.match(container.textContent, /Czas niedostępny/);
+  assert.equal(container.querySelectorAll('.automation-attention a[href^="/automatyzacje/"]').length, 3);
+  assert.equal(container.querySelectorAll('.automation-attention a[href="/ustawienia"]').length, 1);
+  assert.ok(!container.textContent.match(/last_execution_failed|failed_outbox_present|system_mailbox_not_configured|Retry|Run now|Rozwiąż|severity/i));
+  const attentionText = container.querySelector(".automation-attention").textContent.toLowerCase();
+  for (const forbidden of ["private@", "message-id", "nip", "fv/", "xml", "upo", "document.txt", "c:\\users", "payload=", "token=", "secret", "traceback"]) {
+    assert.ok(!attentionText.includes(forbidden), `Sekcja attention ujawnia zakazany tekst: ${forbidden}`);
+  }
   assert.equal(container.querySelector('a[href="/automatyzacje/internal_notification_scheduler"]').textContent, "Szczegóły");
   assert.equal(container.querySelector('a[href="/powiadomienia"]').textContent, "Ustawienia");
   assert.ok(button(container, "Odśwież")); assert.ok(!container.textContent.includes("Uruchom teraz"));
   await act(async () => button(container, "Wyłączone").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
   assert.match(container.textContent, /Żadna automatyzacja/);
+  assert.equal(container.querySelectorAll(".automation-attention__item").length, 3);
+  emptyAttention = true; await act(async () => button(container, "Odśwież").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }))); await settle();
+  assert.match(container.textContent, /Brak sygnałów wymagających uwagi/);
+  emptyAttention = false;
   failDashboard = true; await act(async () => button(container, "Odśwież").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }))); await settle();
   assert.match(container.textContent, /Kontrolowany błąd centrum/); assert.ok(button(container, "Spróbuj ponownie"));
   failDashboard = false; organizationId = "43"; await act(async () => root.render(React.createElement(AutomationOperationsPage))); assert.ok(!container.textContent.includes("Opis operacyjny")); await settle();
   await act(async () => button(container, "Wszystkie").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
   assert.match(container.textContent, /Opis operacyjny/);
   assert.ok(dashboardCalls >= 3);
+
+  const cssSource = fs.readFileSync(path.join(__dirname, "..", "src", "app", "globals.css"), "utf8");
+  assert.match(cssSource, /\.automation-attention__content[\s\S]*overflow-wrap:\s*anywhere/);
+  assert.match(cssSource, /@media\s*\(max-width:\s*900px\)[\s\S]*\.automation-attention__item[\s\S]*flex-direction:\s*column/);
 
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "internal_notification_scheduler" }))); await settle();
   assert.match(container.textContent, /Historia ostatnich uruchomień/); assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/); assert.equal(container.querySelectorAll("tbody tr").length, 1); assert.ok(!container.textContent.includes("lease"));

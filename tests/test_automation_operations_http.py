@@ -53,6 +53,11 @@ class AutomationOperationsHttpTests(HttpServerTestCase):
         self.assertEqual(response.status, 200, payload.decode())
         dashboard = json.loads(payload)
         self.assertEqual(len(dashboard["items"]), 6)
+        self.assertEqual(dashboard["summary"]["attention_count"], len(dashboard["attention_items"]))
+        self.assertTrue(all(
+            attention["automation_key"] in {item["automation_key"] for item in dashboard["items"]}
+            for attention in dashboard["attention_items"]
+        ))
         self.assertEqual(dashboard["items"][0]["automation_key"], "internal_notification_scheduler")
         self.assertEqual(dashboard["items"][1]["automation_key"], "task_reminders")
         self.assertEqual(dashboard["items"][2]["automation_key"], "knowledge_processing")

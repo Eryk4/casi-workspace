@@ -47,6 +47,7 @@ function operation(overrides = {}) {
 
 const parsed = model.readAutomationOperationsDashboard({
   summary: { active_count: 2, disabled_count: 2, attention_count: 1, recent_failure_count: 3 },
+  attention_items: [],
   items: [
     operation(),
     operation({ automation_key: "failed", status: "enabled", health: "attention" }),
@@ -71,7 +72,7 @@ const reminders = operation({
   last_heartbeat_at: "2026-01-15T07:00:00+00:00", settings_url: null, details_url: "/automatyzacje/task_reminders", schedule: null,
   last_error_code: "task_reminder_delivery_failed", last_error_summary: "Bezpieczny błąd",
 });
-const multi = model.readAutomationOperationsDashboard({ summary: { active_count: 2, disabled_count: 0, attention_count: 1, recent_failure_count: 1 }, items: [operation(), reminders] });
+const multi = model.readAutomationOperationsDashboard({ summary: { active_count: 2, disabled_count: 0, attention_count: 1, recent_failure_count: 1 }, attention_items: [], items: [operation(), reminders] });
 assert.equal(multi.items.length, 2);
 assert.equal(multi.items[1].pendingCount, 1);
 assert.equal(multi.items[1].settingsUrl, null);
@@ -126,6 +127,10 @@ const automationEngine = operation({
 });
 const sixAdapters = model.readAutomationOperationsDashboard({
   summary: { active_count: 6, disabled_count: 0, attention_count: 5, recent_failure_count: 5 },
+  attention_items: [
+    { automation_key: "automation_engine", title: "Reguły automatyzacji", attention_category: "execution", reason_code: "last_execution_failed", occurred_at: "2026-05-11T10:00:00+00:00", summary: "Ostatnie wykonanie zakończyło się błędem.", details_url: "/automatyzacje/automation_engine", settings_url: null },
+    { automation_key: "email_import", title: "Import e-maili", attention_category: "configuration", reason_code: "system_mailbox_not_configured", occurred_at: null, summary: "Brakuje konfiguracji systemowej.", details_url: "/automatyzacje/email_import", settings_url: "/ustawienia" },
+  ],
   items: [operation(), reminders, knowledge, emailImport, ksefImport, automationEngine],
 });
 assert.deepEqual(sixAdapters.items.map((item) => item.automationKey), ["internal_notification_scheduler", "task_reminders", "knowledge_processing", "email_import", "ksef_import", "automation_engine"]);
@@ -135,6 +140,13 @@ assert.equal(sixAdapters.items[3].configuredConnectionsCount, 1);
 assert.equal(sixAdapters.items[4].checkedDocumentCount, 7);
 assert.equal(sixAdapters.items[5].enabledRulesCount, 2);
 assert.equal(sixAdapters.items[5].executionsCount, 7);
+assert.deepEqual(sixAdapters.attentionItems.map((item) => item.automationKey), ["automation_engine", "email_import"]);
+assert.equal(sixAdapters.attentionItems[0].attentionCategory, "execution");
+assert.equal(sixAdapters.attentionItems[1].occurredAt, null);
+assert.equal(sixAdapters.attentionItems[1].settingsUrl, "/ustawienia");
+assert.equal(model.automationAttentionCategoryLabel("configuration"), "Konfiguracja");
+assert.equal(model.automationAttentionCategoryLabel("execution"), "Wykonanie");
+assert.equal(model.automationAttentionCategoryLabel("backlog"), "Kolejka");
 assert.equal(model.automationTypeLabel("automation_engine"), "Silnik reguł");
 assert.equal(model.automationTypeLabel("email_import"), "Źródło operacyjne");
 assert.equal(model.automationTypeLabel("ksef_import"), "Źródło operacyjne");
@@ -142,6 +154,7 @@ assert.equal(model.emailImportResultLabel("no_new_documents"), "Brak nowych wiad
 assert.equal(model.ksefImportResultLabel("no_new_documents"), "Brak nowych dokumentów");
 const ksefStates = model.readAutomationOperationsDashboard({
   summary: { active_count: 3, disabled_count: 1, attention_count: 1, recent_failure_count: 1 },
+  attention_items: [],
   items: [
     { ...ksefImport, automation_key: "ksef_disabled", status: "disabled", enabled: false, health: "disabled", health_reason_code: "ksef_import_disabled" },
     { ...ksefImport, automation_key: "ksef_never", health: "never_run", health_reason_code: "no_terminal_ksef_import_run", run_id: null, last_run_at: null, last_run_status: null },
@@ -154,6 +167,7 @@ assert.equal(model.filterAutomationOperations(ksefStates.items, "disabled").leng
 assert.equal(model.filterAutomationOperations(ksefStates.items, "attention").length, 1);
 const knowledgeStates = model.readAutomationOperationsDashboard({
   summary: { active_count: 3, disabled_count: 1, attention_count: 1, recent_failure_count: 1 },
+  attention_items: [],
   items: [
     knowledge,
     { ...knowledge, automation_key: "knowledge_never", health: "never_run", health_reason_code: "no_terminal_job" },
@@ -219,8 +233,10 @@ assert.doesNotMatch(JSON.stringify(ksefDetail), /nip|invoice_number|amount|xml|u
 assert.doesNotMatch(JSON.stringify(emailDetail), /subject|sender|recipient|message_id|attachment_name|credentials|token|body/i);
 assert.doesNotMatch(JSON.stringify(knowledgeDetail), /source_storage_key|source_file_name|content_text|ocr|c:\\users/i);
 assert.doesNotMatch(JSON.stringify(reminderDetail), /payload|secret|token/i);
-assert.throws(() => model.readAutomationOperationsDashboard({ summary: {}, items: [] }), /kontrakt/i);
-assert.throws(() => model.readAutomationOperationsDashboard({ summary: { active_count: 0, disabled_count: 0, attention_count: 0, recent_failure_count: 0 }, items: [operation({ settings_url: "https://evil.test" })] }), /bezpieczny link/i);
+assert.throws(() => model.readAutomationOperationsDashboard({ summary: {}, attention_items: [], items: [] }), /kontrakt/i);
+assert.throws(() => model.readAutomationOperationsDashboard({ summary: { active_count: 0, disabled_count: 0, attention_count: 0, recent_failure_count: 0 }, attention_items: [], items: [operation({ settings_url: "https://evil.test" })] }), /bezpieczny link/i);
+assert.throws(() => model.readAutomationOperationsDashboard({ summary: { active_count: 0, disabled_count: 0, attention_count: 1, recent_failure_count: 0 }, attention_items: [{ automation_key: "x", title: "X", attention_category: "critical", reason_code: "x", occurred_at: null, summary: "X", details_url: "/automatyzacje/x", settings_url: null }], items: [] }), /attention_category/i);
+assert.throws(() => model.readAutomationOperationsDashboard({ summary: { active_count: 0, disabled_count: 0, attention_count: 1, recent_failure_count: 0 }, attention_items: [{ automation_key: "x", title: "X", attention_category: "execution", reason_code: "x", occurred_at: null, summary: "X", details_url: "https://evil.test", settings_url: null }], items: [] }), /bezpieczny link/i);
 
 const apiSource = fs.readFileSync(path.join(__dirname, "..", "src", "lib", "api.ts"), "utf8");
 const pageSource = fs.readFileSync(path.join(__dirname, "..", "src", "modules", "automations", "AutomationOperationsPage.tsx"), "utf8");

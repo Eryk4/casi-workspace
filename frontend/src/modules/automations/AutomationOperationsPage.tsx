@@ -9,6 +9,7 @@ import { api, withOrganizationQuery } from "@/lib/api";
 
 import {
   AUTOMATION_OPERATIONS_FILTERS,
+  automationAttentionCategoryLabel,
   automationConfigurationLabel,
   automationHealthLabel,
   automationRunLabel,
@@ -87,6 +88,38 @@ export function AutomationOperationsPage() {
           <div><span>Wymagają uwagi</span><strong>{dashboard.summary.attentionCount}</strong></div>
           <div><span>Ostatnie błędy</span><strong>{dashboard.summary.recentFailureCount}</strong></div>
         </div>
+      ) : null}
+
+      {dashboard ? (
+        <section className="automation-attention" aria-labelledby="automation-attention-title">
+          <div className="automation-attention__heading">
+            <div>
+              <h3 id="automation-attention-title">Wymaga uwagi</h3>
+              <p>Ostatnie znane sygnały, które warto sprawdzić.</p>
+            </div>
+            <span className="badge badge--attention">{dashboard.attentionItems.length}</span>
+          </div>
+          {dashboard.attentionItems.length === 0 ? (
+            <p className="automation-attention__empty">Brak sygnałów wymagających uwagi.</p>
+          ) : (
+            <div className="automation-attention__list">
+              {dashboard.attentionItems.map((item) => (
+                <article className="automation-attention__item" key={item.automationKey}>
+                  <div className="automation-attention__content">
+                    <span className="automation-attention__category">{automationAttentionCategoryLabel(item.attentionCategory)}</span>
+                    <h4>{item.title}</h4>
+                    <p>{item.summary}</p>
+                    <time dateTime={item.occurredAt ?? undefined}>{item.occurredAt ? dateTime(item.occurredAt) : "Czas niedostępny"}</time>
+                  </div>
+                  <div className="automation-attention__links">
+                    <Link href={item.detailsUrl}>Zobacz szczegóły</Link>
+                    {item.settingsUrl ? <Link href={item.settingsUrl}>Przejdź do ustawień</Link> : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       ) : null}
 
       <div className="automation-filters" role="group" aria-label="Filtry automatyzacji">

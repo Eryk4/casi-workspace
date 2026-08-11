@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
 from app.repositories.email_import_repository import EmailImportRepository
@@ -25,6 +25,7 @@ KSEF_IMPORT_KEY = "ksef_import"
 AUTOMATION_ENGINE_KEY = "automation_engine"
 AUTOMATION_CONFIGURATION_STATUSES = {"enabled", "disabled", "not_configured"}
 AUTOMATION_HEALTH_STATUSES = {"healthy", "attention", "never_run", "disabled"}
+AUTOMATION_ATTENTION_CATEGORIES = {"configuration", "execution", "backlog"}
 REQUIRED_OPERATION_FIELDS = {
     "automation_key",
     "automation_type",
@@ -221,6 +222,11 @@ class InternalNotificationSchedulerOperationsAdapter:
                 else None
             ),
             "last_run_status": latest_status,
+            "last_failure_at": (
+                snapshot.get("terminal_finished_at")
+                if snapshot and terminal_status == "failed"
+                else None
+            ),
             "last_run_duration_ms": _duration_ms(
                 snapshot.get("latest_started_at") if snapshot else None,
                 snapshot.get("latest_finished_at") if snapshot else None,
@@ -321,6 +327,7 @@ class TaskRemindersOperationsAdapter:
             "status": status,
             "enabled": bool(contract["enabled"]),
             "disabled_reason": contract.get("disabled_reason"),
+            "organization_provider_supported": bool(contract.get("organization_provider_supported")),
             "health": health,
             "health_reason_code": reason,
             "schedule_id": None,
@@ -342,6 +349,7 @@ class TaskRemindersOperationsAdapter:
             "sent_count": int(counts["sent"]),
             "cancelled_count": int(counts["cancelled"]),
             "recent_failure_count": int(snapshot["recent_failure_count"]),
+            "last_failure_at": snapshot.get("last_failure_at"),
             "last_error_code": "task_reminder_delivery_failed" if error_value else None,
             "last_error_summary": _safe_error_summary(error_value),
             "last_heartbeat_at": snapshot["last_heartbeat_at"],
@@ -781,6 +789,126 @@ class AutomationEngineOperationsAdapter:
         ]
 
 
+_ATTENTION_RULES: dict[tuple[str, str], tuple[str, str, str | None]] = {
+    (INTERNAL_NOTIFICATION_SCHEDULER_KEY, "last_run_failed"): (
+        "execution",
+        "Ostatnie wykonanie harmonogramu zakończyło się błędem.",
+        "last_failure_at",
+    ),
+    (TASK_REMINDERS_KEY, "telegram_not_configured"): (
+        "configuration",
+        "Brakuje konfiguracji wymaganej do wysyłania przypomnień.",
+        None,
+    ),
+    (TASK_REMINDERS_KEY, "failed_outbox_present"): (
+        "backlog",
+        "Co najmniej jedno przypomnienie wymaga sprawdzenia po nieudanej wysyłce.",
+        "last_failure_at",
+    ),
+    (TASK_REMINDERS_KEY, "last_attempt_failed"): (
+        "execution",
+        "Ostatnia próba wysłania przypomnienia zakończyła się błędem.",
+        "last_attempt_at",
+    ),
+    (KNOWLEDGE_PROCESSING_KEY, "last_job_failed"): (
+        "execution",
+        "Ostatnie zadanie przetwarzania zakończyło się błędem.",
+        "last_failure_at",
+    ),
+    (KNOWLEDGE_PROCESSING_KEY, "last_folder_scan_failed"): (
+        "execution",
+        "Ostatnie skanowanie źródła wiedzy zakończyło się błędem.",
+        "last_scan_at",
+    ),
+    (EMAIL_IMPORT_KEY, "system_mailbox_not_configured"): (
+        "configuration",
+        "Brakuje konfiguracji systemowej skrzynki importu e-maili.",
+        None,
+    ),
+    (EMAIL_IMPORT_KEY, "last_email_import_run_requires_attention"): (
+        "execution",
+        "Ostatni import e-maili zakończył się błędem lub wymaga sprawdzenia.",
+        "last_failure_at",
+    ),
+    (KSEF_IMPORT_KEY, "organization_ksef_not_configured"): (
+        "configuration",
+        "Brakuje konfiguracji wymaganej do użycia importu KSeF.",
+        None,
+    ),
+    (KSEF_IMPORT_KEY, "last_ksef_import_run_requires_attention"): (
+        "execution",
+        "Ostatni import KSeF zakończył się błędem lub wymaga sprawdzenia.",
+        "last_failure_at",
+    ),
+    (AUTOMATION_ENGINE_KEY, "last_execution_failed"): (
+        "execution",
+        "Ostatnie wykonanie reguły automatyzacji zakończyło się błędem.",
+        "last_failure_at",
+    ),
+}
+
+
+def build_attention_items(operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build one sanitized, read-only attention signal per registered operation."""
+    ranked: list[tuple[int, float | None, dict[str, Any]]] = []
+    seen_keys: set[str] = set()
+    for registry_index, operation in enumerate(operations):
+        automation_key = str(operation.get("automation_key") or "")
+        if automation_key in seen_keys:
+            continue
+        seen_keys.add(automation_key)
+        reason_code = str(operation.get("health_reason_code") or "")
+        rule = _ATTENTION_RULES.get((automation_key, reason_code))
+        if rule is None:
+            continue
+        if (
+            automation_key == TASK_REMINDERS_KEY
+            and reason_code == "telegram_not_configured"
+            and not operation.get("organization_provider_supported")
+        ):
+            continue
+        category, summary, timestamp_field = rule
+        if category not in AUTOMATION_ATTENTION_CATEGORIES:
+            raise ValueError("Nieprawidłowa kategoria sygnału wymagającego uwagi.")
+        if category != "configuration" and operation.get("health") != "attention":
+            continue
+        occurred_at, occurred_epoch = _attention_timestamp(
+            operation.get(timestamp_field) if timestamp_field else None
+        )
+        item = {
+            "automation_key": automation_key,
+            "title": str(operation["title"]),
+            "attention_category": category,
+            "reason_code": reason_code,
+            "occurred_at": occurred_at,
+            "summary": summary,
+            "details_url": str(operation["details_url"]),
+            "settings_url": str(operation["settings_url"]) if operation.get("settings_url") else None,
+        }
+        ranked.append((registry_index, occurred_epoch, item))
+    ranked.sort(
+        key=lambda entry: (
+            entry[1] is None,
+            -(entry[1] or 0),
+            entry[0],
+        )
+    )
+    return [item for _, _, item in ranked]
+
+
+def _attention_timestamp(value: Any) -> tuple[str | None, float | None]:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None, None
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None, None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return normalized, parsed.timestamp()
+
+
 class AutomationOperationsService:
     def __init__(
         self,
@@ -812,13 +940,15 @@ class AutomationOperationsService:
         ]
         for item in items:
             AutomationOperationsRegistry.validate_operation(item)
+        attention_items = build_attention_items(items)
         return {
             "summary": {
                 "active_count": sum(1 for item in items if item["status"] == "enabled"),
                 "disabled_count": sum(1 for item in items if item["status"] != "enabled"),
-                "attention_count": sum(1 for item in items if item["health"] == "attention"),
+                "attention_count": len(attention_items),
                 "recent_failure_count": sum(int(item["recent_failure_count"]) for item in items),
             },
+            "attention_items": attention_items,
             "items": items,
         }
 

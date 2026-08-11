@@ -2,6 +2,7 @@ export type AutomationConfigurationStatus = "enabled" | "disabled" | "not_config
 export type AutomationHealth = "healthy" | "attention" | "never_run" | "disabled";
 export type AutomationOperationsFilter = "all" | "active" | "disabled" | "attention";
 export type AutomationRunStatus = "pending" | "running" | "succeeded" | "failed";
+export type AutomationAttentionCategory = "configuration" | "execution" | "backlog";
 export type KnowledgeJobStatus = "pending" | "processing" | "completed" | "failed";
 export type EmailImportResultStatus = "running" | "completed" | "completed_with_issues" | "no_new_documents" | "failed";
 export type KSeFImportResultStatus = EmailImportResultStatus;
@@ -80,7 +81,19 @@ export type AutomationOperationsDashboard = {
     attentionCount: number;
     recentFailureCount: number;
   };
+  attentionItems: AutomationAttentionItem[];
   items: AutomationOperation[];
+};
+
+export type AutomationAttentionItem = {
+  automationKey: string;
+  title: string;
+  attentionCategory: AutomationAttentionCategory;
+  reasonCode: string;
+  occurredAt: string | null;
+  summary: string;
+  detailsUrl: string;
+  settingsUrl: string | null;
 };
 
 export type AutomationRun = {
@@ -464,6 +477,7 @@ export function readAutomationOperationsDashboard(payload: unknown): AutomationO
   const root = record(payload, "automation dashboard");
   const summary = record(root.summary, "summary");
   if (!Array.isArray(root.items)) throw new Error("Nieprawidłowy kontrakt: items.");
+  if (!Array.isArray(root.attention_items)) throw new Error("Nieprawidłowy kontrakt: attention_items.");
   return {
     summary: {
       activeCount: nonNegativeInteger(summary.active_count, "active_count") as number,
@@ -471,7 +485,28 @@ export function readAutomationOperationsDashboard(payload: unknown): AutomationO
       attentionCount: nonNegativeInteger(summary.attention_count, "attention_count") as number,
       recentFailureCount: nonNegativeInteger(summary.recent_failure_count, "recent_failure_count") as number,
     },
+    attentionItems: root.attention_items.map(readAttentionItem),
     items: root.items.map(readOperation),
+  };
+}
+
+function readAttentionItem(value: unknown): AutomationAttentionItem {
+  const item = record(value, "attention item");
+  const attentionCategory = text(item.attention_category, "attention_category");
+  if (!(["configuration", "execution", "backlog"] as string[]).includes(attentionCategory)) {
+    throw new Error("Nieprawidłowy kontrakt: attention_category.");
+  }
+  return {
+    automationKey: text(item.automation_key, "automation_key"),
+    title: text(item.title, "title"),
+    attentionCategory: attentionCategory as AutomationAttentionCategory,
+    reasonCode: text(item.reason_code, "reason_code"),
+    occurredAt: optionalText(item.occurred_at),
+    summary: text(item.summary, "summary"),
+    detailsUrl: safePath(item.details_url, "details_url"),
+    settingsUrl: item.settings_url === null || item.settings_url === undefined
+      ? null
+      : safePath(item.settings_url, "settings_url"),
   };
 }
 
@@ -544,6 +579,12 @@ export function automationHealthLabel(health: AutomationHealth): string {
   if (health === "attention") return "Wymaga uwagi";
   if (health === "never_run") return "Jeszcze nie uruchomiono";
   return "Wyłączona";
+}
+
+export function automationAttentionCategoryLabel(category: AutomationAttentionCategory): string {
+  if (category === "configuration") return "Konfiguracja";
+  if (category === "execution") return "Wykonanie";
+  return "Kolejka";
 }
 
 export function automationRunLabel(status: AutomationRunStatus | null): string {

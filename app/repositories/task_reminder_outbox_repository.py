@@ -622,7 +622,7 @@ class TaskReminderOutboxRepository:
             ).fetchone()
             recent_failures = connection.execute(
                 """
-                SELECT COUNT(*) AS total
+                SELECT COUNT(*) AS total, MAX(a.attempted_at) AS latest_failure_at
                 FROM task_reminder_outbox_attempts a
                 JOIN tasks t ON t.task_id = a.task_id
                 WHERE a.organization_id = ? AND a.outcome IN ('failed', 'dead_letter', 'retry')
@@ -642,6 +642,7 @@ class TaskReminderOutboxRepository:
             "latest_outbox": dict(latest_outbox) if latest_outbox else None,
             "latest_attempt": dict(latest_attempt) if latest_attempt else None,
             "recent_failure_count": int(recent_failures["total"] or 0) if recent_failures else 0,
+            "last_failure_at": recent_failures["latest_failure_at"] if recent_failures else None,
             "last_heartbeat_at": heartbeat["last_heartbeat_at"] if heartbeat else None,
         }
 

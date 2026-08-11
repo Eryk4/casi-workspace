@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import unittest
 from unittest.mock import patch
 
 from app.bootstrap import build_services
+from app.data_migration_manifest import EXCLUDED_TABLES, MIGRATED_TABLES, MIGRATION_MANIFEST
+from app import db as db_module
 from app.db import get_connection, reset_database
 from app.services.automation_operations_service import (
     AutomationOperationsRegistry,
@@ -60,6 +64,23 @@ class AutomationOperationsTests(unittest.TestCase):
 
     def _engine_item(self):
         return next(item for item in self._dashboard()["items"] if item["automation_key"] == "automation_engine")
+
+    def _attention_item(self, automation_key: str):
+        return next(
+            item for item in self._dashboard()["attention_items"]
+            if item["automation_key"] == automation_key
+        )
+
+    def _all_table_snapshot(self) -> dict[str, tuple[int, str]]:
+        tables = [spec.source_table for spec in MIGRATION_MANIFEST]
+        self.assertEqual(len(tables), 78)
+        with get_connection() as connection:
+            snapshot = {}
+            for table in tables:
+                rows = [dict(row) for row in connection.execute(f'SELECT * FROM "{table}" ORDER BY 1').fetchall()]
+                canonical = json.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+                snapshot[table] = (len(rows), hashlib.sha256(canonical.encode("utf-8")).hexdigest())
+            return snapshot
 
     def _insert_automation_rule(self, *, active: bool, organization_id: int | None = None) -> int:
         return self.services["automation_repository"].create({
@@ -302,6 +323,10 @@ class AutomationOperationsTests(unittest.TestCase):
         self.assertEqual(item["health"], "attention")
         self.assertEqual(item["recent_failure_count"], 1)
         self.assertNotIn("secret", item["last_error_summary"].lower())
+        attention = self._attention_item("internal_notification_scheduler")
+        self.assertEqual((attention["attention_category"], attention["reason_code"]), ("execution", "last_run_failed"))
+        self.assertEqual(attention["occurred_at"], "2026-01-15T07:00:01+00:00")
+        self.assertNotIn("secret", str(attention).lower())
         detail = self.operations.detail(
             "internal_notification_scheduler",
             organization_id=self.organization_id,
@@ -446,6 +471,8 @@ class AutomationOperationsTests(unittest.TestCase):
         self.assertEqual((item["health"], item["executions_count"], item["succeeded_count"], item["failed_count"]), ("attention", 2, 1, 1))
         self.assertEqual(item["runtime_status"], "unknown")
         self.assertEqual(item["last_error_code"], "automation_execution_failed")
+        engine_attention = self._attention_item("automation_engine")
+        self.assertEqual((engine_attention["attention_category"], engine_attention["occurred_at"]), ("execution", "2026-05-11T10:00:00+00:00"))
         detail = self.operations.detail(
             "automation_engine", organization_id=self.organization_id, recipient_user_id=self.user_id,
             actor_user=self.user, history_limit=500,
@@ -475,6 +502,8 @@ class AutomationOperationsTests(unittest.TestCase):
         self.assertEqual((self._ksef_item()["status"], self._ksef_item()["health"]), ("disabled", "disabled"))
         self._configure_ksef_import(enabled=True, with_identifier=False)
         self.assertEqual(self._ksef_item()["status"], "not_configured")
+        configuration = self._attention_item("ksef_import")
+        self.assertEqual((configuration["attention_category"], configuration["occurred_at"]), ("configuration", None))
         self._configure_ksef_import()
         self.assertEqual((self._ksef_item()["health"], self._ksef_item()["runtime_status"]), ("never_run", "unknown"))
         self._insert_ksef_run(status="no_new_documents", day=10)
@@ -488,6 +517,9 @@ class AutomationOperationsTests(unittest.TestCase):
             item = self._ksef_item()
         self.assertEqual((item["health"], item["checked_document_count"], item["failed_count"]), ("attention", 7, 1))
         self.assertEqual(item["last_error_code"], "ksef_import_completed_with_issues")
+        ksef_attention = self._attention_item("ksef_import")
+        self.assertEqual((ksef_attention["attention_category"], ksef_attention["occurred_at"]), ("execution", "2026-04-11T10:00:00+00:00"))
+        self.assertNotIn("inv-secret", str(ksef_attention).lower())
         detail = self.operations.detail(
             "ksef_import", organization_id=self.organization_id, recipient_user_id=self.user_id,
             actor_user=self.user, history_limit=500,
@@ -528,6 +560,9 @@ class AutomationOperationsTests(unittest.TestCase):
             attention = self._email_item()
         self.assertEqual((attention["health"], attention["failed_count"]), ("attention", 1))
         self.assertEqual(attention["last_error_code"], "email_import_completed_with_issues")
+        email_attention = self._attention_item("email_import")
+        self.assertEqual((email_attention["attention_category"], email_attention["occurred_at"]), ("execution", "2026-03-11T10:00:00+00:00"))
+        self.assertNotIn("private subject", str(email_attention).lower())
         detail = self.operations.detail(
             "email_import",
             organization_id=self.organization_id,
@@ -547,6 +582,8 @@ class AutomationOperationsTests(unittest.TestCase):
         self.assertEqual((self._email_item()["status"], self._email_item()["health"]), ("disabled", "disabled"))
         self._configure_email_import(runtime_enabled=True, mailbox_configured=False)
         self.assertEqual(self._email_item()["status"], "not_configured")
+        configuration = self._attention_item("email_import")
+        self.assertEqual((configuration["attention_category"], configuration["settings_url"]), ("configuration", "/ustawienia"))
         self._configure_email_import()
         other = self.services["organization_service"].create_organization(
             {"name": "Email Other", "slug": "email-other", "is_active": 1, "email_integration_enabled": 1,
@@ -592,6 +629,9 @@ class AutomationOperationsTests(unittest.TestCase):
         self.assertEqual((item["health"], item["last_job_status"], item["watcher_count"]), ("attention", "failed", 1))
         self.assertEqual(item["runtime_status"], "unknown")
         self.assertNotIn("secret", str(item).lower())
+        knowledge_attention = self._attention_item("knowledge_processing")
+        self.assertEqual((knowledge_attention["attention_category"], knowledge_attention["occurred_at"]), ("execution", "2026-02-13T10:00:00+00:00"))
+        self.assertNotIn("document", str(knowledge_attention).lower())
 
         detail = self.operations.detail(
             "knowledge_processing",
@@ -636,6 +676,8 @@ class AutomationOperationsTests(unittest.TestCase):
     def test_task_reminders_health_queue_history_and_sanitization(self) -> None:
         self.assertEqual((self._reminder_item()["status"], self._reminder_item()["health"]), ("disabled", "disabled"))
         self.reminders.runtime_enabled = True
+        configuration = self._attention_item("task_reminders")
+        self.assertEqual((configuration["attention_category"], configuration["reason_code"]), ("configuration", "telegram_not_configured"))
         self.reminders.telegram_adapter.bot_token = "fake-token"
         self.assertEqual(self._reminder_item()["health"], "never_run")
         self._insert_reminder(status="sent", outcome="sent")
@@ -647,6 +689,9 @@ class AutomationOperationsTests(unittest.TestCase):
         self.assertEqual(item["health"], "attention")
         self.assertEqual(item["failed_count"], 1)
         self.assertNotIn("secret", item["last_error_summary"].lower())
+        reminder_attention = self._attention_item("task_reminders")
+        self.assertEqual((reminder_attention["attention_category"], reminder_attention["occurred_at"]), ("backlog", "2026-01-15T07:01"))
+        self.assertNotIn("poufne", str(reminder_attention).lower())
         detail = self.operations.detail("task_reminders", organization_id=self.organization_id,
             recipient_user_id=self.user_id, actor_user=self.user, history_limit=100)
         self.assertEqual(detail["history_limit"], 50)
@@ -682,6 +727,85 @@ class AutomationOperationsTests(unittest.TestCase):
             recipient_user_id=int(other["user_id"]), actor_user=other)
         other_item = next(item for item in other_dashboard["items"] if item["automation_key"] == "task_reminders")
         self.assertEqual(other_item["pending_count"], 1)
+
+    def test_attention_dashboard_live_contract_is_read_only_and_keeps_query_count(self) -> None:
+        settings = self._save(enabled=True)
+        self._run(int(settings["internal_notification_schedule_id"]), day=8, status="succeeded")
+        self._configure_email_import(runtime_enabled=True, mailbox_configured=False)
+        active_rule = self._insert_automation_rule(active=True)
+        self._insert_automation_execution(rule_id=active_rule, status="failed", day=9)
+
+        other = self.services["organization_service"].create_organization(
+            {"name": "Attention Other", "slug": "attention-other", "is_active": 1},
+            actor_user=self.admin,
+            actor_login="admin",
+        )
+        other_rule = self._insert_automation_rule(active=True, organization_id=int(other["organization_id"]))
+        self._insert_automation_execution(
+            rule_id=other_rule,
+            status="failed",
+            day=20,
+            organization_id=int(other["organization_id"]),
+        )
+
+        before = self._all_table_snapshot()
+        traced_sql: list[str] = []
+        open_connection = db_module._open_sqlite_connection
+        open_read_only = db_module._open_sqlite_read_only_connection
+
+        def traced_connection():
+            connection = open_connection()
+            connection.raw_connection.set_trace_callback(traced_sql.append)
+            return connection
+
+        def traced_read_only_connection():
+            connection = open_read_only()
+            connection.raw_connection.set_trace_callback(traced_sql.append)
+            return connection
+
+        with patch.object(db_module, "_open_sqlite_connection", side_effect=traced_connection), patch.object(
+            db_module, "_open_sqlite_read_only_connection", side_effect=traced_read_only_connection
+        ):
+            dashboard = self._dashboard()
+
+        after = self._all_table_snapshot()
+        self.assertEqual(before, after)
+        self.assertEqual(len(dashboard["items"]), 6)
+        self.assertEqual(
+            [item["automation_key"] for item in dashboard["attention_items"]],
+            ["automation_engine", "email_import"],
+        )
+        self.assertEqual(
+            [item["attention_category"] for item in dashboard["attention_items"]],
+            ["execution", "configuration"],
+        )
+        self.assertTrue(all(item["runtime_status"] == "unknown" for item in dashboard["items"]))
+        self.assertEqual(dashboard["items"][0]["health"], "healthy")
+        self.assertEqual(dashboard["items"][1]["health"], "disabled")
+        self.assertEqual(dashboard["items"][2]["health"], "never_run")
+        self.assertEqual(dashboard["items"][4]["health"], "disabled")
+        serialized = json.dumps(dashboard, ensure_ascii=False).lower()
+        for forbidden in (
+            "private-rule", "poufny klient", "customer@", "private.pdf", "private subject",
+            "synthetic-taxpayer", "document.txt", "c:\\users", "conditions_json", "actions_json",
+            "input_json", "result_json", "token=", "secret", "traceback",
+        ):
+            self.assertNotIn(forbidden, serialized)
+        query_count = sum(
+            1 for statement in traced_sql
+            if statement.lstrip().upper().startswith(("SELECT", "WITH"))
+        )
+        self.assertEqual(query_count, 30)
+        with get_connection() as connection:
+            self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+            actual_tables = {
+                str(row[0]) for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+                ).fetchall()
+            }
+        manifest_tables = {spec.source_table for spec in MIGRATION_MANIFEST}
+        self.assertEqual(actual_tables, manifest_tables)
+        self.assertEqual((len(MIGRATION_MANIFEST), len(MIGRATED_TABLES), len(EXCLUDED_TABLES), len(actual_tables - manifest_tables)), (78, 73, 5, 0))
 
 
 if __name__ == "__main__":

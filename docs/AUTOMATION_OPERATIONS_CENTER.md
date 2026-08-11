@@ -32,6 +32,22 @@ Każdy przyszły adapter musi mieć unikalny `automation_key` i dostarczać:
 
 Lista na dashboardzie korzysta z jednego ograniczonego snapshotu na adapter. Historia jest pobierana dopiero na stronie szczegółów, maksymalnie 50 wpisów. Frontend nie stosuje pollingu; odświeżenie jest wyłącznie jawnym żądaniem GET.
 
+## Sekcja „Wymaga uwagi”
+
+Dashboard agreguje maksymalnie jeden sanitarny `attention_item` na adapter z wyników już zwróconych przez registry. Transformacja odbywa się wyłącznie w pamięci: nie odpytuje subsystemów ponownie, nie utrwala stanu, nie tworzy powiadomień i nie wykonuje żadnej akcji automatyzacji.
+
+Attention item oznacza ostatni znany sygnał wymagający uwagi, a nie potwierdzony trwający incydent. Centrum nie posiada cyklu życia incydentu, severity, acknowledgement, assignment, SLA ani stanu resolved/unresolved.
+
+Kontrakt zawiera `automation_key`, tytuł z kanonicznego read-modelu, `attention_category`, kontrolowany `reason_code`, wiarygodny `occurred_at` albo `null`, sanitarny tekst aplikacji, `details_url` oraz opcjonalny istniejący `settings_url`. Kategorie techniczne to:
+
+- `configuration` — jawnie włączony lub przeznaczony do użycia subsystem nie ma wymaganej konfiguracji;
+- `execution` — ostatni wiarygodny sygnał wykonania zakończył się błędem lub wymaga sprawdzenia;
+- `backlog` — trwały stan kolejki jednoznacznie wymaga sprawdzenia.
+
+Runtime `unknown`, zwykłe wyłączenie, brak pracy, pusty wynik importu i samo `never_run` nie tworzą attention itemu. Brak konfiguracji jest prezentowany tylko wtedy, gdy istniejący kontrakt potwierdza intencję użycia, np. włączony KSeF bez wymaganej konfiguracji, gotowa organizacja e-mail bez skrzynki systemowej albo włączony runtime przypomnień bez konfiguracji Telegrama.
+
+`reason_code` pochodzi z zamkniętej allowlisty mapowań Centrum. `summary` jest stałym polskim tekstem aplikacji i nie zawiera surowych błędów, payloadów, danych zadań, dokumentów, e-maili, faktur, KSeF, ścieżek ani sekretów. `occurred_at` pochodzi z timestampu konkretnego błędu; jeżeli wiarygodnego czasu nie ma, API zwraca `null`, a UI pokazuje „Czas niedostępny”. Elementy z czasem są sortowane malejąco, remisy rozstrzyga kolejność registry, a elementy bez czasu trafiają na koniec.
+
 ## Znaczenie stanów schedulera
 
 - `not_configured` / `disabled`: harmonogram nie istnieje;
