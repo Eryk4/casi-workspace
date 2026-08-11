@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Callable, Protocol
 
 from app.repositories.email_import_repository import EmailImportRepository
+from app.repositories.automation_repository import AutomationRepository
 from app.repositories.internal_notification_schedule_repository import InternalNotificationScheduleRepository
 from app.repositories.knowledge_repository import KnowledgeRepository
 from app.repositories.ksef_import_repository import KSeFImportRepository
@@ -21,6 +22,7 @@ TASK_REMINDERS_KEY = "task_reminders"
 KNOWLEDGE_PROCESSING_KEY = "knowledge_processing"
 EMAIL_IMPORT_KEY = "email_import"
 KSEF_IMPORT_KEY = "ksef_import"
+AUTOMATION_ENGINE_KEY = "automation_engine"
 AUTOMATION_CONFIGURATION_STATUSES = {"enabled", "disabled", "not_configured"}
 AUTOMATION_HEALTH_STATUSES = {"healthy", "attention", "never_run", "disabled"}
 REQUIRED_OPERATION_FIELDS = {
@@ -155,6 +157,20 @@ def ksef_import_health(
     if last_terminal_status in {"completed", "no_new_documents"}:
         return "enabled", "healthy", "last_ksef_import_run_succeeded"
     raise ValueError("Nieznany terminalny status importu KSeF.")
+
+
+def automation_engine_health(
+    *, enabled_rules_count: int, last_terminal_status: str | None
+) -> tuple[str, str, str]:
+    if enabled_rules_count <= 0:
+        return "disabled", "disabled", "no_enabled_rules"
+    if last_terminal_status is None:
+        return "enabled", "never_run", "no_terminal_execution"
+    if last_terminal_status == "failed":
+        return "enabled", "attention", "last_execution_failed"
+    if last_terminal_status == "success":
+        return "enabled", "healthy", "last_execution_succeeded"
+    raise ValueError("Nieznany terminalny status wykonania reguły automatyzacji.")
 
 
 class InternalNotificationSchedulerOperationsAdapter:
@@ -668,6 +684,103 @@ class KSeFImportOperationsAdapter:
         ]
 
 
+class AutomationEngineOperationsAdapter:
+    automation_key = AUTOMATION_ENGINE_KEY
+    scope = "organization"
+    capabilities = frozenset({"summary", "history", "rules"})
+
+    def __init__(self, repository: AutomationRepository) -> None:
+        self.repository = repository
+
+    def get_operation(self, *, organization_id: int, recipient_user_id: int) -> dict[str, Any]:
+        del recipient_user_id
+        snapshot = self.repository.get_operations_snapshot(organization_id)
+        counts = snapshot["rule_counts"]
+        aggregates = snapshot["aggregates"]
+        latest = snapshot["latest_execution"]
+        enabled_rules = int(counts.get("enabled_rules_count") or 0)
+        latest_status = str(latest.get("execution_status") or "") or None if latest else None
+        status, health, reason = automation_engine_health(
+            enabled_rules_count=enabled_rules,
+            last_terminal_status=latest_status,
+        )
+        last_execution_at = latest.get("executed_at") if latest else None
+        operation = {
+            "automation_key": self.automation_key,
+            "automation_type": "automation_engine",
+            "title": "Reguły automatyzacji",
+            "description": "Monitoruje organizacyjne reguły i ich zakończone wykonania bez ujawniania warunków ani payloadów akcji.",
+            "status": status,
+            "enabled": enabled_rules > 0,
+            "health": health,
+            "health_reason_code": reason,
+            "schedule_id": None,
+            "run_id": int(latest["automation_execution_id"]) if latest else None,
+            "next_run_at": None,
+            "last_run_at": last_execution_at,
+            "last_activity_at": last_execution_at or counts.get("last_rule_updated_at"),
+            "last_run_status": _automation_execution_status(latest_status),
+            "last_run_duration_ms": None,
+            "last_attempt_count": None,
+            "last_candidates_count": None,
+            "last_created_count": None,
+            "last_existing_count": None,
+            "enabled_rules_count": enabled_rules,
+            "disabled_rules_count": int(counts.get("disabled_rules_count") or 0),
+            "total_rules_count": int(counts.get("total_rules_count") or 0),
+            "executions_count": int(aggregates.get("executions_count") or 0),
+            "succeeded_count": int(aggregates.get("succeeded_count") or 0),
+            "failed_count": int(aggregates.get("failed_count") or 0),
+            "recent_failure_count": int(snapshot["recent_failure_count"]),
+            "last_success_at": aggregates.get("last_success_at"),
+            "last_failure_at": aggregates.get("last_failure_at"),
+            "last_error_code": "automation_execution_failed" if latest_status == "failed" else None,
+            "last_error_summary": (
+                "Ostatnie wykonanie reguły automatyzacji zakończyło się błędem."
+                if latest_status == "failed" else None
+            ),
+            "settings_url": None,
+            "details_url": f"/automatyzacje/{self.automation_key}",
+            "runtime_status": "unknown",
+            "schedule": None,
+            "updated_at": last_execution_at or counts.get("last_rule_updated_at"),
+        }
+        AutomationOperationsRegistry.validate_operation(operation)
+        return operation
+
+    def get_history(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        del recipient_user_id
+        return [
+            {
+                "history_type": "automation_execution",
+                "execution_id": int(row["automation_execution_id"]),
+                "rule_id": int(row["automation_rule_id"]),
+                "status": _automation_execution_status(str(row["execution_status"])),
+                "executed_at": row["executed_at"],
+                "error_code": "automation_execution_failed" if row["execution_status"] == "failed" else None,
+                "error_summary": (
+                    "Wykonanie reguły automatyzacji zakończyło się błędem."
+                    if row["execution_status"] == "failed" else None
+                ),
+            }
+            for row in self.repository.list_executions_read_only(organization_id=organization_id, limit=limit)
+        ]
+
+    def get_rules(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        del recipient_user_id
+        return [
+            {
+                "rule_id": int(row["automation_rule_id"]),
+                "title": f"Reguła #{int(row['automation_rule_id'])}",
+                "enabled": bool(int(row.get("is_active") or 0)),
+                "execution_count": int(row.get("execution_count") or 0),
+                "created_at": row.get("created_at"),
+                "updated_at": row.get("updated_at"),
+            }
+            for row in self.repository.list_rules_read_only(organization_id=organization_id, limit=limit)
+        ]
+
+
 class AutomationOperationsService:
     def __init__(
         self,
@@ -755,6 +868,13 @@ class AutomationOperationsService:
                 organization_id=organization_id,
                 recipient_user_id=recipient_user_id,
             )
+        get_rules = getattr(adapter, "get_rules", None)
+        if callable(get_rules):
+            result["rules"] = get_rules(
+                organization_id=organization_id,
+                recipient_user_id=recipient_user_id,
+                limit=normalized_limit,
+            )
         return result
 
     def _validate_scope(
@@ -777,6 +897,10 @@ def _optional_non_negative_int(value: Any) -> int | None:
         return None
     normalized = int(value)
     return normalized if normalized >= 0 else None
+
+
+def _automation_execution_status(status: str | None) -> str | None:
+    return {"success": "succeeded", "failed": "failed"}.get(status or "")
 
 
 def _safe_error_code(value: Any) -> str | None:

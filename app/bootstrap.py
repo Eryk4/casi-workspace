@@ -40,6 +40,7 @@ from app.services.approval_service import ApprovalService
 from app.services.attachment_service import AttachmentService
 from app.services.automation_service import AutomationService
 from app.services.automation_operations_service import (
+    AutomationEngineOperationsAdapter,
     AutomationOperationsRegistry,
     AutomationOperationsService,
     EmailImportOperationsAdapter,
@@ -269,6 +270,7 @@ def build_services(*, initialize_default_organization: bool = True) -> dict[str,
                 invoice_service.email_scheduler_status,
             ),
             KSeFImportOperationsAdapter(ksef_import_repository),
+            AutomationEngineOperationsAdapter(automation_repository),
         )
     )
     automation_operations_service = AutomationOperationsService(

@@ -109,7 +109,13 @@ export function AutomationOperationsPage() {
               <p>{item.description}</p>
               <dl>
                 <div><dt>Konfiguracja</dt><dd>{automationConfigurationLabel(item.status)}</dd></div>
-                {item.automationType === "ksef_import" ? <>
+                {item.automationType === "automation_engine" ? <>
+                  <div><dt>Runtime</dt><dd>Nieznany</dd></div>
+                  <div><dt>Aktywne / wyłączone reguły</dt><dd>{item.enabledRulesCount} / {item.disabledRulesCount}</dd></div>
+                  <div><dt>Ostatnie wykonanie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
+                  <div><dt>Ostatni wynik</dt><dd>{automationRunLabel(item.lastRunStatus)}</dd></div>
+                  <div><dt>Udane / błędne wykonania</dt><dd>{item.succeededCount} / {item.failedCount}</dd></div>
+                </> : item.automationType === "ksef_import" ? <>
                   <div><dt>Runtime</dt><dd>Nieznany</dd></div>
                   <div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
                   <div><dt>Ostatni wynik</dt><dd>{automationRunLabel(item.lastRunStatus)}</dd></div>

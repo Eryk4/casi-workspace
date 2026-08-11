@@ -158,6 +158,116 @@ class AutomationRepository:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def get_operations_snapshot(self, organization_id: int) -> dict[str, Any]:
+        """Return a payload-free, organization-scoped operational projection."""
+        with get_connection() as connection:
+            rule_counts = dict(connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_rules_count,
+                    SUM(CASE WHEN COALESCE(is_active, 1) = 1 THEN 1 ELSE 0 END) AS enabled_rules_count,
+                    SUM(CASE WHEN COALESCE(is_active, 1) = 0 THEN 1 ELSE 0 END) AS disabled_rules_count,
+                    MAX(updated_at) AS last_rule_updated_at
+                FROM automation_rules
+                WHERE organization_id = ?
+                """,
+                (organization_id,),
+            ).fetchone())
+            latest = connection.execute(
+                """
+                SELECT
+                    e.automation_execution_id,
+                    e.automation_rule_id,
+                    e.execution_status,
+                    e.executed_at
+                FROM automation_executions e
+                JOIN automation_rules r ON r.automation_rule_id = e.automation_rule_id
+                WHERE e.organization_id = ?
+                  AND r.organization_id = ?
+                  AND COALESCE(r.is_active, 1) = 1
+                  AND e.execution_status IN ('success', 'failed')
+                ORDER BY e.executed_at DESC, e.automation_execution_id DESC
+                LIMIT 1
+                """,
+                (organization_id, organization_id),
+            ).fetchone()
+            aggregates = dict(connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS executions_count,
+                    SUM(CASE WHEN e.execution_status = 'success' THEN 1 ELSE 0 END) AS succeeded_count,
+                    SUM(CASE WHEN e.execution_status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+                    MAX(CASE WHEN e.execution_status = 'success' THEN e.executed_at END) AS last_success_at,
+                    MAX(CASE WHEN e.execution_status = 'failed' THEN e.executed_at END) AS last_failure_at
+                FROM automation_executions e
+                JOIN automation_rules r ON r.automation_rule_id = e.automation_rule_id
+                WHERE e.organization_id = ?
+                  AND r.organization_id = ?
+                  AND COALESCE(r.is_active, 1) = 1
+                  AND e.execution_status IN ('success', 'failed')
+                """,
+                (organization_id, organization_id),
+            ).fetchone())
+            recent_failure_count = int(connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM (
+                    SELECT e.execution_status
+                    FROM automation_executions e
+                    JOIN automation_rules r ON r.automation_rule_id = e.automation_rule_id
+                    WHERE e.organization_id = ?
+                      AND r.organization_id = ?
+                      AND COALESCE(r.is_active, 1) = 1
+                      AND e.execution_status IN ('success', 'failed')
+                    ORDER BY e.executed_at DESC, e.automation_execution_id DESC
+                    LIMIT 50
+                ) recent
+                WHERE recent.execution_status = 'failed'
+                """,
+                (organization_id, organization_id),
+            ).fetchone()[0])
+        return {
+            "rule_counts": rule_counts,
+            "latest_execution": dict(latest) if latest else None,
+            "aggregates": aggregates,
+            "recent_failure_count": recent_failure_count,
+        }
+
+    def list_rules_read_only(self, *, organization_id: int, limit: int) -> list[dict[str, Any]]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT automation_rule_id, is_active, execution_count, created_at, updated_at
+                FROM automation_rules
+                WHERE organization_id = ?
+                ORDER BY updated_at DESC, automation_rule_id DESC
+                LIMIT ?
+                """,
+                (organization_id, max(1, min(int(limit), 50))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_executions_read_only(self, *, organization_id: int, limit: int) -> list[dict[str, Any]]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    e.automation_execution_id,
+                    e.automation_rule_id,
+                    e.execution_status,
+                    e.executed_at
+                FROM automation_executions e
+                JOIN automation_rules r ON r.automation_rule_id = e.automation_rule_id
+                WHERE e.organization_id = ?
+                  AND r.organization_id = ?
+                  AND e.execution_status IN ('success', 'failed')
+                ORDER BY e.executed_at DESC, e.automation_execution_id DESC
+                LIMIT ?
+                """,
+                (organization_id, organization_id, max(1, min(int(limit), 50))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def create_execution(self, payload: dict[str, Any]) -> int:
         with get_connection() as connection:
             return execute_insert_returning_id(

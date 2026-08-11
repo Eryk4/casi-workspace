@@ -52,12 +52,13 @@ class AutomationOperationsHttpTests(HttpServerTestCase):
         response, payload = self._request("GET", f"/api/automations/operations?organization_id={self.organization_id}", headers=self.headers)
         self.assertEqual(response.status, 200, payload.decode())
         dashboard = json.loads(payload)
-        self.assertEqual(len(dashboard["items"]), 5)
+        self.assertEqual(len(dashboard["items"]), 6)
         self.assertEqual(dashboard["items"][0]["automation_key"], "internal_notification_scheduler")
         self.assertEqual(dashboard["items"][1]["automation_key"], "task_reminders")
         self.assertEqual(dashboard["items"][2]["automation_key"], "knowledge_processing")
         self.assertEqual(dashboard["items"][3]["automation_key"], "email_import")
         self.assertEqual(dashboard["items"][4]["automation_key"], "ksef_import")
+        self.assertEqual(dashboard["items"][5]["automation_key"], "automation_engine")
         response, payload = self._request("GET", f"/api/automations/operations/internal_notification_scheduler?organization_id={self.organization_id}&limit=20", headers=self.headers)
         self.assertEqual(response.status, 200, payload.decode())
         self.assertEqual(json.loads(payload)["history"], [])
@@ -79,6 +80,15 @@ class AutomationOperationsHttpTests(HttpServerTestCase):
         ksef_import = json.loads(payload)
         self.assertEqual(ksef_import["history"], [])
         self.assertEqual(ksef_import["item"]["runtime_status"], "unknown")
+        response, payload = self._request("GET", f"/api/automations/operations/automation_engine?organization_id={self.organization_id}&limit=20", headers=self.headers)
+        self.assertEqual(response.status, 200, payload.decode())
+        automation_engine = json.loads(payload)
+        self.assertTrue(all(entry["history_type"] == "automation_execution" for entry in automation_engine["history"]))
+        self.assertTrue(all(rule["title"].startswith("Reguła #") for rule in automation_engine["rules"]))
+        serialized_engine = str(automation_engine).lower()
+        for forbidden in ("conditions_json", "actions_json", "input_json", "result_json", "traceback", "postgres://", "token"):
+            self.assertNotIn(forbidden, serialized_engine)
+        self.assertEqual(automation_engine["item"]["runtime_status"], "unknown")
         self.assertEqual(self._counts(), before)
 
     def test_unknown_key_recipient_override_and_cross_org_are_rejected(self) -> None:
@@ -93,6 +103,8 @@ class AutomationOperationsHttpTests(HttpServerTestCase):
         response, payload = self._request("GET", f"/api/automations/operations/email_import?organization_id={int(self.other['organization_id'])}", headers=self.headers)
         self.assertEqual(response.status, 404, payload.decode())
         response, payload = self._request("GET", f"/api/automations/operations/ksef_import?organization_id={int(self.other['organization_id'])}", headers=self.headers)
+        self.assertEqual(response.status, 404, payload.decode())
+        response, payload = self._request("GET", f"/api/automations/operations/automation_engine?organization_id={int(self.other['organization_id'])}", headers=self.headers)
         self.assertEqual(response.status, 404, payload.decode())
 
 

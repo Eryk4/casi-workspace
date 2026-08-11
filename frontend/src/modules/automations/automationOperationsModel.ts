@@ -66,6 +66,10 @@ export type AutomationOperation = {
   runsCount: number;
   configuredConnectionsCount: number;
   enabledConnectionsCount: number;
+  enabledRulesCount: number;
+  disabledRulesCount: number;
+  totalRulesCount: number;
+  executionsCount: number;
   updatedAt: string | null;
 };
 
@@ -181,11 +185,31 @@ export type KSeFImportRun = {
   errorSummary: string | null;
 };
 
+export type AutomationExecution = {
+  historyType: "automation_execution";
+  executionId: number;
+  ruleId: number;
+  status: AutomationRunStatus;
+  executedAt: string;
+  errorCode: string | null;
+  errorSummary: string | null;
+};
+
+export type AutomationRule = {
+  ruleId: number;
+  title: string;
+  enabled: boolean;
+  executionCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
 export type AutomationOperationDetail = {
   item: AutomationOperation;
-  history: Array<AutomationRun | ReminderAttempt | KnowledgeJob | EmailImportRun | KSeFImportRun>;
+  history: Array<AutomationRun | ReminderAttempt | KnowledgeJob | EmailImportRun | KSeFImportRun | AutomationExecution>;
   outbox: ReminderOutboxItem[];
   watchers: KnowledgeWatcher[];
+  rules: AutomationRule[];
   historyLimit: number;
 };
 
@@ -302,6 +326,10 @@ function readOperation(value: unknown): AutomationOperation {
     runsCount: nonNegativeInteger(item.runs_count ?? 0, "runs_count") as number,
     configuredConnectionsCount: nonNegativeInteger(item.configured_connections_count ?? 0, "configured_connections_count") as number,
     enabledConnectionsCount: nonNegativeInteger(item.enabled_connections_count ?? 0, "enabled_connections_count") as number,
+    enabledRulesCount: nonNegativeInteger(item.enabled_rules_count ?? 0, "enabled_rules_count") as number,
+    disabledRulesCount: nonNegativeInteger(item.disabled_rules_count ?? 0, "disabled_rules_count") as number,
+    totalRulesCount: nonNegativeInteger(item.total_rules_count ?? 0, "total_rules_count") as number,
+    executionsCount: nonNegativeInteger(item.executions_count ?? 0, "executions_count") as number,
     updatedAt: optionalText(item.updated_at),
   };
 }
@@ -417,6 +445,21 @@ function readKSeFImportRun(value: unknown): KSeFImportRun {
   };
 }
 
+function readAutomationExecution(value: unknown): AutomationExecution {
+  const execution = record(value, "automation execution");
+  const status = text(execution.status, "automation execution status") as AutomationRunStatus;
+  if (status !== "succeeded" && status !== "failed") throw new Error("Nieznany status wykonania reguły automatyzacji.");
+  return {
+    historyType: "automation_execution",
+    executionId: nonNegativeInteger(execution.execution_id, "execution_id") as number,
+    ruleId: nonNegativeInteger(execution.rule_id, "rule_id") as number,
+    status,
+    executedAt: text(execution.executed_at, "executed_at"),
+    errorCode: optionalText(execution.error_code),
+    errorSummary: optionalText(execution.error_summary),
+  };
+}
+
 export function readAutomationOperationsDashboard(payload: unknown): AutomationOperationsDashboard {
   const root = record(payload, "automation dashboard");
   const summary = record(root.summary, "summary");
@@ -443,6 +486,7 @@ export function readAutomationOperationDetail(payload: unknown): AutomationOpera
       if (historyType === "knowledge_job") return readKnowledgeJob(entry);
       if (historyType === "email_import_run") return readEmailImportRun(entry);
       if (historyType === "ksef_import_run") return readKSeFImportRun(entry);
+      if (historyType === "automation_execution") return readAutomationExecution(entry);
       return readRun(entry);
     }),
     outbox: Array.isArray(root.outbox) ? root.outbox.map((entry) => {
@@ -467,6 +511,18 @@ export function readAutomationOperationDetail(payload: unknown): AutomationOpera
         lastScanCompletedAt: optionalText(watcher.last_scan_completed_at),
         errorCode: optionalText(watcher.error_code),
         errorSummary: optionalText(watcher.error_summary),
+      };
+    }) : [],
+    rules: Array.isArray(root.rules) ? root.rules.map((entry) => {
+      const rule = record(entry, "automation rule");
+      if (typeof rule.enabled !== "boolean") throw new Error("Nieprawidłowy kontrakt: rule.enabled.");
+      return {
+        ruleId: nonNegativeInteger(rule.rule_id, "rule_id") as number,
+        title: text(rule.title, "rule.title"),
+        enabled: rule.enabled,
+        executionCount: nonNegativeInteger(rule.execution_count, "execution_count") as number,
+        createdAt: optionalText(rule.created_at),
+        updatedAt: optionalText(rule.updated_at),
       };
     }) : [],
     historyLimit: nonNegativeInteger(root.history_limit, "history_limit") as number,
@@ -505,6 +561,7 @@ export function automationConfigurationLabel(status: AutomationConfigurationStat
 }
 
 export function automationTypeLabel(automationType: string): string {
+  if (automationType === "automation_engine") return "Silnik reguł";
   if (automationType === "email_import" || automationType === "ksef_import") return "Źródło operacyjne";
   if (automationType === "task_reminders") return "Przypomnienia";
   if (automationType === "knowledge_processing") return "Przetwarzanie wiedzy";

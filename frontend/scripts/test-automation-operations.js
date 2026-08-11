@@ -113,15 +113,29 @@ const ksefImport = operation({
   total_failed_count: 1, runs_count: 4, configured_connections_count: 1, enabled_connections_count: 1,
   last_error_code: "ksef_import_completed_with_issues", last_error_summary: "Część dokumentów z importu KSeF wymaga uwagi.",
 });
-const fiveAdapters = model.readAutomationOperationsDashboard({
-  summary: { active_count: 5, disabled_count: 0, attention_count: 4, recent_failure_count: 4 },
-  items: [operation(), reminders, knowledge, emailImport, ksefImport],
+const automationEngine = operation({
+  automation_key: "automation_engine", automation_type: "automation_engine", title: "Reguły automatyzacji",
+  description: "Bezpieczny monitoring reguł", health: "attention", health_reason_code: "last_execution_failed",
+  schedule_id: null, run_id: 41, next_run_at: null, last_run_at: "2026-05-11T10:00:00+00:00", last_run_status: "failed",
+  last_run_duration_ms: null, last_attempt_count: null, last_candidates_count: null, last_created_count: null,
+  last_existing_count: null, settings_url: null, details_url: "/automatyzacje/automation_engine", schedule: null,
+  last_activity_at: "2026-05-11T10:00:00+00:00", last_success_at: "2026-05-10T10:00:00+00:00",
+  last_failure_at: "2026-05-11T10:00:00+00:00", enabled_rules_count: 2, disabled_rules_count: 1,
+  total_rules_count: 3, executions_count: 7, succeeded_count: 6, failed_count: 1,
+  last_error_code: "automation_execution_failed", last_error_summary: "Ostatnie wykonanie reguły automatyzacji zakończyło się błędem.",
 });
-assert.deepEqual(fiveAdapters.items.map((item) => item.automationKey), ["internal_notification_scheduler", "task_reminders", "knowledge_processing", "email_import", "ksef_import"]);
-assert.equal(fiveAdapters.items[2].watcherCount, 1);
-assert.equal(fiveAdapters.items[2].succeededCount, 4);
-assert.equal(fiveAdapters.items[3].configuredConnectionsCount, 1);
-assert.equal(fiveAdapters.items[4].checkedDocumentCount, 7);
+const sixAdapters = model.readAutomationOperationsDashboard({
+  summary: { active_count: 6, disabled_count: 0, attention_count: 5, recent_failure_count: 5 },
+  items: [operation(), reminders, knowledge, emailImport, ksefImport, automationEngine],
+});
+assert.deepEqual(sixAdapters.items.map((item) => item.automationKey), ["internal_notification_scheduler", "task_reminders", "knowledge_processing", "email_import", "ksef_import", "automation_engine"]);
+assert.equal(sixAdapters.items[2].watcherCount, 1);
+assert.equal(sixAdapters.items[2].succeededCount, 4);
+assert.equal(sixAdapters.items[3].configuredConnectionsCount, 1);
+assert.equal(sixAdapters.items[4].checkedDocumentCount, 7);
+assert.equal(sixAdapters.items[5].enabledRulesCount, 2);
+assert.equal(sixAdapters.items[5].executionsCount, 7);
+assert.equal(model.automationTypeLabel("automation_engine"), "Silnik reguł");
 assert.equal(model.automationTypeLabel("email_import"), "Źródło operacyjne");
 assert.equal(model.automationTypeLabel("ksef_import"), "Źródło operacyjne");
 assert.equal(model.emailImportResultLabel("no_new_documents"), "Brak nowych wiadomości");
@@ -193,6 +207,14 @@ const ksefDetail = model.readAutomationOperationDetail({ item: ksefImport, histo
 }] });
 assert.equal(ksefDetail.history[0].historyType, "ksef_import_run");
 assert.equal(ksefDetail.history[0].checkedDocumentCount, 7);
+const engineDetail = model.readAutomationOperationDetail({ item: automationEngine, history_limit: 20, history: [{
+  history_type: "automation_execution", execution_id: 41, rule_id: 12, status: "failed",
+  executed_at: "2026-05-11T10:00:00+00:00", error_code: "automation_execution_failed",
+  error_summary: "Wykonanie reguły automatyzacji zakończyło się błędem.",
+}], rules: [{ rule_id: 12, title: "Reguła #12", enabled: true, execution_count: 7, created_at: "2026-05-01T10:00:00+00:00", updated_at: "2026-05-11T10:00:00+00:00" }] });
+assert.equal(engineDetail.history[0].historyType, "automation_execution");
+assert.equal(engineDetail.rules[0].title, "Reguła #12");
+assert.doesNotMatch(JSON.stringify(engineDetail), /trigger|actions_json|input_json|result_json|traceback|customer@|token/i);
 assert.doesNotMatch(JSON.stringify(ksefDetail), /nip|invoice_number|amount|xml|upo|ksef_number|token|certificate/i);
 assert.doesNotMatch(JSON.stringify(emailDetail), /subject|sender|recipient|message_id|attachment_name|credentials|token|body/i);
 assert.doesNotMatch(JSON.stringify(knowledgeDetail), /source_storage_key|source_file_name|content_text|ocr|c:\\users/i);
@@ -208,6 +230,7 @@ assert.match(apiSource, /automationOperations:[\s\S]*apiRequest[\s\S]*\/automati
 assert.doesNotMatch(pageSource + detailSource, /setInterval|Uruchom teraz|Importuj teraz|Pobierz faktury|Ponów|Skanuj teraz|Reprocess|Run now|Scan now|method:\s*["']POST["']/);
 assert.doesNotMatch(pageSource + detailSource, />\s*email_import\s*</);
 assert.doesNotMatch(pageSource + detailSource, />\s*ksef_import\s*</);
+assert.doesNotMatch(pageSource + detailSource, />\s*automation_engine\s*</);
 assert.match(pageSource, /setDashboard\(null\)/);
 assert.match(detailSource, /Nieznany — centrum nie monitoruje procesu workera/);
 assert.match(navigationSource, /id:\s*["']automations["'][\s\S]*label:\s*["']Automatyzacje["'][\s\S]*path:\s*["']\/automatyzacje["']/);

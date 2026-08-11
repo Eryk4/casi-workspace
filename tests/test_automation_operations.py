@@ -7,6 +7,7 @@ from app.bootstrap import build_services
 from app.db import get_connection, reset_database
 from app.services.automation_operations_service import (
     AutomationOperationsRegistry,
+    automation_engine_health,
     email_import_health,
     ksef_import_health,
     knowledge_processing_health,
@@ -56,6 +57,37 @@ class AutomationOperationsTests(unittest.TestCase):
 
     def _ksef_item(self):
         return next(item for item in self._dashboard()["items"] if item["automation_key"] == "ksef_import")
+
+    def _engine_item(self):
+        return next(item for item in self._dashboard()["items"] if item["automation_key"] == "automation_engine")
+
+    def _insert_automation_rule(self, *, active: bool, organization_id: int | None = None) -> int:
+        return self.services["automation_repository"].create({
+            "organization_id": organization_id or self.organization_id,
+            "rule_slug": f"private-rule-{organization_id or self.organization_id}-{active}",
+            "rule_name": "Poufny klient i kwota 987.65",
+            "description": "secret token customer@example.invalid",
+            "trigger_event_type": "PRIVATE_EVENT_TYPE",
+            "conditions_json": '{"customer":"private"}',
+            "actions_json": '[{"type":"private_action","body":"secret"}]',
+            "is_active": int(active),
+            "created_by_user_id": self.user_id,
+        })
+
+    def _insert_automation_execution(
+        self, *, rule_id: int, status: str, day: int, organization_id: int | None = None
+    ) -> int:
+        return self.services["automation_repository"].create_execution({
+            "automation_rule_id": rule_id,
+            "organization_id": organization_id or self.organization_id,
+            "event_log_id": None,
+            "trigger_event_type": "PRIVATE_EVENT_TYPE",
+            "execution_status": status,
+            "input_json": '{"token":"secret","email":"customer@example.invalid"}',
+            "result_json": '{"document":"private.pdf"}',
+            "error_message": "Traceback DSN=postgres://private token=secret",
+            "executed_at": f"2026-05-{day:02d}T10:00:00+00:00",
+        })
 
     def _configure_ksef_import(self, *, enabled: bool = True, with_identifier: bool = True) -> None:
         self.services["organization_repository"].update(
@@ -359,13 +391,13 @@ class AutomationOperationsTests(unittest.TestCase):
         registry = self.services["automation_operations_registry"]
         self.assertEqual(
             [item.automation_key for item in registry.adapters],
-            ["internal_notification_scheduler", "task_reminders", "knowledge_processing", "email_import", "ksef_import"],
+            ["internal_notification_scheduler", "task_reminders", "knowledge_processing", "email_import", "ksef_import", "automation_engine"],
         )
-        self.assertEqual(len({item.automation_key for item in registry.adapters}), 5)
+        self.assertEqual(len({item.automation_key for item in registry.adapters}), 6)
         self.assertTrue(all(item.scope and item.capabilities for item in registry.adapters))
         extended = AutomationOperationsRegistry((*registry.adapters, adapter))
-        self.assertEqual(len(extended.adapters), 6)
-        self.assertEqual(extended.adapters[:5], registry.adapters)
+        self.assertEqual(len(extended.adapters), 7)
+        self.assertEqual(extended.adapters[:6], registry.adapters)
 
     def test_health_mapping_is_explicit(self) -> None:
         self.assertEqual(scheduler_health(schedule_exists=False, enabled=False, last_terminal_status=None), ("not_configured", "disabled", "schedule_not_configured"))
@@ -387,6 +419,57 @@ class AutomationOperationsTests(unittest.TestCase):
         self.assertEqual(ksef_import_health(integration_enabled=True, organization_configured=True, last_terminal_status=None)[1], "never_run")
         self.assertEqual(ksef_import_health(integration_enabled=True, organization_configured=True, last_terminal_status="no_new_documents")[1], "healthy")
         self.assertEqual(ksef_import_health(integration_enabled=True, organization_configured=True, last_terminal_status="completed_with_issues")[1], "attention")
+        self.assertEqual(automation_engine_health(enabled_rules_count=0, last_terminal_status=None)[1], "disabled")
+        self.assertEqual(automation_engine_health(enabled_rules_count=1, last_terminal_status=None)[1], "never_run")
+        self.assertEqual(automation_engine_health(enabled_rules_count=1, last_terminal_status="success")[1], "healthy")
+        self.assertEqual(automation_engine_health(enabled_rules_count=1, last_terminal_status="failed")[1], "attention")
+
+    def test_automation_engine_health_metrics_privacy_limits_scope_and_no_n_plus_one(self) -> None:
+        self.assertEqual((self._engine_item()["status"], self._engine_item()["health"]), ("disabled", "disabled"))
+        disabled_id = self._insert_automation_rule(active=False)
+        self.assertEqual((self._engine_item()["total_rules_count"], self._engine_item()["disabled_rules_count"]), (1, 1))
+        active_id = self._insert_automation_rule(active=True)
+        self.assertEqual((self._engine_item()["health"], self._engine_item()["enabled_rules_count"]), ("never_run", 1))
+        success_id = self._insert_automation_execution(rule_id=active_id, status="success", day=10)
+        self.assertEqual((self._engine_item()["health"], self._engine_item()["last_run_status"]), ("healthy", "succeeded"))
+        failed_id = self._insert_automation_execution(rule_id=active_id, status="failed", day=11)
+        with patch.object(
+            self.services["automation_repository"],
+            "list_executions_read_only",
+            side_effect=AssertionError("dashboard loaded automation execution history"),
+        ), patch.object(
+            self.services["automation_repository"],
+            "list_rules_read_only",
+            side_effect=AssertionError("dashboard loaded automation rules"),
+        ):
+            item = self._engine_item()
+        self.assertEqual((item["health"], item["executions_count"], item["succeeded_count"], item["failed_count"]), ("attention", 2, 1, 1))
+        self.assertEqual(item["runtime_status"], "unknown")
+        self.assertEqual(item["last_error_code"], "automation_execution_failed")
+        detail = self.operations.detail(
+            "automation_engine", organization_id=self.organization_id, recipient_user_id=self.user_id,
+            actor_user=self.user, history_limit=500,
+        )
+        self.assertEqual((detail["history_limit"], len(detail["rules"]), len(detail["history"])), (50, 2, 2))
+        self.assertEqual((detail["history"][0]["execution_id"], detail["history"][1]["execution_id"]), (failed_id, success_id))
+        self.assertEqual({rule["rule_id"] for rule in detail["rules"]}, {active_id, disabled_id})
+        serialized = str(detail).lower()
+        for forbidden in ("poufny klient", "987.65", "private_event_type", "private_action", "customer@", "traceback", "postgres://", "token", "private.pdf"):
+            self.assertNotIn(forbidden, serialized)
+
+        other = self.services["organization_service"].create_organization(
+            {"name": "Automation Engine Other", "slug": "automation-engine-other", "is_active": 1},
+            actor_user=self.admin, actor_login="admin",
+        )
+        other_id = int(other["organization_id"])
+        other_rule = self._insert_automation_rule(active=True, organization_id=other_id)
+        other_execution = self._insert_automation_execution(rule_id=other_rule, status="failed", day=20, organization_id=other_id)
+        own_detail = self.operations.detail(
+            "automation_engine", organization_id=self.organization_id, recipient_user_id=self.user_id,
+            actor_user=self.user, history_limit=50,
+        )
+        self.assertNotIn(other_rule, {rule["rule_id"] for rule in own_detail["rules"]})
+        self.assertNotIn(other_execution, {entry["execution_id"] for entry in own_detail["history"]})
 
     def test_ksef_import_health_metrics_history_privacy_isolation_and_no_n_plus_one(self) -> None:
         self.assertEqual((self._ksef_item()["status"], self._ksef_item()["health"]), ("disabled", "disabled"))
