@@ -1,6 +1,6 @@
 export type AutomationConfigurationStatus = "enabled" | "disabled" | "not_configured";
 export type AutomationHealth = "healthy" | "attention" | "never_run" | "disabled";
-export type AutomationOperationsFilter = "all" | "active" | "disabled" | "attention";
+export type AutomationOperationsFilter = "all" | "attention" | "not_configured" | "disabled";
 export type AutomationRunStatus = "pending" | "running" | "succeeded" | "failed";
 export type AutomationAttentionCategory = "configuration" | "execution" | "backlog";
 export type KnowledgeJobStatus = "pending" | "processing" | "completed" | "failed";
@@ -226,11 +226,20 @@ export type AutomationOperationDetail = {
   historyLimit: number;
 };
 
+export type AutomationOperationsPresentationSummary = {
+  activeCount: number;
+  notConfiguredCount: number;
+  disabledCount: number;
+  attentionCount: number;
+};
+
+export type AutomationNavigationLink = { href: string; label: string };
+
 export const AUTOMATION_OPERATIONS_FILTERS: Array<{ id: AutomationOperationsFilter; label: string }> = [
   { id: "all", label: "Wszystkie" },
-  { id: "active", label: "Aktywne" },
-  { id: "disabled", label: "Wyłączone" },
   { id: "attention", label: "Wymagają uwagi" },
+  { id: "not_configured", label: "Nieskonfigurowane" },
+  { id: "disabled", label: "Wyłączone" },
 ];
 
 export const AUTOMATION_OPERATIONS_POLL_INTERVAL = null;
@@ -568,10 +577,80 @@ export function filterAutomationOperations(
   items: AutomationOperation[],
   filter: AutomationOperationsFilter,
 ): AutomationOperation[] {
-  if (filter === "active") return items.filter((item) => item.status === "enabled");
-  if (filter === "disabled") return items.filter((item) => item.status !== "enabled");
   if (filter === "attention") return items.filter((item) => item.health === "attention");
+  if (filter === "not_configured") return items.filter((item) => item.status === "not_configured");
+  if (filter === "disabled") return items.filter((item) => item.status === "disabled");
   return items;
+}
+
+export function buildAutomationOperationsPresentationSummary(
+  items: AutomationOperation[],
+): AutomationOperationsPresentationSummary {
+  return {
+    activeCount: items.filter((item) => item.status === "enabled").length,
+    notConfiguredCount: items.filter((item) => item.status === "not_configured").length,
+    disabledCount: items.filter((item) => item.status === "disabled").length,
+    attentionCount: items.filter((item) => item.health === "attention").length,
+  };
+}
+
+export function automationNavigationLinks(automationKey: string): AutomationNavigationLink[] {
+  if (automationKey === "internal_notification_scheduler") {
+    return [{ href: "/powiadomienia", label: "Przejdź do powiadomień" }];
+  }
+  if (automationKey === "task_reminders") {
+    return [{ href: "/work-items", label: "Przejdź do zadań" }];
+  }
+  if (automationKey === "knowledge_processing") {
+    return [{ href: "/dokumenty", label: "Przejdź do dokumentów" }];
+  }
+  return [];
+}
+
+export function automationDescription(item: AutomationOperation): string {
+  if (item.automationKey === "internal_notification_scheduler") {
+    return "Codziennie tworzy brakujące powiadomienia wewnętrzne na podstawie sygnałów rozliczeniowych.";
+  }
+  if (item.automationKey === "automation_engine") {
+    return "Monitoruje organizacyjne reguły i ich zakończone wykonania bez ujawniania warunków ani danych działań.";
+  }
+  return item.description;
+}
+
+export function automationTechnicalStatusLabel(status: string | null): string {
+  if (!status) return "Brak danych";
+  const labels: Record<string, string> = {
+    pending: "Oczekuje",
+    queued: "Oczekuje",
+    processing: "Przetwarzane",
+    running: "W toku",
+    succeeded: "Zakończone pomyślnie",
+    success: "Zakończone pomyślnie",
+    completed: "Zakończone",
+    failed: "Nieudane",
+    sent: "Wysłane",
+    cancelled: "Anulowane",
+    dead_letter: "Zakończone niepowodzeniem",
+    retry: "Oczekuje na ponowienie",
+    ok: "Poprawne",
+  };
+  return labels[status] ?? "Inny stan techniczny";
+}
+
+export function automationKnowledgeJobTypeLabel(jobType: string): string {
+  if (jobType === "ingest") return "Dodanie dokumentu";
+  if (jobType === "replace") return "Aktualizacja dokumentu";
+  return "Inne zadanie przetwarzania";
+}
+
+export function automationWatcherModeLabel(mode: string): string {
+  if (mode === "polling") return "Cykliczne skanowanie";
+  return "Inny tryb obserwacji";
+}
+
+export function automationScheduleCadenceLabel(cadence: string | null | undefined): string {
+  if (cadence === "daily") return "Codziennie";
+  return cadence ? "Inny harmonogram" : "Brak harmonogramu";
 }
 
 export function automationHealthLabel(health: AutomationHealth): string {

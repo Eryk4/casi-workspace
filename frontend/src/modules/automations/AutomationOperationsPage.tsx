@@ -11,9 +11,13 @@ import {
   AUTOMATION_OPERATIONS_FILTERS,
   automationAttentionCategoryLabel,
   automationConfigurationLabel,
+  automationDescription,
   automationHealthLabel,
+  automationNavigationLinks,
   automationRunLabel,
+  automationTechnicalStatusLabel,
   automationTypeLabel,
+  buildAutomationOperationsPresentationSummary,
   filterAutomationOperations,
   readAutomationOperationsDashboard,
   type AutomationOperationsDashboard,
@@ -67,6 +71,7 @@ export function AutomationOperationsPage() {
   }
 
   const items = filterAutomationOperations(dashboard?.items ?? [], filter);
+  const summary = buildAutomationOperationsPresentationSummary(dashboard?.items ?? []);
 
   return (
     <section className="automation-operations" aria-labelledby="automation-operations-title">
@@ -83,15 +88,15 @@ export function AutomationOperationsPage() {
 
       {dashboard ? (
         <div className="automation-summary" aria-label="Podsumowanie automatyzacji">
-          <div><span>Aktywne</span><strong>{dashboard.summary.activeCount}</strong></div>
-          <div><span>Wyłączone</span><strong>{dashboard.summary.disabledCount}</strong></div>
-          <div><span>Wymagają uwagi</span><strong>{dashboard.summary.attentionCount}</strong></div>
-          <div><span>Ostatnie błędy</span><strong>{dashboard.summary.recentFailureCount}</strong></div>
+          <div><span>Aktywne</span><strong>{summary.activeCount}</strong></div>
+          <div><span>Nieskonfigurowane</span><strong>{summary.notConfiguredCount}</strong></div>
+          <div><span>Wyłączone</span><strong>{summary.disabledCount}</strong></div>
+          <div><span>Wymagają uwagi</span><strong>{summary.attentionCount}</strong></div>
         </div>
       ) : null}
 
       {dashboard ? (
-        <section className="automation-attention" aria-labelledby="automation-attention-title">
+        <section className={dashboard.attentionItems.length === 0 ? "automation-attention automation-attention--empty" : "automation-attention"} aria-labelledby="automation-attention-title">
           <div className="automation-attention__heading">
             <div>
               <h3 id="automation-attention-title">Wymaga uwagi</h3>
@@ -113,7 +118,7 @@ export function AutomationOperationsPage() {
                   </div>
                   <div className="automation-attention__links">
                     <Link href={item.detailsUrl}>Zobacz szczegóły</Link>
-                    {item.settingsUrl ? <Link href={item.settingsUrl}>Przejdź do ustawień</Link> : null}
+                    {automationNavigationLinks(item.automationKey).map((link) => <Link href={link.href} key={link.href}>{link.label}</Link>)}
                   </div>
                 </article>
               ))}
@@ -139,43 +144,37 @@ export function AutomationOperationsPage() {
           {items.map((item) => (
             <article className="automation-card" data-health={item.health} key={item.automationKey}>
               <div className="automation-card__heading"><div><span className="eyebrow">{automationTypeLabel(item.automationType)}</span><h3>{item.title}</h3></div><span className={`badge badge--${item.health}`}>{automationHealthLabel(item.health)}</span></div>
-              <p>{item.description}</p>
+              <p>{automationDescription(item)}</p>
               <dl>
                 <div><dt>Konfiguracja</dt><dd>{automationConfigurationLabel(item.status)}</dd></div>
                 {item.automationType === "automation_engine" ? <>
-                  <div><dt>Runtime</dt><dd>Nieznany</dd></div>
                   <div><dt>Aktywne / wyłączone reguły</dt><dd>{item.enabledRulesCount} / {item.disabledRulesCount}</dd></div>
                   <div><dt>Ostatnie wykonanie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
                   <div><dt>Ostatni wynik</dt><dd>{automationRunLabel(item.lastRunStatus)}</dd></div>
                   <div><dt>Udane / błędne wykonania</dt><dd>{item.succeededCount} / {item.failedCount}</dd></div>
                 </> : item.automationType === "ksef_import" ? <>
-                  <div><dt>Runtime</dt><dd>Nieznany</dd></div>
                   <div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
                   <div><dt>Ostatni wynik</dt><dd>{automationRunLabel(item.lastRunStatus)}</dd></div>
                   <div><dt>Sprawdzone dokumenty</dt><dd>{item.checkedDocumentCount}</dd></div>
                   <div><dt>Zaimportowane / duplikaty / błędy</dt><dd>{item.importedCount} / {item.duplicateCount} / {item.failedCount}</dd></div>
                   <div><dt>Skonfigurowane połączenia</dt><dd>{item.configuredConnectionsCount}</dd></div>
                 </> : item.automationType === "email_import" ? <>
-                  <div><dt>Runtime</dt><dd>Nieznany</dd></div>
                   <div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
                   <div><dt>Ostatni wynik</dt><dd>{automationRunLabel(item.lastRunStatus)}</dd></div>
                   <div><dt>Sprawdzone / dopasowane wiadomości</dt><dd>{item.checkedMessageCount} / {item.matchedMessageCount}</dd></div>
                   <div><dt>Zaimportowane / duplikaty / błędy</dt><dd>{item.importedCount} / {item.duplicateCount} / {item.failedCount}</dd></div>
                   <div><dt>Skonfigurowane połączenia</dt><dd>{item.configuredConnectionsCount}</dd></div>
                 </> : item.automationType === "task_reminders" ? <>
-                  <div><dt>Runtime</dt><dd>Nieznany</dd></div>
                   <div><dt>Ostatnia aktywność</dt><dd>{dateTime(item.lastActivityAt)}</dd></div>
-                  <div><dt>Ostatnia próba</dt><dd>{dateTime(item.lastAttemptAt)} · {item.lastAttemptStatus ?? "—"}</dd></div>
+                  <div><dt>Ostatnia próba</dt><dd>{dateTime(item.lastAttemptAt)} · {automationTechnicalStatusLabel(item.lastAttemptStatus)}</dd></div>
                   <div><dt>Kolejka / przetwarzane</dt><dd>{item.pendingCount} / {item.processingCount}</dd></div>
                   <div><dt>Wysłane / błędy</dt><dd>{item.sentCount} / {item.failedCount}</dd></div>
-                  <div><dt>Ostatni heartbeat</dt><dd>{dateTime(item.lastHeartbeatAt)} (informacyjnie)</dd></div>
                 </> : item.automationType === "knowledge_processing" ? <>
-                  <div><dt>Runtime</dt><dd>Nieznany</dd></div>
                   <div><dt>Ostatnia aktywność</dt><dd>{dateTime(item.lastActivityAt)}</dd></div>
-                  <div><dt>Ostatni job</dt><dd>{dateTime(item.lastJobAt)} · {item.lastJobStatus ?? "—"}</dd></div>
-                  <div><dt>Queued / processing</dt><dd>{item.pendingCount} / {item.processingCount}</dd></div>
-                  <div><dt>Completed / failed</dt><dd>{item.succeededCount} / {item.failedCount}</dd></div>
-                  <div><dt>Watchery / ostatni skan</dt><dd>{item.watcherCount} / {dateTime(item.lastScanAt)}</dd></div>
+                  <div><dt>Ostatnie zadanie przetwarzania</dt><dd>{dateTime(item.lastJobAt)} · {automationTechnicalStatusLabel(item.lastJobStatus)}</dd></div>
+                  <div><dt>Oczekujące / przetwarzane</dt><dd>{item.pendingCount} / {item.processingCount}</dd></div>
+                  <div><dt>Zakończone / nieudane</dt><dd>{item.succeededCount} / {item.failedCount}</dd></div>
+                  <div><dt>Obserwowane foldery / ostatni skan</dt><dd>{item.watcherCount} / {dateTime(item.lastScanAt)}</dd></div>
                 </> : <>
                   <div><dt>Następne uruchomienie</dt><dd>{dateTime(item.nextRunAt)}</dd></div>
                   <div><dt>Ostatnie uruchomienie</dt><dd>{dateTime(item.lastRunAt)}</dd></div>
@@ -184,7 +183,7 @@ export function AutomationOperationsPage() {
                 </>}
               </dl>
               {item.lastErrorSummary ? <p className="automation-card__error">{item.lastErrorSummary}</p> : null}
-              <div className="automation-card__links"><Link href={item.detailsUrl}>Szczegóły</Link>{item.settingsUrl ? <Link href={item.settingsUrl}>Ustawienia</Link> : null}</div>
+              <div className="automation-card__links"><Link href={item.detailsUrl}>Zobacz szczegóły</Link>{automationNavigationLinks(item.automationKey).map((link) => <Link href={link.href} key={link.href}>{link.label}</Link>)}</div>
             </article>
           ))}
         </div>

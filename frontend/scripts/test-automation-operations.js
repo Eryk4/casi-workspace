@@ -56,8 +56,11 @@ const parsed = model.readAutomationOperationsDashboard({
   ],
 });
 assert.equal(parsed.items.length, 4);
-assert.equal(model.filterAutomationOperations(parsed.items, "active").length, 2);
-assert.equal(model.filterAutomationOperations(parsed.items, "disabled").length, 2);
+assert.deepEqual(model.buildAutomationOperationsPresentationSummary(parsed.items), {
+  activeCount: 2, notConfiguredCount: 1, disabledCount: 1, attentionCount: 1,
+});
+assert.deepEqual(model.filterAutomationOperations(parsed.items, "not_configured").map((item) => item.automationKey), ["new"]);
+assert.deepEqual(model.filterAutomationOperations(parsed.items, "disabled").map((item) => item.automationKey), ["disabled"]);
 assert.deepEqual(model.filterAutomationOperations(parsed.items, "attention").map((item) => item.automationKey), ["failed"]);
 assert.equal(model.AUTOMATION_OPERATIONS_POLL_INTERVAL, null);
 assert.equal(model.automationHealthLabel("never_run"), "Jeszcze nie uruchomiono");
@@ -162,7 +165,6 @@ const ksefStates = model.readAutomationOperationsDashboard({
     ksefImport,
   ],
 });
-assert.equal(model.filterAutomationOperations(ksefStates.items, "active").length, 3);
 assert.equal(model.filterAutomationOperations(ksefStates.items, "disabled").length, 1);
 assert.equal(model.filterAutomationOperations(ksefStates.items, "attention").length, 1);
 const knowledgeStates = model.readAutomationOperationsDashboard({
@@ -175,9 +177,24 @@ const knowledgeStates = model.readAutomationOperationsDashboard({
     { ...knowledge, automation_key: "knowledge_disabled", status: "disabled", enabled: false, health: "disabled", health_reason_code: "runtime_disabled" },
   ],
 });
-assert.equal(model.filterAutomationOperations(knowledgeStates.items, "active").length, 3);
 assert.equal(model.filterAutomationOperations(knowledgeStates.items, "disabled").length, 1);
 assert.equal(model.filterAutomationOperations(knowledgeStates.items, "attention").length, 1);
+assert.equal(model.automationTechnicalStatusLabel("dead_letter"), "Zakończone niepowodzeniem");
+assert.equal(model.automationTechnicalStatusLabel("retry"), "Oczekuje na ponowienie");
+assert.equal(model.automationTechnicalStatusLabel("unknown-provider-state"), "Inny stan techniczny");
+assert.equal(model.automationKnowledgeJobTypeLabel("ingest"), "Dodanie dokumentu");
+assert.equal(model.automationKnowledgeJobTypeLabel("replace"), "Aktualizacja dokumentu");
+assert.equal(model.automationWatcherModeLabel("polling"), "Cykliczne skanowanie");
+assert.equal(model.automationScheduleCadenceLabel("daily"), "Codziennie");
+assert.deepEqual(model.automationNavigationLinks("task_reminders"), [{ href: "/work-items", label: "Przejdź do zadań" }]);
+assert.deepEqual(model.automationNavigationLinks("knowledge_processing"), [{ href: "/dokumenty", label: "Przejdź do dokumentów" }]);
+assert.deepEqual(model.automationNavigationLinks("email_import"), []);
+assert.deepEqual(model.automationNavigationLinks("ksef_import"), []);
+assert.deepEqual(model.automationNavigationLinks("automation_engine"), []);
+assert.match(model.automationDescription(parsed.items[0]), /sygnałów rozliczeniowych/);
+assert.doesNotMatch(model.automationDescription(parsed.items[0]), /billing attention/i);
+assert.match(model.automationDescription(sixAdapters.items[5]), /danych działań/);
+assert.doesNotMatch(model.automationDescription(sixAdapters.items[5]), /payload/i);
 
 const detail = model.readAutomationOperationDetail({
   item: operation(),
@@ -248,7 +265,9 @@ assert.doesNotMatch(pageSource + detailSource, />\s*email_import\s*</);
 assert.doesNotMatch(pageSource + detailSource, />\s*ksef_import\s*</);
 assert.doesNotMatch(pageSource + detailSource, />\s*automation_engine\s*</);
 assert.match(pageSource, /setDashboard\(null\)/);
-assert.match(detailSource, /Nieznany — centrum nie monitoruje procesu workera/);
+assert.match(detailSource, /Monitoring procesu/);
+assert.match(detailSource, /Brak monitoringu procesu/);
+assert.doesNotMatch(pageSource, />Runtime</);
 assert.match(navigationSource, /id:\s*["']automations["'][\s\S]*label:\s*["']Automatyzacje["'][\s\S]*path:\s*["']\/automatyzacje["']/);
 assert.doesNotMatch(JSON.stringify(parsed), /recipient_user_id|lease_token/);
 

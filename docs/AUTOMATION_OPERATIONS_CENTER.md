@@ -117,7 +117,7 @@ Health jest deterministyczny: brak aktywnych reguł daje `disabled`; aktywne reg
 
 Silnik nie ma retry, max attempts ani idempotency key. Kursor `last_processed_event_log_id` ogranicza zwykłe ponowne przetworzenie, lecz nie ma unikalności `(rule,event)`; awaria pomiędzy akcją i zapisem kursora lub konkurencyjne wywołania mogą powielić wykonanie. Kilka akcji nie jest objętych wspólną transakcją, więc wcześniejsza akcja może zostać wykonana przed późniejszym błędem. Centrum nie zmienia tych zachowań i nie dodaje Run now, Retry, enable/disable, edycji ani usuwania.
 
-Dashboard używa stałej liczby zapytań agregujących bez pobierania historii. Detail zwraca domyślnie 20, maksymalnie 50 neutralnych reguł oraz wykonań. Wszystkie endpointy pozostają read-only.
+Dashboard używa stałej liczby zapytań agregujących bez pobierania historii. Detail zwraca domyślnie 20, maksymalnie 50 neutralnych reguł oraz wykonań. Automation Operations jest read-only względem danych domenowych i operacyjnych, a bezpośrednie read-modele nie wykonują żadnego write. Pełne uwierzytelnione żądanie HTTP może aktualizować wyłącznie istniejące `user_sessions.last_seen_at` jako niezależny efekt warstwy uwierzytelniania. Wyjątek nie obejmuje żadnej innej tabeli ani kolumny i nie jest częścią logiki Automation Operations.
 
 ## Świadomie odłożone źródła
 

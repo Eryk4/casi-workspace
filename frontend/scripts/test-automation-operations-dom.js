@@ -58,6 +58,7 @@ const knowledgeOperation = {
 };
 const emailImportOperation = {
   ...operation, automation_key: "email_import", automation_type: "email_import", title: "Import e-maili", description: "Bezpieczny monitoring importu",
+  status: "not_configured", enabled: false,
   health: "attention", health_reason_code: "last_email_import_run_requires_attention", schedule_id: null, run_id: 21, next_run_at: null,
   last_run_at: "2026-03-11T10:00:00+00:00", last_run_status: "failed", last_run_duration_ms: 2000,
   last_attempt_count: null, last_candidates_count: 4, last_created_count: 2, last_existing_count: 1, schedule: null,
@@ -70,7 +71,7 @@ const emailImportOperation = {
 };
 const ksefImportOperation = {
   ...operation, automation_key: "ksef_import", automation_type: "ksef_import", title: "Import KSeF", description: "Bezpieczny monitoring importu KSeF",
-  health: "attention", health_reason_code: "last_ksef_import_run_requires_attention", schedule_id: null, run_id: 31, next_run_at: null,
+  status: "disabled", enabled: false, health: "disabled", health_reason_code: "ksef_import_disabled", schedule_id: null, run_id: 31, next_run_at: null,
   last_run_at: "2026-04-11T10:00:00+00:00", last_run_status: "failed", last_run_duration_ms: 2000,
   last_attempt_count: null, last_candidates_count: 7, last_created_count: 2, last_existing_count: 1, schedule: null,
   settings_url: "/ustawienia", details_url: "/automatyzacje/ksef_import", last_activity_at: "2026-04-11T10:00:00+00:00",
@@ -140,61 +141,84 @@ async function run() {
   assert.match(container.textContent, /Import KSeF/);
   assert.match(container.textContent, /Reguły automatyzacji/);
   assert.equal(container.querySelectorAll(".automation-card").length, 6);
+  assert.deepEqual([...container.querySelectorAll(".automation-summary > div")].map((item) => item.textContent), ["Aktywne4", "Nieskonfigurowane1", "Wyłączone1", "Wymagają uwagi5"]);
+  assert.ok(!container.textContent.includes("Ostatnie błędy"));
   assert.match(container.textContent, /Wymaga uwagi/);
   assert.equal(container.querySelectorAll(".automation-attention__item").length, 3);
   assert.deepEqual([...container.querySelectorAll(".automation-attention__item h4")].map((node) => node.textContent), ["Reguły automatyzacji", "Przypomnienia zadań", "Import e-maili"]);
   assert.match(container.textContent, /Wykonanie/); assert.match(container.textContent, /Kolejka/); assert.match(container.textContent, /Konfiguracja/);
   assert.match(container.textContent, /Czas niedostępny/);
   assert.equal(container.querySelectorAll('.automation-attention a[href^="/automatyzacje/"]').length, 3);
-  assert.equal(container.querySelectorAll('.automation-attention a[href="/ustawienia"]').length, 1);
+  assert.equal(container.querySelectorAll('.automation-attention a[href="/ustawienia"]').length, 0);
   assert.ok(!container.textContent.match(/last_execution_failed|failed_outbox_present|system_mailbox_not_configured|Retry|Run now|Rozwiąż|severity/i));
   const attentionText = container.querySelector(".automation-attention").textContent.toLowerCase();
   for (const forbidden of ["private@", "message-id", "nip", "fv/", "xml", "upo", "document.txt", "c:\\users", "payload=", "token=", "secret", "traceback"]) {
     assert.ok(!attentionText.includes(forbidden), `Sekcja attention ujawnia zakazany tekst: ${forbidden}`);
   }
-  assert.equal(container.querySelector('a[href="/automatyzacje/internal_notification_scheduler"]').textContent, "Szczegóły");
-  assert.equal(container.querySelector('a[href="/powiadomienia"]').textContent, "Ustawienia");
+  assert.equal(container.querySelector('a[href="/automatyzacje/internal_notification_scheduler"]').textContent, "Zobacz szczegóły");
+  assert.equal(container.querySelector('a[href="/powiadomienia"]').textContent, "Przejdź do powiadomień");
+  assert.equal(container.querySelector('a[href="/work-items"]').textContent, "Przejdź do zadań");
+  assert.equal(container.querySelector('a[href="/dokumenty"]').textContent, "Przejdź do dokumentów");
+  assert.equal(container.querySelectorAll('a[href="/ustawienia"]').length, 0);
+  assert.equal(container.querySelectorAll('.automation-card a[href^="/automatyzacje/"]').length, 6);
+  assert.ok(!container.textContent.includes("Runtime"));
+  assert.ok(!container.textContent.includes("Nieznany"));
+  assert.match(container.textContent, /sygnałów rozliczeniowych/);
+  assert.match(container.textContent, /danych działań/);
+  assert.ok(!container.textContent.match(/billing attention|payload/i));
   assert.ok(button(container, "Odśwież")); assert.ok(!container.textContent.includes("Uruchom teraz"));
+  await act(async () => button(container, "Wymagają uwagi").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+  assert.equal(container.querySelectorAll(".automation-card").length, 5);
+  assert.equal(container.querySelectorAll(".automation-attention__item").length, 3);
+  await act(async () => button(container, "Nieskonfigurowane").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+  assert.deepEqual([...container.querySelectorAll(".automation-card h3")].map((node) => node.textContent), ["Import e-maili"]);
+  assert.equal(container.querySelectorAll(".automation-attention__item").length, 3);
   await act(async () => button(container, "Wyłączone").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
-  assert.match(container.textContent, /Żadna automatyzacja/);
+  assert.deepEqual([...container.querySelectorAll(".automation-card h3")].map((node) => node.textContent), ["Import KSeF"]);
   assert.equal(container.querySelectorAll(".automation-attention__item").length, 3);
   emptyAttention = true; await act(async () => button(container, "Odśwież").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }))); await settle();
   assert.match(container.textContent, /Brak sygnałów wymagających uwagi/);
+  assert.ok(container.querySelector(".automation-attention--empty"));
   emptyAttention = false;
   failDashboard = true; await act(async () => button(container, "Odśwież").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }))); await settle();
   assert.match(container.textContent, /Kontrolowany błąd centrum/); assert.ok(button(container, "Spróbuj ponownie"));
   failDashboard = false; organizationId = "43"; await act(async () => root.render(React.createElement(AutomationOperationsPage))); assert.ok(!container.textContent.includes("Opis operacyjny")); await settle();
   await act(async () => button(container, "Wszystkie").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
-  assert.match(container.textContent, /Opis operacyjny/);
+  assert.match(container.textContent, /sygnałów rozliczeniowych/);
   assert.ok(dashboardCalls >= 3);
 
   const cssSource = fs.readFileSync(path.join(__dirname, "..", "src", "app", "globals.css"), "utf8");
   assert.match(cssSource, /\.automation-attention__content[\s\S]*overflow-wrap:\s*anywhere/);
-  assert.match(cssSource, /@media\s*\(max-width:\s*900px\)[\s\S]*\.automation-attention__item[\s\S]*flex-direction:\s*column/);
+  assert.match(cssSource, /\.automation-attention--empty[\s\S]*padding-block:\s*0\.7rem/);
+  assert.match(cssSource, /@media\s*\(max-width:\s*1100px\)[\s\S]*\.automation-attention__item[\s\S]*flex-direction:\s*column/);
+  assert.ok(!/\.automation-(?:summary|grid|card|detail-card|operations__header)[^}]*var\(--(?:text-muted|surface|border)\)/s.test(cssSource));
+  for (const token of ["--color-muted", "--color-surface", "--color-border"]) assert.match(cssSource, new RegExp(`${token}:`));
+  assert.match(cssSource, /@media\s*\(max-width:\s*1440px\)[\s\S]*\.app-topbar[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(cssSource, /@media\s*\(max-width:\s*820px\)[\s\S]*\.app-shell[\s\S]*grid-template-columns:\s*1fr/);
 
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "internal_notification_scheduler" }))); await settle();
-  assert.match(container.textContent, /Historia ostatnich uruchomień/); assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/); assert.equal(container.querySelectorAll("tbody tr").length, 1); assert.ok(!container.textContent.includes("lease"));
+  assert.match(container.textContent, /Historia ostatnich uruchomień/); assert.match(container.textContent, /Monitoring procesu/); assert.match(container.textContent, /Brak monitoringu procesu/); assert.match(container.textContent, /Codziennie/); assert.equal(container.querySelectorAll("tbody tr").length, 1); assert.ok(!container.textContent.match(/\bonline\b|\boffline\b|runtime unknown/i));
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "task_reminders" }))); await settle();
-  assert.match(container.textContent, /Ostatnie próby/); assert.match(container.textContent, /Ostatnie wpisy kolejki/); assert.match(container.textContent, /bez oceny online\/offline/); assert.ok(!container.textContent.match(/Retry|Uruchom teraz|Wyślij ponownie/));
+  assert.match(container.textContent, /Ostatnie próby/); assert.match(container.textContent, /Ostatnie wpisy kolejki/); assert.match(container.textContent, /Ostatni sygnał procesu/); assert.match(container.textContent, /Zakończone niepowodzeniem/); assert.match(container.textContent, /Nieudane/); assert.ok(!container.textContent.match(/\bonline\b|\boffline\b|Retry|Uruchom teraz|Wyślij ponownie/));
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "knowledge_processing" }))); await settle();
-  assert.match(container.textContent, /Ostatnie zadania przetwarzania/); assert.match(container.textContent, /Watchery folderów/); assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/);
-  assert.match(container.textContent, /replace/); assert.match(container.textContent, /polling/);
+  assert.match(container.textContent, /Ostatnie zadania przetwarzania/); assert.match(container.textContent, /Obserwowane foldery/); assert.match(container.textContent, /Brak monitoringu procesu/);
+  assert.match(container.textContent, /Aktualizacja dokumentu/); assert.match(container.textContent, /Cykliczne skanowanie/); assert.ok(!container.textContent.match(/\breplace\b|\bpolling\b|\bqueued\b|\bprocessing\b|\bcompleted\b|\bfailed\b/));
   assert.ok(!container.textContent.match(/Retry|Reprocess|Uruchom teraz|Skanuj teraz|Run now|Scan now|C:\\Users|OCR text|treść dokumentu/i));
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "email_import" }))); await settle();
   assert.match(container.textContent, /Import e-maili/); assert.match(container.textContent, /Automatyczny/); assert.match(container.textContent, /Zakończony z uwagami/);
-  assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/);
+  assert.match(container.textContent, /Brak monitoringu procesu/); assert.equal(container.querySelectorAll('a[href="/ustawienia"]').length, 0);
   for (const forbidden of ["email_import", "subject", "sender@", "recipient@", "message_id", "attachment", "token", "Importuj teraz", "Uruchom teraz"]) {
     assert.ok(!container.textContent.toLowerCase().includes(forbidden.toLowerCase()), `UI ujawnia zakazany tekst: ${forbidden}`);
   }
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "ksef_import" }))); await settle();
   assert.match(container.textContent, /Import KSeF/); assert.match(container.textContent, /Ręczny/); assert.match(container.textContent, /Zakończony z uwagami/);
-  assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/);
+  assert.match(container.textContent, /Brak monitoringu procesu/); assert.equal(container.querySelectorAll('a[href="/ustawienia"]').length, 0);
   for (const forbidden of ["ksef_import", "nip", "numer faktury", "987.65", "xml", "upo", "ksef-id", "token", "certyfikat", "Importuj teraz", "Uruchom teraz", "Ponów"]) {
     assert.ok(!container.textContent.toLowerCase().includes(forbidden.toLowerCase()), `UI ujawnia zakazany tekst KSeF: ${forbidden}`);
   }
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "automation_engine" }))); await settle();
   assert.match(container.textContent, /Reguły automatyzacji/); assert.match(container.textContent, /Reguła #12/); assert.match(container.textContent, /Ostatnie wykonania/);
-  assert.match(container.textContent, /Nieznany — centrum nie monitoruje procesu workera/);
+  assert.match(container.textContent, /Brak monitoringu procesu/); assert.equal(container.querySelectorAll(".automation-card__links a").length, 0);
   for (const forbidden of ["automation_engine", "trigger", "actions_json", "input_json", "result_json", "traceback", "token", "Uruchom teraz", "Ponów", "Edytuj", "Usuń"]) {
     assert.ok(!container.textContent.toLowerCase().includes(forbidden.toLowerCase()), `UI ujawnia zakazany tekst silnika: ${forbidden}`);
   }
