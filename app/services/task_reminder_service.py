@@ -8,7 +8,7 @@ from app.repositories.event_repository import EventRepository
 from app.repositories.organization_repository import OrganizationRepository
 from app.repositories.task_reminder_outbox_repository import TaskReminderOutboxRepository
 from app.repositories.task_repository import TaskRepository
-from app.utils import json_dumps, now_local_datetime_value
+from app.utils import json_dumps, now_iso, now_local_datetime_value
 
 
 class TaskReminderService:
@@ -468,6 +468,7 @@ class TaskReminderService:
 
     def _process_outbox_delivery(self, delivery: dict[str, Any], *, worker_name: str) -> str:
         attempted_at = now_local_datetime_value()
+        attempt_recorded_at = now_iso()
         task = self.task_repository.get_by_id(int(delivery["task_id"]), organization_id=int(delivery["organization_id"]))
         if not task:
             self.outbox_repository.mark_cancelled(
@@ -483,7 +484,7 @@ class TaskReminderService:
                 delivery_channel=str(delivery["delivery_channel"]),
                 attempt_no=int(delivery["attempt_count"] or 0),
                 outcome="skipped",
-                attempted_at=attempted_at,
+                attempted_at=attempt_recorded_at,
                 worker_name=worker_name,
                 error_message="Zadanie nie istnieje.",
             )
@@ -504,7 +505,7 @@ class TaskReminderService:
                 delivery_channel=str(delivery["delivery_channel"]),
                 attempt_no=int(delivery["attempt_count"] or 0),
                 outcome="skipped",
-                attempted_at=attempted_at,
+                attempted_at=attempt_recorded_at,
                 worker_name=worker_name,
                 error_message=error_message,
             )
@@ -528,7 +529,7 @@ class TaskReminderService:
                 delivery_channel=str(delivery["delivery_channel"]),
                 attempt_no=int(delivery["attempt_count"] or 0),
                 outcome="failed",
-                attempted_at=attempted_at,
+                attempted_at=attempt_recorded_at,
                 worker_name=worker_name,
                 error_message=error_message,
             )
@@ -548,7 +549,7 @@ class TaskReminderService:
                 delivery_channel=str(delivery["delivery_channel"]),
                 attempt_no=int(delivery["attempt_count"] or 0),
                 outcome="skipped",
-                attempted_at=attempted_at,
+                attempted_at=attempt_recorded_at,
                 worker_name=worker_name,
                 error_message="Cykl przypomnienia nie jest jeszcze gotowy.",
             )
@@ -570,7 +571,7 @@ class TaskReminderService:
                 delivery_channel=str(delivery["delivery_channel"]),
                 attempt_no=int(delivery["attempt_count"] or 0),
                 outcome="deferred",
-                attempted_at=attempted_at,
+                attempted_at=attempt_recorded_at,
                 worker_name=worker_name,
                 error_message="Cisza nocna odbiorcy.",
                 details={"retry_at": retry_at},
@@ -607,7 +608,7 @@ class TaskReminderService:
                     delivery_channel=str(delivery["delivery_channel"]),
                     attempt_no=int(delivery["attempt_count"] or 0),
                     outcome="retry",
-                    attempted_at=attempted_at,
+                    attempted_at=attempt_recorded_at,
                     worker_name=worker_name,
                     error_message=error_message,
                     details={"retry_at": retry_at},
@@ -630,7 +631,7 @@ class TaskReminderService:
                 delivery_channel=str(delivery["delivery_channel"]),
                 attempt_no=int(delivery["attempt_count"] or 0),
                 outcome="dead_letter" if retryable else "failed",
-                attempted_at=attempted_at,
+                attempted_at=attempt_recorded_at,
                 worker_name=worker_name,
                 error_message=error_message,
             )
@@ -648,7 +649,7 @@ class TaskReminderService:
             delivery_channel=str(delivery["delivery_channel"]),
             attempt_no=int(delivery["attempt_count"] or 0),
             outcome="sent",
-            attempted_at=attempted_at,
+            attempted_at=attempt_recorded_at,
             worker_name=worker_name,
         )
         return "sent"

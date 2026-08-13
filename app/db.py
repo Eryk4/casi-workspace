@@ -650,6 +650,8 @@ CREATE INDEX IF NOT EXISTS idx_task_reminder_outbox_attempts_task_id
     ON task_reminder_outbox_attempts(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_reminder_outbox_attempts_org_id
     ON task_reminder_outbox_attempts(organization_id);
+CREATE INDEX IF NOT EXISTS idx_task_reminder_outbox_attempts_org_attempted
+    ON task_reminder_outbox_attempts(organization_id, attempted_at DESC, task_reminder_outbox_attempt_id DESC);
 
 CREATE TABLE IF NOT EXISTS task_reminder_worker_heartbeats (
     task_reminder_worker_heartbeat_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1225,6 +1227,10 @@ CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_claim
     ON internal_notification_schedule_runs(status, next_attempt_at_utc, lease_expires_at_utc);
 CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_history
     ON internal_notification_schedule_runs(schedule_id, created_at DESC, internal_notification_schedule_run_id DESC);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_org_recipient_finished
+    ON internal_notification_schedule_runs(
+        organization_id, recipient_user_id, finished_at DESC, internal_notification_schedule_run_id DESC
+    );
 
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1454,6 +1460,8 @@ CREATE INDEX IF NOT EXISTS idx_automation_executions_org
     ON automation_executions(organization_id);
 CREATE INDEX IF NOT EXISTS idx_automation_executions_event_log_id
     ON automation_executions(event_log_id);
+CREATE INDEX IF NOT EXISTS idx_automation_executions_org_executed
+    ON automation_executions(organization_id, executed_at DESC, automation_execution_id DESC);
 
 CREATE TABLE IF NOT EXISTS knowledge_documents (
     knowledge_document_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2168,6 +2176,8 @@ CREATE INDEX IF NOT EXISTS idx_task_reminder_outbox_attempts_task_id
     ON task_reminder_outbox_attempts(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_reminder_outbox_attempts_org_id
     ON task_reminder_outbox_attempts(organization_id);
+CREATE INDEX IF NOT EXISTS idx_task_reminder_outbox_attempts_org_attempted
+    ON task_reminder_outbox_attempts(organization_id, attempted_at DESC, task_reminder_outbox_attempt_id DESC);
 
 CREATE TABLE IF NOT EXISTS task_reminder_worker_heartbeats (
     task_reminder_worker_heartbeat_id BIGSERIAL PRIMARY KEY,
@@ -2819,6 +2829,10 @@ CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_claim
     ON internal_notification_schedule_runs(status, next_attempt_at_utc, lease_expires_at_utc);
 CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_history
     ON internal_notification_schedule_runs(schedule_id, created_at DESC, internal_notification_schedule_run_id DESC);
+CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_org_recipient_finished
+    ON internal_notification_schedule_runs(
+        organization_id, recipient_user_id, finished_at DESC, internal_notification_schedule_run_id DESC
+    );
 
 CREATE TABLE IF NOT EXISTS invoice_relations (
     id BIGSERIAL PRIMARY KEY,
@@ -3075,6 +3089,8 @@ CREATE INDEX IF NOT EXISTS idx_automation_executions_org
     ON automation_executions(organization_id);
 CREATE INDEX IF NOT EXISTS idx_automation_executions_event_log_id
     ON automation_executions(event_log_id);
+CREATE INDEX IF NOT EXISTS idx_automation_executions_org_executed
+    ON automation_executions(organization_id, executed_at DESC, automation_execution_id DESC);
 
 CREATE TABLE IF NOT EXISTS knowledge_documents (
     knowledge_document_id BIGSERIAL PRIMARY KEY,
@@ -3497,6 +3513,12 @@ ADDITIVE_INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_task_reminder_outbox_attempts_outbox_id ON task_reminder_outbox_attempts(task_reminder_outbox_id)",
     "CREATE INDEX IF NOT EXISTS idx_task_reminder_outbox_attempts_task_id ON task_reminder_outbox_attempts(task_id)",
     "CREATE INDEX IF NOT EXISTS idx_task_reminder_outbox_attempts_org_id ON task_reminder_outbox_attempts(organization_id)",
+    "CREATE INDEX IF NOT EXISTS idx_task_reminder_outbox_attempts_org_attempted ON task_reminder_outbox_attempts(organization_id, attempted_at DESC, task_reminder_outbox_attempt_id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_internal_notification_schedule_runs_org_recipient_finished ON internal_notification_schedule_runs(organization_id, recipient_user_id, finished_at DESC, internal_notification_schedule_run_id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_processing_jobs_org_finished ON knowledge_processing_jobs(organization_id, finished_at DESC, knowledge_processing_job_id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_email_import_runs_org_finished ON email_import_runs(organization_id, finished_at DESC, email_import_run_id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ksef_import_runs_org_finished ON ksef_import_runs(organization_id, finished_at DESC, ksef_import_run_id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_automation_executions_org_executed ON automation_executions(organization_id, executed_at DESC, automation_execution_id DESC)",
     "CREATE INDEX IF NOT EXISTS idx_user_google_calendar_connections_user_id ON user_google_calendar_connections(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_user_google_calendar_connections_approval_status ON user_google_calendar_connections(approval_status)",
     "CREATE INDEX IF NOT EXISTS idx_user_calendar_assignments_user_calendar_id ON user_calendar_assignments(user_calendar_id)",

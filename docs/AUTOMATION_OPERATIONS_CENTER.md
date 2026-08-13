@@ -140,3 +140,11 @@ Siódmy adapter musi otrzymać unikalny `automation_key`, zadeklarować scope i 
 ## Bezpieczeństwo
 
 Endpointy `/api/automations/operations` i `/api/automations/operations/{automation_key}` obsługują wyłącznie GET. Odbiorca zawsze wynika z zalogowanej sesji; parametr odbiorcy jest odrzucany. Zakres obcej organizacji zwraca bezpieczne `404`, a nie dane obcego tenant-a. Odpowiedź nie zawiera lease tokenów, stack trace, DSN, sekretów ani surowych payloadów.
+
+## Fundament przyszłej sekcji Ostatnia aktywność
+
+Nowe rekordy `task_reminder_outbox_attempts` zapisują `attempted_at` jako ISO-8601 UTC z jawnym offsetem `+00:00`. Dotychczasowe wartości bez strefy pozostają nietknięte: są odczytywalne przez istniejące widoki, ale jako `legacy ambiguous` nie kwalifikują się do przyszłego globalnego porządku aktywności. Wspólny kontrakt rozpoznaje wyłącznie poprawny, timezone-aware UTC; nie zgaduje historycznej strefy.
+
+Zatwierdzone przyszłe odczyty są organizacyjnymi, limitowanymi zapytaniami top-N po zakończonych rekordach: scheduler dodatkowo ogranicza odbiorcę i pomija udany no-op, Task Reminders zachowuje istniejącą widoczność zadania i uwzględnia tylko `sent`, `failed` oraz `dead_letter`, Knowledge Processing używa terminalnych `completed`/`failed`, import e-maili i KSeF używa `completed`, `completed_with_issues` i `failed`, a generic engine używa `success`/`failed`. Stabilne sortowanie wykorzystuje odpowiednio `finished_at`, `attempted_at` albo `executed_at` malejąco oraz techniczny identyfikator malejąco.
+
+Addytywne indeksy opisują wyłącznie tenantowy scope i ten porządek: scheduler `(organization_id, recipient_user_id, finished_at, run_id)`, Task Reminders `(organization_id, attempted_at, attempt_id)`, Knowledge Processing, import e-maili i KSeF `(organization_id, finished_at, stable_id)` oraz engine `(organization_id, executed_at, execution_id)`. Są tworzone przez istniejący bootstrap z `IF NOT EXISTS` dla SQLite i PostgreSQL; nie zmieniają tabel ani danych. Ten etap nie dodaje endpointu, wspólnego modelu, merge'u sześciu źródeł ani UI Ostatniej aktywności.

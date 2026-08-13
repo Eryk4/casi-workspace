@@ -10,6 +10,22 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def canonical_utc_timestamp(value: Any) -> str | None:
+    """Normalize an explicitly UTC timestamp without guessing legacy local time."""
+    if value in (None, ""):
+        return None
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        return None
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
 def now_local_datetime_value() -> str:
     return datetime.now().replace(second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M")
 
