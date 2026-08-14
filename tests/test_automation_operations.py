@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from app.bootstrap import build_services
@@ -22,6 +24,15 @@ from app.services.automation_operations_service import (
 
 class AutomationOperationsTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.database_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.database_directory.cleanup)
+        self.database_path_patch = patch.object(
+            db_module,
+            "SQLITE_DB_PATH",
+            Path(self.database_directory.name) / "invoice_ops.sqlite3",
+        )
+        self.database_path_patch.start()
+        self.addCleanup(self.database_path_patch.stop)
         reset_database()
         self.services = build_services()
         self.admin = self.services["auth_service"].ensure_default_admin()
