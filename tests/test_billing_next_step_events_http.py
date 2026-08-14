@@ -34,6 +34,19 @@ class BillingNextStepEventsHttpTests(HttpServerTestCase):
             actor_user_id=self.admin["user_id"],
             actor_user=self.admin,
         )
+        self.organization_admin = self.services["auth_service"].create_user(
+            {
+                "login": "next-step-admin",
+                "display_name": "Admin Next Step",
+                "password": "1234",
+                "role": "organization_admin",
+                "is_active": 1,
+                "organization_id": self.organization["organization_id"],
+            },
+            actor_login="admin",
+            actor_user_id=self.admin["user_id"],
+            actor_user=self.admin,
+        )
         self.payer = self.services["billing_service"].create_payer(
             {
                 "display_name": "Rodzina Next Step",
@@ -507,6 +520,15 @@ class BillingNextStepEventsHttpTests(HttpServerTestCase):
                 "/api/billing/next-step-attention",
                 headers={"Cookie": operator_cookie},
             )
+        self.assertEqual(response.status, 403, payload.decode("utf-8"))
+
+        organization_admin_cookie = self._login("next-step-admin", "1234")
+        with patch("app.services.billing_service.current_local_date_value", return_value=as_of_date):
+            response, payload = self._request(
+                "GET",
+                "/api/billing/next-step-attention",
+                headers={"Cookie": organization_admin_cookie},
+            )
         self.assertEqual(response.status, 200, payload.decode("utf-8"))
         self.assertEqual(json.loads(payload)["organization_id"], organization_id)
 
@@ -514,7 +536,7 @@ class BillingNextStepEventsHttpTests(HttpServerTestCase):
             response, payload = self._request(
                 "GET",
                 f"/api/billing/next-step-attention?organization_id={other_organization_id}",
-                headers={"Cookie": operator_cookie},
+                headers={"Cookie": organization_admin_cookie},
             )
         self.assertEqual(response.status, 200, payload.decode("utf-8"))
         cross_scope_data = json.loads(payload)

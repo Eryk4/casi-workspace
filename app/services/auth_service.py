@@ -28,6 +28,7 @@ from app.domain.constants import (
     USER_MANAGEMENT_ROLES,
     USER_ROLES,
     default_capabilities_for_role,
+    effective_capabilities_for_role,
 )
 from app.repositories.event_repository import EventRepository
 from app.repositories.organization_repository import OrganizationRepository
@@ -119,14 +120,17 @@ class AuthService:
             return tuple()
 
         stored = self.user_repository.list_capabilities(int(user["user_id"]))
-        if stored:
-            return tuple(capability for capability in KNOWLEDGE_CAPABILITIES if capability in stored)
-
-        can_upload = int(user.get("can_upload_knowledge") or 0)
-        return self._resolve_capabilities(
-            role=str(user.get("role") or ""),
-            requested_capabilities=None,
-            can_upload_knowledge=can_upload,
+        if not stored:
+            stored = list(
+                self._resolve_capabilities(
+                    role=str(user.get("role") or ""),
+                    requested_capabilities=None,
+                    can_upload_knowledge=int(user.get("can_upload_knowledge") or 0),
+                )
+            )
+        return effective_capabilities_for_role(
+            str(user.get("role") or ""),
+            stored,
         )
 
     def has_capability(self, user: dict[str, Any] | None, capability_code: str) -> bool:
@@ -572,8 +576,14 @@ class AuthService:
         organization_modules: list[str] | None = None,
         organization_module_shortcuts: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        normalized_capabilities = sorted(
-            set(capabilities if capabilities is not None else self.user_repository.list_capabilities(int(user["user_id"])))
+        stored_capabilities = list(
+            capabilities if capabilities is not None else self.user_repository.list_capabilities(int(user["user_id"]))
+        )
+        normalized_capabilities = list(
+            effective_capabilities_for_role(
+                str(user.get("role") or ""),
+                stored_capabilities,
+            )
         )
         normalized_memberships = self._serialize_memberships(
             memberships if memberships is not None else self.user_repository.list_memberships(int(user["user_id"]))

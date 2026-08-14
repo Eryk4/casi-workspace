@@ -20,6 +20,7 @@ export type SessionUser = {
   display_name?: string;
   role?: string;
   organization_id?: OrganizationId;
+  capabilities?: string[];
 };
 
 export type CurrentSession = {

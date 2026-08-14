@@ -56,6 +56,7 @@ assert.deepEqual(flatSession, {
   organizationId: "1",
   organizationName: "CASI",
   isGlobalAdmin: false,
+  capabilities: [],
 });
 
 const nestedSession = readSessionOrganizationSnapshot({
@@ -63,10 +64,12 @@ const nestedSession = readSessionOrganizationSnapshot({
     organization_id: "2",
     organization_name: "Misja Robotyka",
     is_global_admin: true,
+    capabilities: ["automation.read", "work_items.read", "automation.read", 42],
   },
 });
 assert.equal(nestedSession.organizationId, "2");
 assert.equal(nestedSession.isGlobalAdmin, true);
+assert.deepEqual(nestedSession.capabilities, ["automation.read", "work_items.read"]);
 assert.equal(isAuthenticatedSession({ user_id: 1, login: "admin" }), true);
 assert.equal(isAuthenticatedSession({ authenticated: false }), false);
 assert.equal(isAuthenticatedSession(null), false);
@@ -153,6 +156,7 @@ const successfulContext = resolveOrganizationContext({
       login: "owner",
       organization_id: null,
       is_global_admin: true,
+      capabilities: ["automation.read", "billing.read", "work_items.read"],
     },
   },
   organizationsResult: {
@@ -165,6 +169,7 @@ assert.equal(successfulContext.status, "ready");
 assert.equal(successfulContext.selectedOrganizationId, "2");
 assert.equal(successfulContext.error, null);
 assert.equal(successfulContext.shouldClearStoredOrganization, false);
+assert.deepEqual(successfulContext.capabilities, ["automation.read", "billing.read", "work_items.read"]);
 
 const singleOrganizationContext = resolveOrganizationContext({
   sessionResult: {

@@ -14,6 +14,7 @@ export type SessionOrganizationSnapshot = {
   organizationId: OrganizationId | null;
   organizationName: string | null;
   isGlobalAdmin: boolean;
+  capabilities: string[];
 };
 
 export type ActiveOrganizationStatus = "loading" | "ready" | "unauthenticated" | "error";
@@ -32,6 +33,7 @@ export type OrganizationContextResolution = {
   selectedOrganizationId: OrganizationId | null;
   error: OrganizationContextError | null;
   shouldClearStoredOrganization: boolean;
+  capabilities: string[];
 };
 
 type SettledValue<T> =
@@ -77,12 +79,26 @@ function readBoolean(value: unknown, fallback = true): boolean {
   return fallback;
 }
 
+function readCapabilities(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      value
+        .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+        .map((item) => item.trim()),
+    ),
+  ].sort();
+}
+
 export function readSessionOrganizationSnapshot(payload: unknown): SessionOrganizationSnapshot {
   if (!isRecord(payload)) {
     return {
       organizationId: null,
       organizationName: null,
       isGlobalAdmin: false,
+      capabilities: [],
     };
   }
 
@@ -92,6 +108,7 @@ export function readSessionOrganizationSnapshot(payload: unknown): SessionOrgani
     organizationId: readOptionalString(source.organization_id) ?? null,
     organizationName: readOptionalString(source.organization_name) ?? null,
     isGlobalAdmin: readBoolean(source.is_global_admin, false),
+    capabilities: readCapabilities(source.capabilities),
   };
 }
 
@@ -228,6 +245,7 @@ export function resolveOrganizationContext(params: {
       selectedOrganizationId: null,
       error: sessionError(params.sessionResult.reason),
       shouldClearStoredOrganization: Boolean(params.storedOrganizationId),
+      capabilities: [],
     };
   }
 
@@ -238,6 +256,7 @@ export function resolveOrganizationContext(params: {
       selectedOrganizationId: null,
       error: sessionError(new ApiError("Brak aktywnej sesji.", 401, null)),
       shouldClearStoredOrganization: Boolean(params.storedOrganizationId),
+      capabilities: [],
     };
   }
 
@@ -265,6 +284,7 @@ export function resolveOrganizationContext(params: {
       selectedOrganizationId: null,
       error,
       shouldClearStoredOrganization: Boolean(params.storedOrganizationId),
+      capabilities: sessionSnapshot.capabilities,
     };
   }
 
@@ -282,6 +302,7 @@ export function resolveOrganizationContext(params: {
     selectedOrganizationId,
     error,
     shouldClearStoredOrganization: Boolean(params.storedOrganizationId && !validIds.has(params.storedOrganizationId)),
+    capabilities: sessionSnapshot.capabilities,
   };
 }
 

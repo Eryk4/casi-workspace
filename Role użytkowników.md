@@ -905,3 +905,21 @@ Najważniejsze decyzje:
 Najważniejsza myśl:
 
 > Bezpieczeństwo CASI Workspace opiera się na połączeniu roli, capability, zakresu organizacji i logowania ważnych działań.
+
+## Module read capabilities v1
+
+Trzy kanoniczne prawa odczytu modułów są wyliczane z aktualnej roli użytkownika i nie są zapisywane jako granty w `user_capabilities`:
+
+| Rola | `work_items.read` | `billing.read` | `automation.read` |
+| --- | --- | --- | --- |
+| `system_owner` | tak | tak | tak |
+| `organization_admin` | tak | tak | tak |
+| `coordinator` | tak | nie | tak |
+| `operator` | tak | nie | nie |
+| `guest` | nie | nie | nie |
+
+Pole `capabilities` bieżącej sesji zawiera sumę zapisanych uprawnień `knowledge.*` oraz powyższych praw wynikających z roli. Endpointy odczytu Work Items, Billing i Automation Operations egzekwują odpowiednie capability po stronie backendu. Filtrowanie nawigacji jest wyłącznie warstwą UX i nie zastępuje autoryzacji API.
+
+`work_items.read` nie omija ACL konkretnego zadania ani zakresu organizacji. `billing.read` oraz `automation.read` nie przyznają żadnych praw zapisu. Uprawnienia zapisu i przyszłe bardziej szczegółowe capabilities pozostają poza zakresem v1.
+
+Przyszły Today Dashboard może używać tego samego zbioru effective capabilities: Tasks przy `work_items.read`, Billing przy `billing.read`, a Automation Attention i Recent Activity przy `automation.read`. Powiadomienia pozostają recipient-scoped.

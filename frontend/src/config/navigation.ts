@@ -99,6 +99,7 @@ export const navigationItems: NavigationItem[] = [
     readiness: "live",
     readinessLabel: "Produkt v1",
     primaryEndpoint: "/api/automations/operations",
+    requiredCapabilities: ["automation.read"],
   },
   {
     id: "assistant-ceo",
@@ -222,6 +223,16 @@ export const navigationItems: NavigationItem[] = [
 ];
 
 export const defaultNavigationItem = navigationItems[0];
+
+export function filterNavigationItemsByCapabilities(
+  items: NavigationItem[],
+  capabilities: readonly string[],
+): NavigationItem[] {
+  const available = new Set(capabilities);
+  return items.filter((item) =>
+    (item.requiredCapabilities ?? []).every((capability) => available.has(capability)),
+  );
+}
 
 export const navigationGroups: Array<{ id: NavigationGroup; label: string }> = [
   { id: "core", label: "Glowny obszar" },

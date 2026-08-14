@@ -11,6 +11,7 @@ from app.domain.constants import (
     KNOWLEDGE_SYNC_CAPABILITY,
     KNOWLEDGE_UPLOAD_CAPABILITY,
     MANAGER_ASSISTANT_MODULE,
+    WORK_ITEMS_READ_CAPABILITY,
 )
 from app.services.auth_service import AuthError
 
@@ -351,7 +352,7 @@ class AuthServiceTests(unittest.TestCase):
 
         self.assertEqual(
             set(created["capabilities"]),
-            {KNOWLEDGE_READ_CAPABILITY, KNOWLEDGE_MANAGE_CAPABILITY},
+            {KNOWLEDGE_READ_CAPABILITY, KNOWLEDGE_MANAGE_CAPABILITY, WORK_ITEMS_READ_CAPABILITY},
         )
         self.assertEqual(created["can_upload_knowledge"], 0)
         self.assertTrue(self.auth_service.has_capability(created, KNOWLEDGE_MANAGE_CAPABILITY))
@@ -379,6 +380,7 @@ class AuthServiceTests(unittest.TestCase):
                 KNOWLEDGE_MANAGE_CAPABILITY,
                 KNOWLEDGE_UPLOAD_CAPABILITY,
                 KNOWLEDGE_SYNC_CAPABILITY,
+                WORK_ITEMS_READ_CAPABILITY,
             },
         )
         self.assertEqual(updated["can_upload_knowledge"], 1)

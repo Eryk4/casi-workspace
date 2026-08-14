@@ -29,6 +29,8 @@ from app.config import (
 )
 from app.demo_seed import build_quick_login_presets
 from app.domain.constants import (
+    AUTOMATION_READ_CAPABILITY,
+    BILLING_READ_CAPABILITY,
     CALENDAR_KIND_LABELS,
     CALENDAR_KINDS,
     GUEST_ROLE,
@@ -71,6 +73,7 @@ from app.domain.constants import (
     WORK_ITEM_STATUSES,
     WORKER_CALENDAR_KINDS,
     WORKER_TASK_FOCUS_VIEWS,
+    WORK_ITEMS_READ_CAPABILITY,
     WRITE_ROLES,
     READ_ROLES,
 )
@@ -238,6 +241,10 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     content_type="text/calendar; charset=utf-8",
                     download_name=f"{display_name}.ics",
                 )
+
+            required_module_capability = self._module_read_capability_for_path(path)
+            if required_module_capability and not self._require_capability_user(required_module_capability):
+                return
 
             if path == "/api/google-calendar/oauth/callback":
                 code = self._query_one(query, "code")
@@ -5181,6 +5188,30 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 self._send_json({"error": str(error)}, status=status)
                 return None
             return self.current_user
+
+        def _require_capability_user(self, capability: str) -> dict[str, Any] | None:
+            user = self._require_user(READ_ROLES)
+            if not user:
+                return None
+            try:
+                self.auth_service.require_capability(user, capability)
+            except PermissionError as error:
+                self._send_json({"error": str(error)}, status=403)
+                return None
+            return user
+
+        def _module_read_capability_for_path(self, path: str) -> str | None:
+            if path.startswith("/api/billing/"):
+                return BILLING_READ_CAPABILITY
+            if path == "/api/automations/operations" or path.startswith("/api/automations/operations/"):
+                return AUTOMATION_READ_CAPABILITY
+            if path == "/api/work-items" or path.startswith("/api/work-items/"):
+                return WORK_ITEMS_READ_CAPABILITY
+            if path in {"/api/tasks", "/api/tasks/users", "/api/tasks/planner", "/api/tasks/focus"}:
+                return WORK_ITEMS_READ_CAPABILITY
+            if path.startswith("/api/tasks/") and not path.startswith("/api/tasks/reminders/"):
+                return WORK_ITEMS_READ_CAPABILITY
+            return None
 
         def _require_knowledge_upload_user(self) -> dict[str, Any] | None:
             user = self._require_user(WRITE_ROLES)

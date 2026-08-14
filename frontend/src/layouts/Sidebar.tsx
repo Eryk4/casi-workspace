@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { ChevronsLeft, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
-import { isNavigationItemActive, navigationGroups, navigationItems } from "@/config/navigation";
+import {
+  filterNavigationItemsByCapabilities,
+  isNavigationItemActive,
+  navigationGroups,
+  navigationItems,
+} from "@/config/navigation";
 import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/Button";
@@ -10,9 +15,12 @@ type SidebarProps = {
   activePath: string;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  capabilities: string[];
 };
 
-export function Sidebar({ activePath, collapsed, onToggleCollapsed }: SidebarProps) {
+export function Sidebar({ activePath, capabilities, collapsed, onToggleCollapsed }: SidebarProps) {
+  const visibleItems = filterNavigationItemsByCapabilities(navigationItems, capabilities);
+
   return (
     <aside className="app-sidebar" aria-label="Glowna nawigacja">
       <div className="app-sidebar__brand">
@@ -36,7 +44,11 @@ export function Sidebar({ activePath, collapsed, onToggleCollapsed }: SidebarPro
 
       <nav className="app-sidebar__nav">
         {navigationGroups.map((group) => {
-          const items = navigationItems.filter((item) => item.group === group.id);
+          const items = visibleItems.filter((item) => item.group === group.id);
+
+          if (items.length === 0) {
+            return null;
+          }
 
           return (
             <section className="app-sidebar__group" key={group.id}>

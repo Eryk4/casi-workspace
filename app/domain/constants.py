@@ -215,6 +215,27 @@ KNOWLEDGE_CAPABILITIES = (
     KNOWLEDGE_ASSISTANT_USE_CAPABILITY,
 )
 
+WORK_ITEMS_READ_CAPABILITY = "work_items.read"
+BILLING_READ_CAPABILITY = "billing.read"
+AUTOMATION_READ_CAPABILITY = "automation.read"
+
+MODULE_READ_CAPABILITIES = (
+    WORK_ITEMS_READ_CAPABILITY,
+    BILLING_READ_CAPABILITY,
+    AUTOMATION_READ_CAPABILITY,
+)
+
+ROLE_MODULE_CAPABILITIES = {
+    SYSTEM_OWNER_ROLE: MODULE_READ_CAPABILITIES,
+    ORGANIZATION_ADMIN_ROLE: MODULE_READ_CAPABILITIES,
+    COORDINATOR_ROLE: (
+        WORK_ITEMS_READ_CAPABILITY,
+        AUTOMATION_READ_CAPABILITY,
+    ),
+    OPERATOR_ROLE: (WORK_ITEMS_READ_CAPABILITY,),
+    GUEST_ROLE: (),
+}
+
 ROLE_DEFAULT_CAPABILITIES = {
     SYSTEM_OWNER_ROLE: KNOWLEDGE_CAPABILITIES,
     ORGANIZATION_ADMIN_ROLE: KNOWLEDGE_CAPABILITIES,
@@ -248,6 +269,19 @@ KNOWLEDGE_DUPLICATE_STATUSES = ("none", "exact_duplicate", "similar_version")
 
 def default_capabilities_for_role(role: str) -> tuple[str, ...]:
     return tuple(ROLE_DEFAULT_CAPABILITIES.get(role, (KNOWLEDGE_READ_CAPABILITY,)))
+
+
+def effective_capabilities_for_role(
+    role: str,
+    stored_capabilities: list[str] | tuple[str, ...],
+) -> tuple[str, ...]:
+    stored_knowledge = {
+        capability
+        for capability in stored_capabilities
+        if capability in KNOWLEDGE_CAPABILITIES
+    }
+    module_capabilities = set(ROLE_MODULE_CAPABILITIES.get(role, ()))
+    return tuple(sorted(stored_knowledge | module_capabilities))
 
 TASK_TYPES = ("zadanie", "wydarzenie", "przypomnienie", "notatka")
 

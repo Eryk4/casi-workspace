@@ -19,6 +19,7 @@ type ActiveOrganizationContextValue = {
   selectedOrganization: OrganizationOption | null;
   error: OrganizationContextError | null;
   selectOrganization: (organizationId: OrganizationId | null) => void;
+  capabilities: string[];
 };
 
 const ActiveOrganizationContext = createContext<ActiveOrganizationContextValue | null>(null);
@@ -51,6 +52,7 @@ export function ActiveOrganizationProvider({ children }: ActiveOrganizationProvi
   const [organizations, setOrganizations] = useState<OrganizationOption[]>([]);
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<OrganizationId | null>(null);
   const [error, setError] = useState<OrganizationContextError | null>(null);
+  const [capabilities, setCapabilities] = useState<string[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -82,6 +84,7 @@ export function ActiveOrganizationProvider({ children }: ActiveOrganizationProvi
       setSelectedOrganizationId(resolution.selectedOrganizationId);
       setError(resolution.error);
       setStatus(resolution.status);
+      setCapabilities(resolution.capabilities);
     }
 
     void loadOrganizationContext();
@@ -109,8 +112,9 @@ export function ActiveOrganizationProvider({ children }: ActiveOrganizationProvi
       selectedOrganization,
       error,
       selectOrganization,
+      capabilities,
     }),
-    [error, organizations, selectOrganization, selectedOrganization, selectedOrganizationId, status],
+    [capabilities, error, organizations, selectOrganization, selectedOrganization, selectedOrganizationId, status],
   );
 
   return <ActiveOrganizationContext.Provider value={value}>{children}</ActiveOrganizationContext.Provider>;

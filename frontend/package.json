@@ -37,6 +37,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
     "test:settings": "node scripts/test-settings.js",
+    "test:general-capabilities": "node scripts/test-general-capabilities.js",
     "test:models": "node scripts/test-all.js"
   },
   "engines": {
