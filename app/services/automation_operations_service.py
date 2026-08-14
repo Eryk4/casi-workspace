@@ -15,6 +15,7 @@ from app.services.internal_notification_service import (
     InternalNotificationService,
 )
 from app.services.task_reminder_service import TaskReminderService
+from app.utils import canonical_utc_timestamp
 
 
 INTERNAL_NOTIFICATION_SCHEDULER_KEY = "internal_notification_scheduler"
@@ -26,6 +27,11 @@ AUTOMATION_ENGINE_KEY = "automation_engine"
 AUTOMATION_CONFIGURATION_STATUSES = {"enabled", "disabled", "not_configured"}
 AUTOMATION_HEALTH_STATUSES = {"healthy", "attention", "never_run", "disabled"}
 AUTOMATION_ATTENTION_CATEGORIES = {"configuration", "execution", "backlog"}
+AUTOMATION_ACTIVITY_STATUSES = {"succeeded", "failed", "partial"}
+AUTOMATION_ACTIVITY_TYPES = {"scheduled_check", "delivery", "processing", "import", "execution"}
+AUTOMATION_ACTIVITY_FIELDS = {
+    "activity_id", "automation_key", "title", "activity_type", "status", "occurred_at", "summary", "details_url",
+}
 REQUIRED_OPERATION_FIELDS = {
     "automation_key",
     "automation_type",
@@ -70,6 +76,10 @@ class AutomationOperationsAdapter(Protocol):
         limit: int,
     ) -> list[dict[str, Any]]: ...
 
+    def get_activity(
+        self, *, organization_id: int, recipient_user_id: int, limit: int
+    ) -> list[dict[str, Any]]: ...
+
 
 class AutomationOperationsRegistry:
     def __init__(self, adapters: tuple[AutomationOperationsAdapter, ...]) -> None:
@@ -101,6 +111,36 @@ class AutomationOperationsRegistry:
             raise ValueError("Adapter zwrócił nieprawidłowy status konfiguracji.")
         if operation["health"] not in AUTOMATION_HEALTH_STATUSES:
             raise ValueError("Adapter zwrócił nieprawidłowy health.")
+
+    @staticmethod
+    def validate_activity(item: dict[str, Any]) -> None:
+        if set(item) != AUTOMATION_ACTIVITY_FIELDS:
+            raise ValueError("Projekcja aktywności zwróciła nieprawidłowy kontrakt.")
+        if item["status"] not in AUTOMATION_ACTIVITY_STATUSES:
+            raise ValueError("Projekcja aktywności zwróciła nieprawidłowy status.")
+        if item["activity_type"] not in AUTOMATION_ACTIVITY_TYPES:
+            raise ValueError("Projekcja aktywności zwróciła nieprawidłowy typ.")
+        if canonical_utc_timestamp(item["occurred_at"]) is None:
+            raise ValueError("Projekcja aktywności zwróciła nieprawidłowy czas.")
+
+
+def _activity_item(
+    *, automation_key: str, title: str, source_type: str, source_id: int,
+    activity_type: str, status: str, occurred_at: Any, summary: str,
+) -> dict[str, Any] | None:
+    canonical_time = canonical_utc_timestamp(occurred_at)
+    if canonical_time is None:
+        return None
+    return {
+        "activity_id": f"{automation_key}:{source_type}:{source_id}",
+        "automation_key": automation_key,
+        "title": title,
+        "activity_type": activity_type,
+        "status": status,
+        "occurred_at": canonical_time,
+        "summary": summary,
+        "details_url": f"/automatyzacje/{automation_key}",
+    }
 
 
 def scheduler_health(
@@ -176,8 +216,9 @@ def automation_engine_health(
 
 class InternalNotificationSchedulerOperationsAdapter:
     automation_key = INTERNAL_NOTIFICATION_SCHEDULER_KEY
+    title = "Automatyczne sprawdzanie powiadomień"
     scope = "organization_recipient"
-    capabilities = frozenset({"summary", "history", "settings"})
+    capabilities = frozenset({"summary", "history", "settings", "activity"})
 
     def __init__(self, repository: InternalNotificationScheduleRepository) -> None:
         self.repository = repository
@@ -207,7 +248,7 @@ class InternalNotificationSchedulerOperationsAdapter:
         operation = {
             "automation_key": self.automation_key,
             "automation_type": "scheduler",
-            "title": "Automatyczne sprawdzanie powiadomień",
+            "title": self.title,
             "description": "Codziennie materializuje brakujące wewnętrzne powiadomienia z billing attention.",
             "status": status,
             "enabled": enabled,
@@ -273,6 +314,24 @@ class InternalNotificationSchedulerOperationsAdapter:
         rows = self.repository.list_runs_read_only(schedule_id=schedule_id, limit=limit)
         return [_serialize_run(row) for row in rows]
 
+    def get_activity(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        items = []
+        for row in self.repository.list_activity_runs_read_only(
+            organization_id=organization_id, recipient_user_id=recipient_user_id, limit=limit
+        ):
+            created_count = int(row.get("created_count") or 0)
+            succeeded = row["status"] == "succeeded"
+            item = _activity_item(
+                automation_key=self.automation_key, title=self.title, source_type="run",
+                source_id=int(row["internal_notification_schedule_run_id"]), activity_type="scheduled_check",
+                status="succeeded" if succeeded else "failed", occurred_at=row.get("finished_at"),
+                summary=(f"Utworzono powiadomienia wewnętrzne: {created_count}." if succeeded
+                         else "Harmonogram powiadomień zakończył się niepowodzeniem."),
+            )
+            if item:
+                items.append(item)
+        return items
+
 
 def task_reminder_health(*, enabled: bool, failed_count: int, latest_attempt_status: str | None, disabled_reason: str | None = None) -> tuple[str, str, str]:
     if not enabled:
@@ -288,8 +347,9 @@ def task_reminder_health(*, enabled: bool, failed_count: int, latest_attempt_sta
 
 class TaskRemindersOperationsAdapter:
     automation_key = TASK_REMINDERS_KEY
+    title = "Przypomnienia zadań"
     scope = "organization_task_visibility"
-    capabilities = frozenset({"summary", "history", "queue", "heartbeat"})
+    capabilities = frozenset({"summary", "history", "queue", "heartbeat", "activity"})
 
     def __init__(self, repository: TaskReminderOutboxRepository, service: TaskReminderService) -> None:
         self.repository = repository
@@ -322,7 +382,7 @@ class TaskRemindersOperationsAdapter:
         operation = {
             "automation_key": self.automation_key,
             "automation_type": "task_reminders",
-            "title": "Przypomnienia zadań",
+            "title": self.title,
             "description": "Kolejka i historia dostarczania przypomnień Telegram dla widocznych zadań.",
             "status": status,
             "enabled": bool(contract["enabled"]),
@@ -380,6 +440,23 @@ class TaskRemindersOperationsAdapter:
             "error_summary": _safe_error_summary(row.get("error_message")),
         } for row in rows]
 
+    def get_activity(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        items = []
+        for row in self.repository.list_activity_attempts_read_only(
+            organization_id=organization_id, viewer_user_id=recipient_user_id, limit=limit
+        ):
+            succeeded = row["outcome"] == "sent"
+            item = _activity_item(
+                automation_key=self.automation_key, title=self.title, source_type="attempt",
+                source_id=int(row["task_reminder_outbox_attempt_id"]), activity_type="delivery",
+                status="succeeded" if succeeded else "failed", occurred_at=row.get("attempted_at"),
+                summary=("Wysłano przypomnienie o zadaniu." if succeeded
+                         else "Wysłanie przypomnienia o zadaniu zakończyło się niepowodzeniem."),
+            )
+            if item:
+                items.append(item)
+        return items
+
     def get_outbox(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
         return self.repository.list_outbox_read_only(
             organization_id=organization_id,
@@ -404,8 +481,9 @@ def knowledge_processing_health(
 
 class KnowledgeProcessingOperationsAdapter:
     automation_key = KNOWLEDGE_PROCESSING_KEY
+    title = "Przetwarzanie bazy wiedzy"
     scope = "organization"
-    capabilities = frozenset({"summary", "history", "queue", "watcher_status"})
+    capabilities = frozenset({"summary", "history", "queue", "watcher_status", "activity"})
 
     def __init__(self, repository: KnowledgeRepository) -> None:
         self.repository = repository
@@ -445,7 +523,7 @@ class KnowledgeProcessingOperationsAdapter:
         operation = {
             "automation_key": self.automation_key,
             "automation_type": "knowledge_processing",
-            "title": "Przetwarzanie bazy wiedzy",
+            "title": self.title,
             "description": "Kolejka przetwarzania dokumentów i ostatni stan skanowania folderu organizacji.",
             "status": status,
             "enabled": True,
@@ -497,6 +575,28 @@ class KnowledgeProcessingOperationsAdapter:
             limit=limit,
         )]
 
+    def get_activity(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        del recipient_user_id
+        success_summaries = {
+            "ingest": "Zakończono przetwarzanie dodanego dokumentu.",
+            "replace": "Zakończono przetwarzanie zaktualizowanego dokumentu.",
+            "restore_version": "Zakończono przetwarzanie przywróconej wersji dokumentu.",
+            "reprocess": "Zakończono ponowne przetwarzanie dokumentu.",
+        }
+        items = []
+        for row in self.repository.list_activity_jobs_read_only(organization_id=organization_id, limit=limit):
+            succeeded = row["status"] == "completed"
+            item = _activity_item(
+                automation_key=self.automation_key, title=self.title, source_type="job",
+                source_id=int(row["knowledge_processing_job_id"]), activity_type="processing",
+                status="succeeded" if succeeded else "failed", occurred_at=row.get("finished_at"),
+                summary=(success_summaries.get(str(row.get("job_type")), "Zakończono przetwarzanie dokumentu.")
+                         if succeeded else "Przetwarzanie dokumentu zakończyło się niepowodzeniem."),
+            )
+            if item:
+                items.append(item)
+        return items
+
     def get_watchers(self, *, organization_id: int, recipient_user_id: int) -> list[dict[str, Any]]:
         del recipient_user_id
         watcher = self.repository.get_watch_status(organization_id)
@@ -515,8 +615,9 @@ class KnowledgeProcessingOperationsAdapter:
 
 class EmailImportOperationsAdapter:
     automation_key = EMAIL_IMPORT_KEY
+    title = "Import e-maili"
     scope = "organization"
-    capabilities = frozenset({"summary", "history", "settings"})
+    capabilities = frozenset({"summary", "history", "settings", "activity"})
 
     def __init__(
         self,
@@ -554,7 +655,7 @@ class EmailImportOperationsAdapter:
         operation = {
             "automation_key": self.automation_key,
             "automation_type": "email_import",
-            "title": "Import e-maili",
+            "title": self.title,
             "description": "Monitoruje organizacyjny import faktur z centralnej skrzynki bez ujawniania treści wiadomości.",
             "status": status,
             "enabled": status == "enabled",
@@ -607,11 +708,30 @@ class EmailImportOperationsAdapter:
             for run in self.repository.list_runs_read_only(organization_id=organization_id, limit=limit)
         ]
 
+    def get_activity(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        del recipient_user_id
+        items = []
+        for row in self.repository.list_activity_runs_read_only(organization_id=organization_id, limit=limit):
+            status = str(row["status"])
+            common_status = "succeeded" if status == "completed" else "partial" if status == "completed_with_issues" else "failed"
+            summary = (f"Zaimportowane dokumenty z e-maili: {int(row.get('imported_invoice_count') or 0)}."
+                       if status == "completed" else "Import e-maili zakończył się z problemami."
+                       if status == "completed_with_issues" else "Import e-maili zakończył się niepowodzeniem.")
+            item = _activity_item(
+                automation_key=self.automation_key, title=self.title, source_type="run",
+                source_id=int(row["email_import_run_id"]), activity_type="import", status=common_status,
+                occurred_at=row.get("finished_at"), summary=summary,
+            )
+            if item:
+                items.append(item)
+        return items
+
 
 class KSeFImportOperationsAdapter:
     automation_key = KSEF_IMPORT_KEY
+    title = "Import KSeF"
     scope = "organization"
-    capabilities = frozenset({"summary", "history", "settings"})
+    capabilities = frozenset({"summary", "history", "settings", "activity"})
 
     def __init__(self, repository: KSeFImportRepository) -> None:
         self.repository = repository
@@ -640,7 +760,7 @@ class KSeFImportOperationsAdapter:
         operation = {
             "automation_key": self.automation_key,
             "automation_type": "ksef_import",
-            "title": "Import KSeF",
+            "title": self.title,
             "description": "Monitoruje organizacyjny import KSeF bez ujawniania danych faktur ani konfiguracji połączenia.",
             "status": status,
             "enabled": status == "enabled",
@@ -691,11 +811,30 @@ class KSeFImportOperationsAdapter:
             for run in self.repository.list_runs_read_only(organization_id=organization_id, limit=limit)
         ]
 
+    def get_activity(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        del recipient_user_id
+        items = []
+        for row in self.repository.list_activity_runs_read_only(organization_id=organization_id, limit=limit):
+            status = str(row["status"])
+            common_status = "succeeded" if status == "completed" else "partial" if status == "completed_with_issues" else "failed"
+            summary = (f"Lokalne uruchomienie procesu importu KSeF — utworzone rekordy: {int(row.get('imported_invoice_count') or 0)}."
+                       if status == "completed" else "Lokalne uruchomienie procesu importu KSeF zakończyło się z problemami."
+                       if status == "completed_with_issues" else "Lokalne uruchomienie procesu importu KSeF zakończyło się niepowodzeniem.")
+            item = _activity_item(
+                automation_key=self.automation_key, title=self.title, source_type="run",
+                source_id=int(row["ksef_import_run_id"]), activity_type="import", status=common_status,
+                occurred_at=row.get("finished_at"), summary=summary,
+            )
+            if item:
+                items.append(item)
+        return items
+
 
 class AutomationEngineOperationsAdapter:
     automation_key = AUTOMATION_ENGINE_KEY
+    title = "Reguły automatyzacji"
     scope = "organization"
-    capabilities = frozenset({"summary", "history", "rules"})
+    capabilities = frozenset({"summary", "history", "rules", "activity"})
 
     def __init__(self, repository: AutomationRepository) -> None:
         self.repository = repository
@@ -716,7 +855,7 @@ class AutomationEngineOperationsAdapter:
         operation = {
             "automation_key": self.automation_key,
             "automation_type": "automation_engine",
-            "title": "Reguły automatyzacji",
+            "title": self.title,
             "description": "Monitoruje organizacyjne reguły i ich zakończone wykonania bez ujawniania warunków ani payloadów akcji.",
             "status": status,
             "enabled": enabled_rules > 0,
@@ -773,6 +912,22 @@ class AutomationEngineOperationsAdapter:
             }
             for row in self.repository.list_executions_read_only(organization_id=organization_id, limit=limit)
         ]
+
+    def get_activity(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
+        del recipient_user_id
+        items = []
+        for row in self.repository.list_activity_executions_read_only(organization_id=organization_id, limit=limit):
+            succeeded = row["execution_status"] == "success"
+            item = _activity_item(
+                automation_key=self.automation_key, title=self.title, source_type="execution",
+                source_id=int(row["automation_execution_id"]), activity_type="execution",
+                status="succeeded" if succeeded else "failed", occurred_at=row.get("executed_at"),
+                summary=("Wykonano regułę automatyzacji." if succeeded
+                         else "Wykonanie reguły automatyzacji zakończyło się niepowodzeniem."),
+            )
+            if item:
+                items.append(item)
+        return items
 
     def get_rules(self, *, organization_id: int, recipient_user_id: int, limit: int) -> list[dict[str, Any]]:
         del recipient_user_id
@@ -951,6 +1106,45 @@ class AutomationOperationsService:
             "attention_items": attention_items,
             "items": items,
         }
+
+    def recent_activity(
+        self,
+        *,
+        organization_id: int,
+        recipient_user_id: int,
+        actor_user: dict[str, Any],
+        limit: int = 8,
+    ) -> dict[str, Any]:
+        self._validate_scope(
+            organization_id=organization_id,
+            recipient_user_id=recipient_user_id,
+            actor_user=actor_user,
+        )
+        normalized_limit = int(limit)
+        if normalized_limit < 1 or normalized_limit > 20:
+            raise ValueError("Limit ostatniej aktywności musi mieścić się w zakresie 1–20.")
+        items: list[dict[str, Any]] = []
+        for adapter in self.registry.adapters:
+            if "activity" not in adapter.capabilities:
+                continue
+            get_activity = getattr(adapter, "get_activity", None)
+            if not callable(get_activity):
+                raise ValueError("Adapter deklarujący activity nie udostępnia projekcji.")
+            source_items = get_activity(
+                organization_id=organization_id,
+                recipient_user_id=recipient_user_id,
+                limit=normalized_limit,
+            )
+            for item in source_items:
+                AutomationOperationsRegistry.validate_activity(item)
+            items.extend(source_items)
+
+        def ordering(item: dict[str, Any]) -> tuple[float, str, str, int]:
+            _, source_type, source_id = str(item["activity_id"]).split(":", 2)
+            occurred = datetime.fromisoformat(str(item["occurred_at"]).replace("Z", "+00:00"))
+            return (-occurred.timestamp(), str(item["automation_key"]), source_type, -int(source_id))
+
+        return {"items": sorted(items, key=ordering)[:normalized_limit], "limit": normalized_limit}
 
     def detail(
         self,

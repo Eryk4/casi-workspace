@@ -84,6 +84,66 @@
   padding: 1rem;
 }
 
+.automation-activity {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.85rem;
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.automation-activity__heading h3,
+.automation-activity__heading p,
+.automation-activity__item h4,
+.automation-activity__item p,
+.automation-activity__empty {
+  margin: 0;
+}
+
+.automation-activity__heading p,
+.automation-activity__item p,
+.automation-activity__item time,
+.automation-activity__empty {
+  color: var(--color-muted);
+}
+
+.automation-activity__list,
+.automation-activity__content {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.automation-activity__item {
+  align-items: flex-start;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 0.9rem;
+}
+
+.automation-activity__title-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.automation-activity__item time {
+  font-size: 0.8rem;
+}
+
+.badge--activity-succeeded { color: var(--color-success); }
+.badge--activity-failed { color: var(--color-danger); }
+.badge--activity-partial { color: var(--color-warning); }
+
 .automation-attention__heading,
 .automation-attention__item,
 .automation-attention__links {
@@ -216,6 +276,11 @@
   }
 
   .automation-attention__item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .automation-activity__item {
     align-items: stretch;
     flex-direction: column;
   }

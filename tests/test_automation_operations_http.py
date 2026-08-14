@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import patch
 
+from app.data_migration_manifest import MIGRATION_MANIFEST
 from app.db import get_connection
 from tests.http_server_support import HttpServerTestCase
 
@@ -46,6 +48,14 @@ class AutomationOperationsHttpTests(HttpServerTestCase):
         )
         with get_connection() as connection:
             return {table: [dict(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()] for table in tables}
+
+    @staticmethod
+    def _full_snapshot() -> dict[str, list[dict[str, object]]]:
+        with get_connection() as connection:
+            return {
+                spec.source_table: [dict(row) for row in connection.execute(f'SELECT * FROM "{spec.source_table}" ORDER BY 1').fetchall()]
+                for spec in MIGRATION_MANIFEST
+            }
 
     def test_dashboard_and_detail_are_read_only(self) -> None:
         before = self._counts()
@@ -111,6 +121,62 @@ class AutomationOperationsHttpTests(HttpServerTestCase):
         self.assertEqual(response.status, 404, payload.decode())
         response, payload = self._request("GET", f"/api/automations/operations/automation_engine?organization_id={int(self.other['organization_id'])}", headers=self.headers)
         self.assertEqual(response.status, 404, payload.decode())
+
+    def test_activity_limits_scope_read_only_and_safe_error_isolation(self) -> None:
+        before = self._counts()
+        full_before = self._full_snapshot()
+        service = self.services["automation_operations_service"]
+        with patch.object(service, "recent_activity", wraps=service.recent_activity) as recent_activity:
+            for suffix, expected_limit in (("", 8), ("&limit=1", 1), ("&limit=20", 20)):
+                response, payload = self._request(
+                    "GET", f"/api/automations/operations/activity?organization_id={self.organization_id}{suffix}",
+                    headers=self.headers,
+                )
+                self.assertEqual(response.status, 200, payload.decode())
+                self.assertEqual(json.loads(payload), {"items": [], "limit": expected_limit})
+            self.assertEqual(recent_activity.call_count, 3)
+        for invalid in ("0", "21", "-1", "abc", "1.5"):
+            response, payload = self._request(
+                "GET", f"/api/automations/operations/activity?organization_id={self.organization_id}&limit={invalid}",
+                headers=self.headers,
+            )
+            self.assertEqual(response.status, 400, payload.decode())
+        response, _ = self._request(
+            "GET", f"/api/automations/operations/activity?organization_id={self.organization_id}&recipient_user_id=1",
+            headers=self.headers,
+        )
+        self.assertEqual(response.status, 400)
+        response, _ = self._request(
+            "GET", f"/api/automations/operations/activity?organization_id={int(self.other['organization_id'])}",
+            headers=self.headers,
+        )
+        self.assertEqual(response.status, 404)
+        self.assertEqual(self._counts(), before)
+
+        with patch.object(service, "recent_activity", side_effect=RuntimeError("SQL secret token traceback")):
+            response, payload = self._request(
+                "GET", f"/api/automations/operations/activity?organization_id={self.organization_id}",
+                headers=self.headers,
+            )
+            self.assertEqual(response.status, 500)
+            serialized = payload.decode().lower()
+            self.assertIn("nie udało się pobrać ostatniej aktywności", serialized)
+            for forbidden in ("sql", "secret", "token", "traceback"):
+                self.assertNotIn(forbidden, serialized)
+        response, _ = self._request(
+            "GET", f"/api/automations/operations?organization_id={self.organization_id}", headers=self.headers
+        )
+        self.assertEqual(response.status, 200)
+        full_after = self._full_snapshot()
+        self.assertEqual(len(full_before), 78)
+        for table in full_before:
+            if table != "user_sessions":
+                self.assertEqual(full_after[table], full_before[table], table)
+        normalize_sessions = lambda rows: [
+            {key: (None if key == "last_seen_at" else value) for key, value in row.items()}
+            for row in rows
+        ]
+        self.assertEqual(normalize_sessions(full_after["user_sessions"]), normalize_sessions(full_before["user_sessions"]))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.db import execute_insert_returning_id, get_connection
+from app.db import execute_insert_returning_id, get_connection, get_read_only_connection
 from app.utils import json_dumps, now_iso
 
 
@@ -128,6 +128,20 @@ class EmailImportRepository:
                 LIMIT ?
                 """,
                 (organization_id, normalized_limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_activity_runs_read_only(self, *, organization_id: int, limit: int) -> list[dict[str, Any]]:
+        with get_read_only_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT email_import_run_id, status, finished_at, imported_invoice_count
+                FROM email_import_runs
+                WHERE organization_id = ? AND status IN ('completed', 'completed_with_issues', 'failed')
+                  AND finished_at IS NOT NULL
+                ORDER BY finished_at DESC, email_import_run_id DESC LIMIT ?
+                """,
+                (organization_id, max(1, min(int(limit), 20))),
             ).fetchall()
         return [dict(row) for row in rows]
 

@@ -26,6 +26,8 @@
     "test:internal-notification-scheduler-dom": "node scripts/test-internal-notification-scheduler-dom.js",
     "test:automation-operations": "node scripts/test-automation-operations.js",
     "test:automation-operations-dom": "node scripts/test-automation-operations-dom.js",
+    "test:automation-recent-activity": "node scripts/test-automation-recent-activity.js",
+    "test:automation-recent-activity-dom": "node scripts/test-automation-recent-activity-dom.js",
     "test:start-paas": "node scripts/test-start-paas.js",
     "test:boss-assistant": "node scripts/test-boss-assistant.js",
     "test:company-assistant": "node scripts/test-company-assistant.js",

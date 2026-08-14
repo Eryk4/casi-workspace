@@ -1337,6 +1337,41 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(attention)
+            if path == "/api/automations/operations/activity":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                if self._query_one(query, "recipient_id") or self._query_one(query, "recipient_user_id"):
+                    return self._send_json({"error": "Odbiorca jest ustalany po stronie serwera."}, status=400)
+                requested_organization_id = self._requested_organization_id(query)
+                if (
+                    requested_organization_id is not None
+                    and not user.get("is_global_admin")
+                    and int(requested_organization_id) != int(user.get("organization_id") or 0)
+                ):
+                    return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                if organization_id is None:
+                    return self._send_json({"error": "Wybierz organizacje dla Centrum Automatyzacji."}, status=400)
+                if requested_organization_id is not None and int(requested_organization_id) != int(organization_id):
+                    return self._send_json({"error": "Nie znaleziono automatyzacji."}, status=404)
+                raw_limit = self._query_one(query, "limit").strip()
+                if raw_limit and (not raw_limit.isdigit() or not 1 <= int(raw_limit) <= 20):
+                    return self._send_json({"error": "Limit ostatniej aktywności musi mieścić się w zakresie 1–20."}, status=400)
+                try:
+                    result = self.automation_operations_service.recent_activity(
+                        organization_id=int(organization_id),
+                        recipient_user_id=int(user["user_id"]),
+                        actor_user=user,
+                        limit=int(raw_limit) if raw_limit else 8,
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
+                except Exception:
+                    return self._send_json({"error": "Nie udało się pobrać ostatniej aktywności."}, status=500)
+                return self._send_json(result)
             if path == "/api/automations/operations":
                 user = self._require_user(READ_ROLES)
                 if not user:

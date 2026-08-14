@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.db import execute_insert_returning_id, get_connection
+from app.db import execute_insert_returning_id, get_connection, get_read_only_connection
 from app.utils import now_iso
 
 
@@ -265,6 +265,19 @@ class AutomationRepository:
                 LIMIT ?
                 """,
                 (organization_id, organization_id, max(1, min(int(limit), 50))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_activity_executions_read_only(self, *, organization_id: int, limit: int) -> list[dict[str, Any]]:
+        with get_read_only_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT automation_execution_id, execution_status, executed_at
+                FROM automation_executions
+                WHERE organization_id = ? AND execution_status IN ('success', 'failed')
+                ORDER BY executed_at DESC, automation_execution_id DESC LIMIT ?
+                """,
+                (organization_id, max(1, min(int(limit), 20))),
             ).fetchall()
         return [dict(row) for row in rows]
 

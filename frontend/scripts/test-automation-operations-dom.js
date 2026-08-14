@@ -97,6 +97,7 @@ const attentionItems = [
   { automation_key: "email_import", title: "Import e-maili", attention_category: "configuration", reason_code: "system_mailbox_not_configured", occurred_at: null, summary: "Brakuje konfiguracji systemowej skrzynki importu e-maili.", details_url: "/automatyzacje/email_import", settings_url: "/ustawienia" },
 ];
 const api = {
+  automationOperationsActivity: async () => ({ items: [], limit: 8 }),
   automationOperations: async (query) => {
     dashboardCalls += 1;
     if (failDashboard) throw new Error("Kontrolowany błąd centrum");

@@ -6,6 +6,24 @@ export type AutomationAttentionCategory = "configuration" | "execution" | "backl
 export type KnowledgeJobStatus = "pending" | "processing" | "completed" | "failed";
 export type EmailImportResultStatus = "running" | "completed" | "completed_with_issues" | "no_new_documents" | "failed";
 export type KSeFImportResultStatus = EmailImportResultStatus;
+export type AutomationActivityType = "scheduled_check" | "delivery" | "processing" | "import" | "execution";
+export type AutomationActivityStatus = "succeeded" | "failed" | "partial";
+
+export type AutomationActivityItem = {
+  activityId: string;
+  automationKey: string;
+  title: string;
+  activityType: AutomationActivityType;
+  status: AutomationActivityStatus;
+  occurredAt: string;
+  summary: string;
+  detailsUrl: string;
+};
+
+export type AutomationActivityResponse = {
+  items: AutomationActivityItem[];
+  limit: number;
+};
 
 export type AutomationOperation = {
   automationKey: string;
@@ -497,6 +515,47 @@ export function readAutomationOperationsDashboard(payload: unknown): AutomationO
     attentionItems: root.attention_items.map(readAttentionItem),
     items: root.items.map(readOperation),
   };
+}
+
+export function readAutomationActivity(payload: unknown): AutomationActivityResponse {
+  const root = record(payload, "automation activity");
+  if (!Array.isArray(root.items)) throw new Error("Nieprawidłowy kontrakt: activity.items.");
+  const limit = nonNegativeInteger(root.limit, "activity.limit") as number;
+  if (limit < 1 || limit > 20) throw new Error("Nieprawidłowy kontrakt: activity.limit.");
+  return {
+    limit,
+    items: root.items.map((value) => {
+      const item = record(value, "activity item");
+      const activityType = text(item.activity_type, "activity_type");
+      const status = text(item.status, "activity status");
+      const occurredAt = text(item.occurred_at, "occurred_at");
+      if (!(["scheduled_check", "delivery", "processing", "import", "execution"] as string[]).includes(activityType)) {
+        throw new Error("Nieprawidłowy kontrakt: activity_type.");
+      }
+      if (!(["succeeded", "failed", "partial"] as string[]).includes(status)) {
+        throw new Error("Nieprawidłowy kontrakt: activity status.");
+      }
+      if (!/(?:Z|[+-]00:00)$/.test(occurredAt) || Number.isNaN(new Date(occurredAt).getTime())) {
+        throw new Error("Nieprawidłowy kontrakt: occurred_at.");
+      }
+      return {
+        activityId: text(item.activity_id, "activity_id"),
+        automationKey: text(item.automation_key, "automation_key"),
+        title: text(item.title, "activity title"),
+        activityType: activityType as AutomationActivityType,
+        status: status as AutomationActivityStatus,
+        occurredAt,
+        summary: text(item.summary, "activity summary"),
+        detailsUrl: safePath(item.details_url, "activity details_url"),
+      };
+    }),
+  };
+}
+
+export function automationActivityStatusLabel(status: AutomationActivityStatus): string {
+  if (status === "succeeded") return "Zakończono";
+  if (status === "partial") return "Z problemami";
+  return "Nieudane";
 }
 
 function readAttentionItem(value: unknown): AutomationAttentionItem {

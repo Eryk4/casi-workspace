@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.db import execute_insert_returning_id, get_connection
+from app.db import execute_insert_returning_id, get_connection, get_read_only_connection
 from app.utils import json_dumps, now_iso, now_local_datetime_value
 
 
@@ -662,6 +662,26 @@ class TaskReminderOutboxRepository:
                 ORDER BY a.attempted_at DESC, a.task_reminder_outbox_attempt_id DESC LIMIT ?
                 """,
                 (organization_id, viewer_user_id, viewer_user_id, viewer_user_id, max(1, min(int(limit), 50))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_activity_attempts_read_only(self, *, organization_id: int, viewer_user_id: int, limit: int) -> list[dict[str, Any]]:
+        with get_read_only_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT a.task_reminder_outbox_attempt_id, a.outcome, a.attempted_at
+                FROM task_reminder_outbox_attempts a
+                JOIN tasks t ON t.task_id = a.task_id
+                WHERE a.organization_id = ?
+                  AND (t.owner_user_id = ? OR t.assigned_user_id = ? OR EXISTS (
+                      SELECT 1 FROM task_visibility_users tvu
+                      WHERE tvu.task_id = t.task_id AND tvu.user_id = ?
+                  ))
+                  AND a.outcome IN ('sent', 'failed', 'dead_letter')
+                  AND (a.attempted_at LIKE '%+00:00' OR a.attempted_at LIKE '%Z')
+                ORDER BY a.attempted_at DESC, a.task_reminder_outbox_attempt_id DESC LIMIT ?
+                """,
+                (organization_id, viewer_user_id, viewer_user_id, viewer_user_id, max(1, min(int(limit), 20))),
             ).fetchall()
         return [dict(row) for row in rows]
 

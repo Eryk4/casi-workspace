@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.db import execute_insert_returning_id, get_connection
+from app.db import execute_insert_returning_id, get_connection, get_read_only_connection
 from app.utils import now_iso
 
 
@@ -776,6 +776,19 @@ class KnowledgeRepository:
                 LIMIT ?
                 """,
                 (organization_id, max(1, min(int(limit), 50))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_activity_jobs_read_only(self, *, organization_id: int, limit: int) -> list[dict[str, Any]]:
+        with get_read_only_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT knowledge_processing_job_id, job_type, status, finished_at
+                FROM knowledge_processing_jobs
+                WHERE organization_id = ? AND status IN ('completed', 'failed') AND finished_at IS NOT NULL
+                ORDER BY finished_at DESC, knowledge_processing_job_id DESC LIMIT ?
+                """,
+                (organization_id, max(1, min(int(limit), 20))),
             ).fetchall()
         return [dict(row) for row in rows]
 

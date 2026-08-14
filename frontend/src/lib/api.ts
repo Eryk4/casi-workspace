@@ -256,6 +256,8 @@ export const api = {
     apiRequest<Record<string, unknown>>("/internal-notifications/schedule/runs", { query }),
   automationOperations: (query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>("/automations/operations", { query }),
+  automationOperationsActivity: (query?: ApiQuery) =>
+    apiRequest<Record<string, unknown>>("/automations/operations/activity", { query }),
   automationOperationDetail: (automationKey: string, query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>(`/automations/operations/${encodeURIComponent(automationKey)}`, { query }),
   saveInternalNotificationSchedule: (

@@ -9,6 +9,7 @@ import { api, withOrganizationQuery } from "@/lib/api";
 
 import {
   AUTOMATION_OPERATIONS_FILTERS,
+  automationActivityStatusLabel,
   automationAttentionCategoryLabel,
   automationConfigurationLabel,
   automationDescription,
@@ -19,7 +20,9 @@ import {
   automationTypeLabel,
   buildAutomationOperationsPresentationSummary,
   filterAutomationOperations,
+  readAutomationActivity,
   readAutomationOperationsDashboard,
+  type AutomationActivityResponse,
   type AutomationOperationsDashboard,
   type AutomationOperationsFilter,
 } from "./automationOperationsModel";
@@ -31,14 +34,18 @@ function dateTime(value: string | null): string {
 export function AutomationOperationsPage() {
   const { selectedOrganizationId, status: organizationStatus } = useActiveOrganization();
   const [dashboard, setDashboard] = useState<AutomationOperationsDashboard | null>(null);
+  const [activity, setActivity] = useState<AutomationActivityResponse | null>(null);
   const [filter, setFilter] = useState<AutomationOperationsFilter>("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState(false);
   const requestVersion = useRef(0);
+  const activityRequestVersion = useRef(0);
   const organizationRef = useRef(selectedOrganizationId);
   organizationRef.current = selectedOrganizationId;
 
-  const load = useCallback(async () => {
+  const loadDashboard = useCallback(async () => {
     const organizationId = selectedOrganizationId;
     const version = ++requestVersion.current;
     setDashboard(null);
@@ -59,12 +66,39 @@ export function AutomationOperationsPage() {
     }
   }, [organizationStatus, selectedOrganizationId]);
 
+  const loadActivity = useCallback(async () => {
+    const organizationId = selectedOrganizationId;
+    const version = ++activityRequestVersion.current;
+    setActivity(null);
+    setActivityError(false);
+    if (organizationStatus !== "ready" || !organizationId) return;
+    setActivityLoading(true);
+    try {
+      const payload = await api.automationOperationsActivity(withOrganizationQuery(organizationId, { limit: 8 }));
+      const nextActivity = readAutomationActivity(payload);
+      if (version !== activityRequestVersion.current || organizationId !== organizationRef.current) return;
+      setActivity(nextActivity);
+    } catch {
+      if (version === activityRequestVersion.current && organizationId === organizationRef.current) setActivityError(true);
+    } finally {
+      if (version === activityRequestVersion.current) setActivityLoading(false);
+    }
+  }, [organizationStatus, selectedOrganizationId]);
+
+  const loadAll = useCallback(() => {
+    void loadDashboard();
+    void loadActivity();
+  }, [loadActivity, loadDashboard]);
+
   useEffect(() => {
     requestVersion.current += 1;
+    activityRequestVersion.current += 1;
     setDashboard(null);
+    setActivity(null);
     setError(null);
-    void load();
-  }, [load]);
+    setActivityError(false);
+    loadAll();
+  }, [loadAll]);
 
   if (organizationStatus === "ready" && !selectedOrganizationId) {
     return <section className="empty-state"><h2>Wybierz organizację</h2><p>Centrum automatyzacji pokazuje stan jednej organizacji i zalogowanego użytkownika.</p></section>;
@@ -81,8 +115,8 @@ export function AutomationOperationsPage() {
           <h2 id="automation-operations-title">Automatyzacje</h2>
           <p>Status harmonogramów i procesów automatycznych CASI Workspace. Ten widok jest wyłącznie do odczytu.</p>
         </div>
-        <button className="button" disabled={loading || !selectedOrganizationId} onClick={() => void load()} type="button">
-          <RefreshCw aria-hidden="true" size={16} /> {loading ? "Odświeżanie..." : "Odśwież"}
+        <button className="button" disabled={(loading || activityLoading) || !selectedOrganizationId} onClick={loadAll} type="button">
+          <RefreshCw aria-hidden="true" size={16} /> {loading || activityLoading ? "Odświeżanie..." : "Odśwież"}
         </button>
       </header>
 
@@ -127,6 +161,29 @@ export function AutomationOperationsPage() {
         </section>
       ) : null}
 
+      <section className="automation-activity" aria-labelledby="automation-activity-title">
+        <div className="automation-activity__heading">
+          <div><h3 id="automation-activity-title">Ostatnia aktywność</h3><p>Zakończone działania automatyzacji w bieżącej organizacji.</p></div>
+        </div>
+        {activityLoading ? <div className="loading-state" role="status">Ładowanie ostatniej aktywności...</div> : null}
+        {!activityLoading && activityError ? <div className="error-state" role="alert"><strong>Nie udało się pobrać ostatniej aktywności.</strong><button className="button" onClick={() => void loadActivity()} type="button">Spróbuj ponownie</button></div> : null}
+        {!activityLoading && !activityError && activity && activity.items.length === 0 ? <p className="automation-activity__empty">Brak ostatniej aktywności.</p> : null}
+        {!activityLoading && !activityError && activity && activity.items.length > 0 ? (
+          <div className="automation-activity__list">
+            {activity.items.map((item) => (
+              <article className="automation-activity__item" data-status={item.status} key={item.activityId}>
+                <div className="automation-activity__content">
+                  <div className="automation-activity__title-row"><h4>{item.title}</h4><span className={"badge badge--activity-" + item.status}>{automationActivityStatusLabel(item.status)}</span></div>
+                  <p>{item.summary}</p>
+                  <time dateTime={item.occurredAt}>{dateTime(item.occurredAt)}</time>
+                </div>
+                <Link href={item.detailsUrl}>Zobacz szczegóły</Link>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
       <div className="automation-filters" role="group" aria-label="Filtry automatyzacji">
         {AUTOMATION_OPERATIONS_FILTERS.map((option) => (
           <button aria-pressed={filter === option.id} className={filter === option.id ? "filter-chip filter-chip--active" : "filter-chip"} key={option.id} onClick={() => setFilter(option.id)} type="button">
@@ -136,7 +193,7 @@ export function AutomationOperationsPage() {
       </div>
 
       {loading ? <div className="loading-state" role="status">Ładowanie stanu automatyzacji...</div> : null}
-      {!loading && error ? <div className="error-state" role="alert"><strong>Nie udało się pobrać automatyzacji</strong><p>{error}</p><button className="button" onClick={() => void load()} type="button">Spróbuj ponownie</button></div> : null}
+      {!loading && error ? <div className="error-state" role="alert"><strong>Nie udało się pobrać automatyzacji</strong><p>{error}</p><button className="button" onClick={() => void loadDashboard()} type="button">Spróbuj ponownie</button></div> : null}
       {!loading && !error && dashboard && items.length === 0 ? <div className="empty-state"><Workflow aria-hidden="true" size={22} /><h3>Brak automatyzacji</h3><p>Żadna automatyzacja nie odpowiada wybranemu filtrowi.</p></div> : null}
 
       {!loading && !error && items.length > 0 ? (
