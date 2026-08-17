@@ -173,6 +173,51 @@ class TaskService:
             "views": views,
         }
 
+    def get_today_preview(
+        self,
+        *,
+        organization_id: int | None,
+        viewer_user: dict[str, Any] | None,
+        as_of: datetime | None = None,
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        if organization_id is None or not viewer_user or not viewer_user.get("user_id"):
+            raise ValueError("Wybierz organizacje i uzytkownika przed sprawdzeniem zadan na dzisiaj.")
+        now_dt = (as_of or datetime.now()).replace(second=0, microsecond=0)
+        today_start = now_dt.replace(hour=0, minute=0)
+        tomorrow_start = today_start + timedelta(days=1)
+        upcoming_end = today_start + timedelta(days=7)
+        boundaries = {
+            "today_start": today_start.strftime("%Y-%m-%dT%H:%M"),
+            "tomorrow_start": tomorrow_start.strftime("%Y-%m-%dT%H:%M"),
+            "upcoming_end": upcoming_end.strftime("%Y-%m-%dT%H:%M"),
+        }
+        viewer_user_id = int(viewer_user["user_id"])
+        rows = self.task_repository.list_today_preview(
+            organization_id=int(organization_id),
+            viewer_user_id=viewer_user_id,
+            limit=limit,
+            **boundaries,
+        )
+        counts = self.task_repository.count_today_preview(
+            organization_id=int(organization_id),
+            viewer_user_id=viewer_user_id,
+            **boundaries,
+        )
+        return {
+            "items": [
+                {
+                    "task_id": int(row["task_id"]),
+                    "title": str(row.get("title") or ""),
+                    "due_at": row.get("due_at"),
+                    "bucket": str(row["bucket"]),
+                    "details_url": f"/work-items/{int(row['task_id'])}",
+                }
+                for row in rows
+            ],
+            "counts": counts,
+        }
+
     def get_task_detail(
         self,
         task_id: int,

@@ -156,6 +156,117 @@ class TaskRepository:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def list_today_preview(
+        self,
+        *,
+        organization_id: int,
+        viewer_user_id: int,
+        today_start: str,
+        tomorrow_start: str,
+        upcoming_end: str,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        query = self._today_eligible_cte() + """
+            SELECT
+                task_id,
+                title,
+                due_at,
+                anchor_at,
+                CASE
+                    WHEN anchor_at < ? THEN 'overdue'
+                    WHEN anchor_at < ? THEN 'today'
+                    ELSE 'upcoming'
+                END AS bucket
+            FROM eligible
+            WHERE anchor_at < ?
+            ORDER BY
+                CASE
+                    WHEN anchor_at < ? THEN 0
+                    WHEN anchor_at < ? THEN 1
+                    ELSE 2
+                END,
+                anchor_at ASC,
+                task_id ASC
+            LIMIT ?
+        """
+        params = [
+            organization_id,
+            viewer_user_id,
+            viewer_user_id,
+            viewer_user_id,
+            viewer_user_id,
+            today_start,
+            tomorrow_start,
+            upcoming_end,
+            today_start,
+            tomorrow_start,
+            max(1, min(int(limit), 10)),
+        ]
+        with get_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def count_today_preview(
+        self,
+        *,
+        organization_id: int,
+        viewer_user_id: int,
+        today_start: str,
+        tomorrow_start: str,
+        upcoming_end: str,
+    ) -> dict[str, int]:
+        query = self._today_eligible_cte() + """
+            SELECT
+                COALESCE(SUM(CASE WHEN anchor_at < ? THEN 1 ELSE 0 END), 0) AS overdue,
+                COALESCE(SUM(CASE WHEN anchor_at >= ? AND anchor_at < ? THEN 1 ELSE 0 END), 0) AS today,
+                COALESCE(SUM(CASE WHEN anchor_at >= ? AND anchor_at < ? THEN 1 ELSE 0 END), 0) AS upcoming
+            FROM eligible
+            WHERE anchor_at < ?
+        """
+        params = [
+            organization_id,
+            viewer_user_id,
+            viewer_user_id,
+            viewer_user_id,
+            viewer_user_id,
+            today_start,
+            today_start,
+            tomorrow_start,
+            tomorrow_start,
+            upcoming_end,
+            upcoming_end,
+        ]
+        with get_connection() as connection:
+            row = connection.execute(query, params).fetchone()
+        return {
+            "overdue": int(row["overdue"] if row else 0),
+            "today": int(row["today"] if row else 0),
+            "upcoming": int(row["upcoming"] if row else 0),
+        }
+
+    def _today_eligible_cte(self) -> str:
+        return """
+            WITH eligible AS (
+                SELECT
+                    t.task_id,
+                    t.title,
+                    t.due_at,
+                    CASE
+                        WHEN NULLIF(t.remind_at, '') IS NULL THEN NULLIF(t.due_at, '')
+                        WHEN NULLIF(t.due_at, '') IS NULL THEN NULLIF(t.remind_at, '')
+                        WHEN t.remind_at < t.due_at THEN t.remind_at
+                        ELSE t.due_at
+                    END AS anchor_at
+                FROM tasks t
+                JOIN organizations o ON o.organization_id = t.organization_id
+                WHERE t.organization_id = ?
+                  AND COALESCE(o.is_active, 1) = 1
+                  AND t.status NOT IN ('zakonczone', 'anulowane')
+                  AND (NULLIF(t.due_at, '') IS NOT NULL OR NULLIF(t.remind_at, '') IS NOT NULL)
+                  AND """ + self._build_visibility_condition() + """
+            )
+        """
+
     def get_by_id(
         self,
         task_id: int,

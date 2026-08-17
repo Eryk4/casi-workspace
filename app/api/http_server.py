@@ -950,6 +950,22 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         viewer_user=user,
                     )
                 )
+            if path == "/api/dashboard/today/tasks":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                try:
+                    return self._send_json(
+                        self.task_service.get_today_preview(
+                            organization_id=organization_id,
+                            viewer_user=user,
+                        )
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
             if path == "/api/work-items":
                 user = self._require_user(READ_ROLES)
                 if not user:
@@ -1213,6 +1229,20 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     return
                 artifact_type, storage_key = matched_storage
                 return self._send_storage_file(artifact_type, storage_key, storage_user)
+
+            if path == "/api/dashboard/today/billing":
+                user = self._require_user(READ_ROLES)
+                if not user:
+                    return
+                organization_id = self._resolve_data_scope(user, query)
+                if organization_id is ...:
+                    return
+                try:
+                    return self._send_json(
+                        self.billing_service.get_today_billing_preview(organization_id=organization_id)
+                    )
+                except ValueError as error:
+                    return self._send_json({"error": str(error)}, status=400)
 
             user = self._require_user(WRITE_ROLES)
             if not user:
@@ -5201,6 +5231,10 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
             return user
 
         def _module_read_capability_for_path(self, path: str) -> str | None:
+            if path == "/api/dashboard/today/tasks":
+                return WORK_ITEMS_READ_CAPABILITY
+            if path == "/api/dashboard/today/billing":
+                return BILLING_READ_CAPABILITY
             if path.startswith("/api/billing/"):
                 return BILLING_READ_CAPABILITY
             if path == "/api/automations/operations" or path.startswith("/api/automations/operations/"):

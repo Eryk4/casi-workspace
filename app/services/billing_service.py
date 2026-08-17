@@ -774,8 +774,9 @@ class BillingService:
             raise ValueError("Data odniesienia attention musi byc poprawna data RRRR-MM-DD.") from None
         normalized_as_of = reference_date.isoformat()
 
-        active_events = self.billing_repository.list_active_next_step_events(
+        active_events = self.billing_repository.list_due_active_next_step_events(
             organization_id=organization_id,
+            as_of_date=normalized_as_of,
             limit=min(max(int(limit), 1), 5000),
         )
         candidates: list[dict[str, Any]] = []
@@ -829,6 +830,50 @@ class BillingService:
             "attention_count": len(candidates),
             "candidates": candidates,
         }
+
+    def get_today_billing_preview(
+        self,
+        *,
+        organization_id: int | None,
+        as_of_date: str | date | None = None,
+        limit: int = 3,
+    ) -> dict[str, Any]:
+        if organization_id is None:
+            raise ValueError("Wybierz organizacje przed sprawdzeniem rozliczen na dzisiaj.")
+        organization = self.organization_repository.get_by_id(organization_id)
+        if not organization or not organization.get("is_active"):
+            raise ValueError("Wybrana organizacja nie istnieje albo jest nieaktywna.")
+        normalized_as_of = as_of_date.isoformat() if isinstance(as_of_date, date) else str(
+            as_of_date or current_local_date_value()
+        ).strip()
+        try:
+            normalized_as_of = date.fromisoformat(normalized_as_of).isoformat()
+        except ValueError:
+            raise ValueError("Data odniesienia musi byc poprawna data RRRR-MM-DD.") from None
+
+        events = self.billing_repository.list_due_active_next_step_events(
+            organization_id=organization_id,
+            as_of_date=normalized_as_of,
+            limit=max(1, min(int(limit), 3)),
+        )
+        counts = self.billing_repository.count_due_active_next_step_events(
+            organization_id=organization_id,
+            as_of_date=normalized_as_of,
+        )
+        items = []
+        for event in events:
+            _, details_url = self._build_next_step_attention_target(event, organization_id=organization_id)
+            planned_for = str(event.get("planned_for") or "")
+            items.append(
+                {
+                    "billing_next_step_event_id": int(event["billing_next_step_event_id"]),
+                    "title": str(event.get("title") or "").strip() or "Nastepny krok rozliczeniowy",
+                    "planned_for": planned_for,
+                    "bucket": "overdue" if planned_for < normalized_as_of else "today",
+                    "details_url": details_url,
+                }
+            )
+        return {"items": items, **counts}
 
     def add_next_step_event(
         self,
@@ -2086,13 +2131,11 @@ class BillingService:
         target_id = int(raw_target_id) if raw_target_id not in (None, "") else None
 
         if target_type == "payer" and target_id:
-            payer = self.billing_repository.get_payer_by_id(target_id, organization_id=organization_id)
-            if payer:
+            if int(event.get("payer_target_exists") or 0):
                 return f"Platnik #{target_id}", f"/rozliczenia/platnicy/{target_id}"
             return "Niedostepny platnik historyczny", None
         if target_type == "payment" and target_id:
-            payment = self.billing_repository.get_transaction_by_id(target_id, organization_id=organization_id)
-            if payment:
+            if int(event.get("payment_target_exists") or 0):
                 return f"Wplata #{target_id}", f"/rozliczenia/wplaty/{target_id}"
             return "Niedostepna wplata historyczna", None
         if target_type == "work_queue_issue":

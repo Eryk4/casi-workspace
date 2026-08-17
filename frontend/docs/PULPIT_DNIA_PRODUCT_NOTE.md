@@ -140,6 +140,15 @@ If this view becomes request-heavy or needs richer cross-module signals, the nex
 
 That endpoint should be added only after live usage shows the current frontend-side aggregation is insufficient.
 
+## Backend read-model prerequisites
+
+The backend exposes two small, organization-scoped projections that can replace the most expensive parts of client-side aggregation when the production dashboard adopts them:
+
+- `GET /api/dashboard/today/tasks?organization_id=...` returns at most five visible open tasks, grouped into `overdue`, `today`, and `upcoming` counts. Visibility reuses the existing task ACL and `work_items.read` capability.
+- `GET /api/dashboard/today/billing?organization_id=...` returns at most three active billing next steps due today or overdue, plus aggregate counts. Access reuses `billing.read`.
+
+Both projections are read-only, tenant-scoped, deliberately omit sensitive operational details, and link only to existing detail routes. They do not change the current Pulpit dnia UI, navigation, root route, task planner semantics, billing event contract, or automation behavior. The task projection uses the earlier of `remind_at` and `due_at`; the billing projection uses the existing active-leaf event semantics. Counts are calculated independently of the preview limits.
+
 ## Tests
 
 Covered by:

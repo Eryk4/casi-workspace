@@ -566,6 +566,111 @@ class BillingRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_due_active_next_step_events(
+        self,
+        *,
+        organization_id: int,
+        as_of_date: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        with get_connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    active.*,
+                    COALESCE(u.display_name, u.login) AS created_by_user_name,
+                    u.role AS created_by_user_role,
+                    CASE WHEN payer.billing_payer_id IS NULL THEN 0 ELSE 1 END AS payer_target_exists,
+                    CASE WHEN payment.billing_transaction_id IS NULL THEN 0 ELSE 1 END AS payment_target_exists
+                FROM billing_next_step_events active
+                LEFT JOIN users u ON u.user_id = active.created_by_user_id
+                LEFT JOIN billing_payers payer
+                    ON active.target_type = 'payer'
+                   AND payer.billing_payer_id = active.target_id
+                   AND payer.organization_id = active.organization_id
+                LEFT JOIN billing_transactions payment
+                    ON active.target_type = 'payment'
+                   AND payment.billing_transaction_id = active.target_id
+                   AND payment.organization_id = active.organization_id
+                WHERE active.organization_id = ?
+                  AND active.planned_for IS NOT NULL
+                  AND active.planned_for <> ''
+                  AND active.planned_for <= ?
+                  AND (
+                      active.event_action = 'planned'
+                      OR (
+                          active.event_action = 'snoozed'
+                          AND active.parent_event_id IS NOT NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM billing_next_step_events parent
+                              WHERE parent.organization_id = active.organization_id
+                                AND parent.billing_next_step_event_id = active.parent_event_id
+                                AND parent.event_action IN ('planned', 'snoozed')
+                          )
+                      )
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM billing_next_step_events child
+                      WHERE child.organization_id = active.organization_id
+                        AND child.parent_event_id = active.billing_next_step_event_id
+                  )
+                ORDER BY
+                    CASE WHEN active.planned_for < ? THEN 0 ELSE 1 END,
+                    active.planned_for ASC,
+                    active.billing_next_step_event_id ASC
+                LIMIT ?
+                """,
+                (organization_id, as_of_date, as_of_date, max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def count_due_active_next_step_events(
+        self,
+        *,
+        organization_id: int,
+        as_of_date: str,
+    ) -> dict[str, int]:
+        with get_connection() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN active.planned_for < ? THEN 1 ELSE 0 END), 0) AS overdue_count,
+                    COALESCE(SUM(CASE WHEN active.planned_for = ? THEN 1 ELSE 0 END), 0) AS due_today_count
+                FROM billing_next_step_events active
+                WHERE active.organization_id = ?
+                  AND active.planned_for IS NOT NULL
+                  AND active.planned_for <> ''
+                  AND active.planned_for <= ?
+                  AND (
+                      active.event_action = 'planned'
+                      OR (
+                          active.event_action = 'snoozed'
+                          AND active.parent_event_id IS NOT NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM billing_next_step_events parent
+                              WHERE parent.organization_id = active.organization_id
+                                AND parent.billing_next_step_event_id = active.parent_event_id
+                                AND parent.event_action IN ('planned', 'snoozed')
+                          )
+                      )
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM billing_next_step_events child
+                      WHERE child.organization_id = active.organization_id
+                        AND child.parent_event_id = active.billing_next_step_event_id
+                  )
+                """,
+                (as_of_date, as_of_date, organization_id, as_of_date),
+            ).fetchone()
+        return {
+            "overdue_count": int(row["overdue_count"] if row else 0),
+            "due_today_count": int(row["due_today_count"] if row else 0),
+        }
+
     def create_payer(self, payload: dict[str, Any]) -> int:
         timestamp = now_iso()
         with get_connection() as connection:
