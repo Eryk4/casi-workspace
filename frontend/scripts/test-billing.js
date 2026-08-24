@@ -1400,7 +1400,7 @@ assert.equal(billingNavigationItem.id, "billing");
 assert.equal(billingNavigationItem.readinessLabel, "Produkt v1");
 assert.equal(billingNavigationItem.actionLabel, "Tylko odczyt");
 assert.doesNotMatch(billingNavigationItem.description, /endpoint|payload|debug|demo/i);
-assert.equal(findNavigationItem("/kasa").id, "dashboard");
+assert.equal(findNavigationItem("/kasa").id, "daily-brief");
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "kasa", "page.tsx"), "utf8"), /redirect\("\/rozliczenia"\)/);
 assert.match(fs.readFileSync(path.join(srcRoot, "..", "next.config.js"), "utf8"), /source: "\/kasa"[\s\S]*destination: "\/rozliczenia"/);
 assert.match(fs.readFileSync(path.join(srcRoot, "app", "rozliczenia", "zaleglosci", "page.tsx"), "utf8"), /BillingDebtsOverpaymentsPage/);

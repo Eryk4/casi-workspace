@@ -194,6 +194,7 @@ export const api = {
     readInvoiceVerificationInbox(await apiRequest<unknown>("/invoices/verification-inbox", { query })),
   tasks: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/tasks", { query }),
   taskFocus: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/tasks/focus", { query }),
+  todayTasks: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/dashboard/today/tasks", { query }),
   workItems: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/work-items", { query }),
   workItemDetail: (workItemId: number | string, query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>(workItemDetailPath(workItemId), { query }),
@@ -244,6 +245,7 @@ export const api = {
     apiRequest<Record<string, unknown>>("/billing/next-step-events", { query }),
   billingActiveNextStepEvents: (query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>("/billing/next-step-events/active", { query }),
+  todayBilling: (query?: ApiQuery) => apiRequest<Record<string, unknown>>("/dashboard/today/billing", { query }),
   billingNextStepAttention: (query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>("/billing/next-step-attention", { query }),
   internalNotifications: (query?: ApiQuery) =>

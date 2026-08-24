@@ -50,6 +50,18 @@ export type NavigationItem = {
 
 export const navigationItems: NavigationItem[] = [
   {
+    id: "daily-brief",
+    label: "Dzisiaj",
+    path: "/pulpit-dnia",
+    icon: SunMedium,
+    group: "core",
+    component: "DailyBriefPage",
+    description: "Najważniejsze sprawy na dziś w aktywnej organizacji.",
+    actionLabel: "Odśwież",
+    readiness: "live",
+    readinessLabel: "Produkt v1",
+  },
+  {
     id: "dashboard",
     label: "Pulpit",
     path: "/pulpit",
@@ -61,18 +73,6 @@ export const navigationItems: NavigationItem[] = [
     readiness: "live",
     readinessLabel: "Dane live",
     primaryEndpoint: "/api/dashboard",
-  },
-  {
-    id: "daily-brief",
-    label: "Pulpit dnia",
-    path: "/pulpit-dnia",
-    icon: SunMedium,
-    group: "core",
-    component: "DailyBriefPage",
-    description: "Poranny przeglÄ…d najwaĹĽniejszych spraw firmy.",
-    actionLabel: "OdĹ›wieĹĽ pulpit dnia",
-    readiness: "live",
-    readinessLabel: "Produkt v1",
   },
   {
     id: "notifications",

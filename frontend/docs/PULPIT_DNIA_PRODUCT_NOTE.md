@@ -1,160 +1,45 @@
-﻿# Pulpit dnia - produkt v1
+# Dzisiaj w CASI — produkt v1
 
-Last checked: 2026-07-03
+`/pulpit-dnia` jest domyślnym, operacyjnym ekranem startowym aktywnego frontendu Next.js. Stary `/pulpit` pozostaje dostępny jako osobny, szerszy pulpit.
 
-`Pulpit dnia` jest produktowym ekranem v1 w aktywnym froncie Next. Jest prawdziwym ekranem CASI, a nie pokazowka ani ekranem tymczasowym. Its product question is:
+## Zakres produktu
 
-> Co dzisiaj wymaga mojej uwagi?
+Ekran odpowiada na jedno pytanie: co wymaga uwagi dzisiaj w aktywnej organizacji? Pokazuje, w stałej kolejności DOM:
 
-Ekran odpowiada na poranne pytanie wlasciciela lub osoby operacyjnej: czym trzeba zajac sie dzis najpierw. Jest deterministycznym, organizacyjnie zawezonym widokiem tylko do odczytu, skladanym z istniejacych zrodel danych.
+1. `Wymaga uwagi` — maksymalnie 3 bezpieczne sygnały z Automation Operations Center.
+2. `Zadania` — maksymalnie 5 widocznych zadań po terminie, na dziś lub nadchodzących.
+3. `Rozliczenia` — maksymalnie 3 aktywne następne kroki po terminie lub na dziś.
+4. `Ostatnia aktywność` — maksymalnie 3 bezpieczne zdarzenia automatyzacji.
 
-## Scope
+Nie ma tu widgetu powiadomień, write actions, automatycznego odświeżania ani szerokiego agregowania CRM, dokumentów, faktur i sald. Odświeżenie jest wyłącznie ręczne.
 
-Route:
+## Źródła i uprawnienia
 
-- `/pulpit-dnia`
+Frontend korzysta tylko z istniejących read modeli:
 
-Frontend module:
+- `GET /api/automations/operations` — `automation.read`;
+- `GET /api/dashboard/today/tasks` — `work_items.read`;
+- `GET /api/dashboard/today/billing` — `billing.read`;
+- `GET /api/automations/operations/activity?limit=3` — `automation.read`.
 
-- `frontend/src/modules/daily-brief/`
+Widoczność i same requesty wynikają z efektywnych capabilities bieżącej sesji. Frontend nie wnioskuje dostępu z nazwy roli. Brak capability oznacza brak sekcji i brak requestu. Typowa macierz daje cztery sekcje ownerowi/adminowi, trzy koordynatorowi, jedną operatorowi i żadnej gościowi.
 
-Active frontend source of truth:
+## Bezpieczeństwo i odporność
 
-- `frontend/`
+- Każdy request ma jawny `organization_id` aktywnej organizacji.
+- Zmiana organizacji natychmiast ukrywa poprzedni zakres.
+- Każda sekcja ma własny stan loading/error/empty i osobny retry.
+- Token wersji requestu odrzuca spóźnione odpowiedzi ze starej organizacji albo cofniętego capability.
+- Błąd jednej sekcji nie usuwa danych pozostałych sekcji.
+- Parsowane są wyłącznie jawne, wąskie kontrakty; linki muszą być bezpiecznymi ścieżkami wewnętrznymi.
+- Ekran nie wykonuje zapisów i nie pokazuje technicznych payloadów ani sekretów.
 
-Legacy UI:
+## Nawigacja i responsywność
 
-- `static/` remains legacy and is not used by this module.
+Nazwa w nawigacji to `Dzisiaj`, a `/` przekierowuje do `/pulpit-dnia`. Układ priorytetów pozostaje w tej samej kolejności semantycznej także po przejściu z dwóch kolumn do jednej przy szerokości 1024 px. Dla małych ekranów lista przechodzi do jednokolumnowego układu metadanych.
 
-## Data Sources
+## Testy
 
-The first version uses existing read-only endpoints:
-
-- `GET /api/dashboard?organization_id=...`
-- `GET /api/tasks/focus?organization_id=...`
-- `GET /api/work-items?organization_id=...&only_open=1&limit=100`
-- `GET /api/invoices/verification-inbox?organization_id=...`
-- `GET /api/billing/ledger/balances?organization_id=...`
-- `GET /api/contractors?organization_id=...`
-- `GET /api/knowledge/documents?organization_id=...`
-
-Nie dodano nowego endpointu agregujacego, poniewaz obecne zrodla wystarczaja do wersji produktowej v1.
-
-## Sections
-
-The screen groups signals into:
-
-- Najważniejsze dziś
-- Sprawy pilne
-- Faktury i finanse
-- Kontrahenci
-- Dokumenty
-- Można odłożyć
-
-Prioritization is deterministic and based on existing fields such as severity, priority, SLA state, invoice inbox sections, balance due, document status, and CRM freshness/contact gaps.
-
-Sekcja `Najważniejsze dziś` jest celowo zbalansowana. It is not a pure score ranking, because one noisy domain could otherwise dominate the morning view. Current rules:
-
-- maximum 7 items,
-- maximum 2 invoice items,
-- maximum 2 task/work-item items,
-- maximum 1 finance item,
-- maximum 1 CRM item,
-- maximum 1 document item,
-- maximum 1 other operational alert,
-- first pass tries to include a mix of tasks, invoices, CRM, documents, finance, and other signals,
-- second pass fills remaining slots by priority while respecting category limits.
-
-Duplikaty i wyjatki faktur pozostaja widoczne w `Faktury i finanse`, ale tylko najsilniejsze sygnaly fakturowe moga wejsc do `Najważniejsze dziś`.
-
-`Można odłożyć` pokazuje spokojniejsze sprawy: mniej pilne sprawy operacyjne, stabilnych kontrahentow, dokumenty bez blokady, przypomnienia niskiej pilnosci i stabilne rozliczenia. If there is truly nothing calm to show, the UI uses a product empty state instead of a technical error-like message.
-
-## Scenariusz lokalnego sandboxu danych
-
-`Pulpit dnia` is a real application screen. The current local data is a fictional sandbox used to verify the product experience safely before any real customer data is connected.
-
-The local sandbox data should make the screen feel like a real morning review for a small operating company, not like a technical fixture.
-
-For the CASI organization, the expected story is:
-
-- the owner starts the day with a few operational decisions,
-- one or two invoices need description or confirmation,
-- contractor context matters because repeated suppliers and new suppliers appear in the inbox,
-- documents such as delegation, onboarding, access, leave, and replacement procedures support the decisions,
-- some reminders are urgent today, while calmer planning items can be moved to `Mozna odlozyc`.
-
-For Misja Robotyka, the expected story is:
-
-- the morning review combines class logistics, parent communication, instructor replacements, billing signals, and education-material invoices,
-- urgent items should not be only invoices,
-- billing and contractor signals should explain what needs attention without turning the page into a finance-only dashboard.
-
-Seeded sandbox data should avoid user-facing labels such as `test item`, `temporary work item`, `sample`, `lorem ipsum`, and folder-derived document names like `folder ...`. Fictional data is fine, but it should sound like normal work a business owner or operations lead would actually recognize.
-
-## Organization Scope
-
-The screen requires an active organization.
-
-Without selected organization it shows:
-
-- `Wybierz organizację, aby zobaczyć Pulpit dnia`
-
-The screen must not request organization-scoped operational data without `organization_id`.
-
-## Read-only Contract
-
-This module does not expose write actions.
-
-It must not add:
-
-- assign/snooze/close buttons,
-- invoice comment forms,
-- CRM note forms,
-- document upload/edit/delete/OCR actions,
-- status changes,
-- workflow decisions,
-- AI chat or generation actions.
-
-Dozwolone interakcje to odswiezenie oraz linki do istniejacych modulow.
-
-## Known Data Gaps
-
-The first version intentionally avoids extra detail requests and backend changes. Therefore:
-
-- CRM uses contractor list signals, not a full recent-note stream.
-- Documents use list/dashboard status fields, not comments or version actions.
-- Finance uses ledger balances, not bank import or matching write flows.
-- Invoice signals use verification inbox and links to detail, not workflow decisions.
-- Existing local databases seeded before the sandbox-data cleanup can still contain older titles dopoki lokalny sandbox danych nie zostanie swiadomie zresetowany i ponownie zasilony. This document describes the intended fresh sandbox scenario.
-
-Przed normalnym uzyciem operacyjnym najwieksze ograniczenia to:
-
-- stabilny read-only endpoint agregujacy, jesli agregacja po stronie frontendu okaze sie zbyt kosztowna lub zbyt rozproszona,
-- client-specific sandbox scenarios that reflect the pilot customer's actual operating rhythm without using production data,
-- better recent-activity signals for CRM notes, document changes, and invoice comments,
-- jeszcze lepsze, wlascicielskie wyjasnienie, dlaczego dana sprawa trafila do `Najważniejsze dziś`.
-
-If this view becomes request-heavy or needs richer cross-module signals, the next backend step should be a separate read-only endpoint such as:
-
-- `GET /api/operations/today?organization_id=...`
-
-That endpoint should be added only after live usage shows the current frontend-side aggregation is insufficient.
-
-## Backend read-model prerequisites
-
-The backend exposes two small, organization-scoped projections that can replace the most expensive parts of client-side aggregation when the production dashboard adopts them:
-
-- `GET /api/dashboard/today/tasks?organization_id=...` returns at most five visible open tasks, grouped into `overdue`, `today`, and `upcoming` counts. Visibility reuses the existing task ACL and `work_items.read` capability.
-- `GET /api/dashboard/today/billing?organization_id=...` returns at most three active billing next steps due today or overdue, plus aggregate counts. Access reuses `billing.read`.
-
-Both projections are read-only, tenant-scoped, deliberately omit sensitive operational details, and link only to existing detail routes. They do not change the current Pulpit dnia UI, navigation, root route, task planner semantics, billing event contract, or automation behavior. The task projection uses the earlier of `remind_at` and `due_at`; the billing projection uses the existing active-leaf event semantics. Counts are calculated independently of the preview limits.
-
-## Tests
-
-Covered by:
-
-- `frontend/scripts/test-daily-brief.js`
-- `frontend/scripts/test-all.js`
-- `python run_quality_checks.py --profile frontend-smoke`
-
-Test modelowy sprawdza grupowanie, priorytetyzacje, blokade bez organizacji, kontrakt tylko do odczytu, linki, empty state, polskie etykiety sekcji i redakcje pol technicznych.
+- `test-today-dashboard.js` — kontrakty Tasks/Billing, capability matrix, źródła requestów, limit i kolejność sekcji, routing.
+- `test-today-dashboard-dom.js` — pełny render, niezależny błąd i retry, zmiana organizacji, capability gating oraz responsywność.
+- `test_today_dashboard_read_models.py` — backendowe read modele, ACL, izolacja organizacji, prywatność, read-only, limity i stabilne sortowanie.

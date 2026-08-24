@@ -2620,6 +2620,113 @@ input {
   }
 }
 
+.today-dashboard {
+  gap: 16px;
+}
+
+.today-dashboard__clear {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--color-success) 28%, var(--color-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-success) 7%, var(--color-surface));
+  color: var(--color-text);
+  font-size: 0.86rem;
+  font-weight: 750;
+  padding: 11px 14px;
+}
+
+.today-dashboard__clear svg {
+  color: var(--color-success);
+}
+
+.today-dashboard__sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas: "attention attention" "tasks billing" "activity activity";
+  gap: 14px;
+  align-items: start;
+}
+
+.today-section--attention { grid-area: attention; }
+.today-section--tasks { grid-area: tasks; }
+.today-section--billing { grid-area: billing; }
+.today-section--activity { grid-area: activity; }
+
+.today-section .ui-card__body {
+  padding: 0;
+}
+
+.today-section .ui-card__action {
+  color: var(--color-accent-strong);
+}
+
+.today-list {
+  display: grid;
+}
+
+.today-list__item {
+  display: grid;
+  grid-template-columns: minmax(95px, auto) minmax(0, 1fr) auto;
+  gap: 5px 12px;
+  align-items: center;
+  border-top: 1px solid var(--color-border);
+  color: inherit;
+  padding: 12px 14px;
+  text-decoration: none;
+}
+
+.today-list__item:first-child { border-top: 0; }
+.today-list__item:hover, .today-list__item:focus-visible { background: var(--color-surface-muted); }
+.today-list__item strong { min-width: 0; color: var(--color-text); font-size: 0.88rem; overflow-wrap: anywhere; }
+.today-list__item > span:not(.today-list__badge) { grid-column: 2; color: var(--color-muted); font-size: 0.78rem; line-height: 1.4; overflow-wrap: anywhere; }
+.today-list__item small { grid-column: 3; grid-row: 1 / span 2; color: var(--color-subtle); font-size: 0.72rem; font-weight: 700; text-align: right; }
+
+.today-list__badge {
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-size: 0.64rem;
+  font-weight: 850;
+  padding: 5px 8px;
+  text-transform: uppercase;
+}
+
+.today-list__badge--overdue, .today-list__badge--failed { background: #fee4e2; color: #b42318; }
+.today-list__badge--today, .today-list__badge--partial { background: #fef0c7; color: #93370d; }
+.today-list__badge--upcoming, .today-list__badge--succeeded { background: #dcfae6; color: #067647; }
+
+.today-section__empty {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.84rem;
+  padding: 16px;
+}
+
+.today-section__more {
+  display: block;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 11px 14px;
+  text-decoration: none;
+}
+
+@media (max-width: 1024px) {
+  .today-dashboard__sections {
+    grid-template-columns: 1fr;
+    grid-template-areas: "attention" "tasks" "billing" "activity";
+  }
+}
+
+@media (max-width: 520px) {
+  .today-list__item { grid-template-columns: 1fr; }
+  .today-list__item > span:not(.today-list__badge), .today-list__item small { grid-column: 1; grid-row: auto; text-align: left; }
+}
+
 .billing-center-hero {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
