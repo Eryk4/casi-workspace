@@ -6,6 +6,7 @@ from unittest.mock import patch
 from app.data_migration_manifest import MIGRATION_MANIFEST
 from app.db import get_connection
 from app.domain.constants import (
+    AUTOMATION_MANAGE_CAPABILITY,
     AUTOMATION_READ_CAPABILITY,
     BILLING_READ_CAPABILITY,
     KNOWLEDGE_MANAGE_CAPABILITY,
@@ -20,8 +21,18 @@ from tests.http_server_support import HttpServerTestCase
 
 
 EXPECTED_MODULE_CAPABILITIES = {
-    "system_owner": {WORK_ITEMS_READ_CAPABILITY, BILLING_READ_CAPABILITY, AUTOMATION_READ_CAPABILITY},
-    "organization_admin": {WORK_ITEMS_READ_CAPABILITY, BILLING_READ_CAPABILITY, AUTOMATION_READ_CAPABILITY},
+    "system_owner": {
+        WORK_ITEMS_READ_CAPABILITY,
+        BILLING_READ_CAPABILITY,
+        AUTOMATION_READ_CAPABILITY,
+        AUTOMATION_MANAGE_CAPABILITY,
+    },
+    "organization_admin": {
+        WORK_ITEMS_READ_CAPABILITY,
+        BILLING_READ_CAPABILITY,
+        AUTOMATION_READ_CAPABILITY,
+        AUTOMATION_MANAGE_CAPABILITY,
+    },
     "coordinator": {WORK_ITEMS_READ_CAPABILITY, AUTOMATION_READ_CAPABILITY},
     "operator": {WORK_ITEMS_READ_CAPABILITY},
     "guest": set(),
@@ -120,6 +131,9 @@ class GeneralCapabilitiesTests(HttpServerTestCase):
         cases = (
             ("operator", BILLING_READ_CAPABILITY),
             ("operator", AUTOMATION_READ_CAPABILITY),
+            ("coordinator", AUTOMATION_MANAGE_CAPABILITY),
+            ("operator", AUTOMATION_MANAGE_CAPABILITY),
+            ("guest", AUTOMATION_MANAGE_CAPABILITY),
             ("guest", WORK_ITEMS_READ_CAPABILITY),
         )
         for role, attempted in cases:

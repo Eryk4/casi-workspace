@@ -14,6 +14,7 @@ from app.services.internal_notification_service import (
     INTERNAL_NOTIFICATION_SOURCE_BILLING_ATTENTION,
     InternalNotificationService,
 )
+from app.services.automation_public_projection import automation_execution_error_projection
 from app.services.task_reminder_service import TaskReminderService
 from app.utils import canonical_utc_timestamp
 
@@ -851,6 +852,10 @@ class AutomationEngineOperationsAdapter:
             enabled_rules_count=enabled_rules,
             last_terminal_status=latest_status,
         )
+        latest_error_code, latest_error_summary = automation_execution_error_projection(
+            latest_status,
+            latest=True,
+        )
         last_execution_at = latest.get("executed_at") if latest else None
         operation = {
             "automation_key": self.automation_key,
@@ -881,11 +886,8 @@ class AutomationEngineOperationsAdapter:
             "recent_failure_count": int(snapshot["recent_failure_count"]),
             "last_success_at": aggregates.get("last_success_at"),
             "last_failure_at": aggregates.get("last_failure_at"),
-            "last_error_code": "automation_execution_failed" if latest_status == "failed" else None,
-            "last_error_summary": (
-                "Ostatnie wykonanie reguły automatyzacji zakończyło się błędem."
-                if latest_status == "failed" else None
-            ),
+            "last_error_code": latest_error_code,
+            "last_error_summary": latest_error_summary,
             "settings_url": None,
             "details_url": f"/automatyzacje/{self.automation_key}",
             "runtime_status": "unknown",
@@ -904,11 +906,8 @@ class AutomationEngineOperationsAdapter:
                 "rule_id": int(row["automation_rule_id"]),
                 "status": _automation_execution_status(str(row["execution_status"])),
                 "executed_at": row["executed_at"],
-                "error_code": "automation_execution_failed" if row["execution_status"] == "failed" else None,
-                "error_summary": (
-                    "Wykonanie reguły automatyzacji zakończyło się błędem."
-                    if row["execution_status"] == "failed" else None
-                ),
+                "error_code": automation_execution_error_projection(row["execution_status"])[0],
+                "error_summary": automation_execution_error_projection(row["execution_status"])[1],
             }
             for row in self.repository.list_executions_read_only(organization_id=organization_id, limit=limit)
         ]

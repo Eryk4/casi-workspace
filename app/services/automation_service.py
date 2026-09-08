@@ -7,6 +7,10 @@ from uuid import uuid4
 
 from app.repositories.automation_repository import AutomationRepository
 from app.repositories.event_repository import EventRepository
+from app.services.automation_public_projection import (
+    project_public_automation_execution,
+    project_public_automation_rule,
+)
 from app.services.intake_service import IntakeService
 from app.utils import json_dumps, now_iso
 
@@ -37,6 +41,33 @@ class AutomationService:
             automation_rule_id=automation_rule_id,
             limit=limit,
         )
+
+    def list_public_rules(
+        self,
+        organization_id: int | None = None,
+        *,
+        include_inactive: bool = False,
+    ) -> list[dict[str, Any]]:
+        return [
+            project_public_automation_rule(rule)
+            for rule in self.list_rules(organization_id=organization_id, include_inactive=include_inactive)
+        ]
+
+    def list_public_executions(
+        self,
+        *,
+        organization_id: int | None = None,
+        automation_rule_id: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        return [
+            project_public_automation_execution(execution)
+            for execution in self.list_executions(
+                organization_id=organization_id,
+                automation_rule_id=automation_rule_id,
+                limit=limit,
+            )
+        ]
 
     def create_rule(
         self,
@@ -87,7 +118,7 @@ class AutomationService:
                 "created_by_user_id": actor_user.get("user_id"),
             },
         )
-        return self._decorate_rule(created)
+        return project_public_automation_rule(created)
 
     def update_rule(
         self,
@@ -132,8 +163,8 @@ class AutomationService:
                 actor=actor,
                 details={"automation_rule_id": automation_rule_id, "updated_fields": sorted(updates.keys())},
             )
-            return self._decorate_rule(refreshed)
-        return self._decorate_rule(current)
+            return project_public_automation_rule(refreshed)
+        return project_public_automation_rule(current)
 
     def run_rule(
         self,
@@ -172,7 +203,7 @@ class AutomationService:
             actor=actor,
             details={"automation_rule_id": automation_rule_id},
         )
-        return self._decorate_rule(refreshed)
+        return project_public_automation_rule(refreshed)
 
     def process_pending_events(self, *, organization_id: int | None = None, limit: int = 200) -> dict[str, Any]:
         rules = self.automation_repository.list_rules(organization_id=organization_id)

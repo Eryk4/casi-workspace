@@ -60,8 +60,8 @@ const expectedByRole = {
   guest: [],
 };
 const capabilitiesByRole = {
-  system_owner: ["work_items.read", "billing.read", "automation.read"],
-  organization_admin: ["work_items.read", "billing.read", "automation.read"],
+  system_owner: ["work_items.read", "billing.read", "automation.read", "automation.manage"],
+  organization_admin: ["work_items.read", "billing.read", "automation.read", "automation.manage"],
   coordinator: ["work_items.read", "automation.read"],
   operator: ["work_items.read"],
   guest: [],

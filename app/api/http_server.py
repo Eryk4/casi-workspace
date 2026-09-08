@@ -29,6 +29,7 @@ from app.config import (
 )
 from app.demo_seed import build_quick_login_presets
 from app.domain.constants import (
+    AUTOMATION_MANAGE_CAPABILITY,
     AUTOMATION_READ_CAPABILITY,
     BILLING_READ_CAPABILITY,
     CALENDAR_KIND_LABELS,
@@ -721,7 +722,7 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     return self._send_json({"error": str(error)}, status=400)
 
             if path == "/api/automation/rules":
-                user = self._require_user(READ_ROLES)
+                user = self._require_capability_user(AUTOMATION_READ_CAPABILITY)
                 if not user:
                     return
                 organization_id = self._resolve_data_scope(user, query)
@@ -729,14 +730,14 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     return
                 include_inactive = self._parse_optional_bool(self._query_one(query, "include_inactive"), False)
                 return self._send_json(
-                    self.automation_service.list_rules(
+                    self.automation_service.list_public_rules(
                         organization_id=organization_id,
                         include_inactive=bool(include_inactive),
                     )
                 )
 
             if path == "/api/automation/executions":
-                user = self._require_user(READ_ROLES)
+                user = self._require_capability_user(AUTOMATION_READ_CAPABILITY)
                 if not user:
                     return
                 organization_id = self._resolve_data_scope(user, query)
@@ -745,7 +746,7 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 automation_rule_id = self._parse_optional_int(self._query_one(query, "automation_rule_id"))
                 limit = self._parse_optional_int(self._query_one(query, "limit")) or 100
                 return self._send_json(
-                    self.automation_service.list_executions(
+                    self.automation_service.list_public_executions(
                         organization_id=organization_id,
                         automation_rule_id=automation_rule_id,
                         limit=min(limit, 500),
@@ -2570,7 +2571,7 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 return self._send_json(created, status=201)
 
             if path == "/api/automation/rules":
-                user = self._require_user(READ_ROLES)
+                user = self._require_capability_user(AUTOMATION_MANAGE_CAPABILITY)
                 if not user:
                     return
                 organization_id = self._resolve_write_scope(user, query)
@@ -2589,7 +2590,7 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 return self._send_json(created, status=201)
 
             if path.startswith("/api/automation/rules/") and path.endswith("/run"):
-                user = self._require_user(READ_ROLES)
+                user = self._require_capability_user(AUTOMATION_MANAGE_CAPABILITY)
                 if not user:
                     return
                 organization_id = self._resolve_write_scope(user, query)
@@ -4432,7 +4433,7 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 return self._send_json(updated)
 
             if path.startswith("/api/automation/rules/"):
-                user = self._require_user(READ_ROLES)
+                user = self._require_capability_user(AUTOMATION_MANAGE_CAPABILITY)
                 if not user:
                     return
                 organization_id = self._resolve_write_scope(user, query)
@@ -4745,7 +4746,7 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                 return self._send_json({"ok": True})
 
             if path.startswith("/api/automation/rules/"):
-                user = self._require_user(READ_ROLES)
+                user = self._require_capability_user(AUTOMATION_MANAGE_CAPABILITY)
                 if not user:
                     return
                 organization_id = self._resolve_write_scope(user, query)

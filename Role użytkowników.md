@@ -124,6 +124,14 @@ Zasada:
 
 > Role powinny być proste i zrozumiałe, a szczegóły dostępu powinny być kontrolowane przez capability.
 
+### Capability modułu automatyzacji
+
+`automation.read` pozwala właścicielowi systemu, administratorowi organizacji i koordynatorowi czytać bezpieczne read-modele automatyzacji w swoim zakresie organizacyjnym. `automation.manage` pozwala wyłącznie właścicielowi systemu i administratorowi organizacji tworzyć, aktualizować, wyłączać i ręcznie uruchamiać reguły legacy.
+
+Oba capability wynikają z aktualnej roli po stronie serwera. Nie są zapisywane w tabeli capability użytkownika, nie mogą zostać nadane przez payload klienta i są przeliczane ponownie przy odczycie sesji. Koordynator ma `automation.read`, ale nie ma `automation.manage`; operator i gość nie mają żadnego z nich.
+
+Publiczne odpowiedzi Rules/Executions są projekcjami z allowlistą. Nie zawierają surowych warunków, akcji, input/output ani komunikatów błędów. Samo `automation.manage` nie oznacza, że wykonanie reguły jest bezpieczne, idempotentne lub odporne na współbieżność; bezpieczeństwo definicji i silnika wymaga osobnych etapów.
+
 ---
 
 # 3. Zakres organizacji

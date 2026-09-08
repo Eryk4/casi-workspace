@@ -141,6 +141,10 @@ Siódmy adapter musi otrzymać unikalny `automation_key`, zadeklarować scope i 
 
 Endpointy `/api/automations/operations` i `/api/automations/operations/{automation_key}` obsługują wyłącznie GET. Odbiorca zawsze wynika z zalogowanej sesji; parametr odbiorcy jest odrzucany. Zakres obcej organizacji zwraca bezpieczne `404`, a nie dane obcego tenant-a. Odpowiedź nie zawiera lease tokenów, stack trace, DSN, sekretów ani surowych payloadów.
 
+Legacy API `/api/automation/rules` i `/api/automation/executions` ma tę samą granicę organizacyjną, ale osobne capability. Odczyt wymaga `automation.read`, a tworzenie, aktualizacja, miękkie wyłączenie i ręczne uruchomienie reguły wymagają `automation.manage`. Capability są wyliczane z roli: właściciel systemu i administrator organizacji mogą zarządzać, koordynator może wyłącznie czytać, a operator i gość nie mają dostępu. Publiczne DTO używają centralnej allowlisty i nie zwracają `conditions_json`, `actions_json`, `input_json`, `result_json`, surowego `error_message` ani `last_result`.
+
+Ta granica autoryzacji nie zmienia semantyki silnika. W szczególności `automation.manage` nie jest gwarancją walidacji katalogu akcji, idempotencji, retry, claim/lease ani bezpieczeństwa współbieżnego uruchomienia. Pełny management UI i edycja surowej konfiguracji wymagają osobnego, kanonicznie walidowanego kontraktu.
+
 ## Sekcja „Ostatnia aktywność”
 
 „Ostatnia aktywność” jest neutralną, historyczną listą zakończonych działań. W odróżnieniu od „Wymaga uwagi” może zawierać wiele wpisów jednego adaptera oraz sukcesy, częściowe sukcesy i błędy. Historyczny błąd pozostaje na liście po późniejszym sukcesie; sekcja nie jest inboxem, monitoringiem runtime ani cyklem życia incydentu.

@@ -138,6 +138,8 @@ class AutomationRepository:
         if organization_id is not None:
             conditions.append("e.organization_id = ?")
             params.append(organization_id)
+            conditions.append("r.organization_id = ?")
+            params.append(organization_id)
         if automation_rule_id is not None:
             conditions.append("e.automation_rule_id = ?")
             params.append(automation_rule_id)
