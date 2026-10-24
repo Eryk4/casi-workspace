@@ -80,6 +80,10 @@ from app.domain.constants import (
 )
 from app.services.auth_service import AuthError, PermissionError
 from app.services.automation_operations_service import AutomationOperationNotFoundError
+from app.services.automation_rule_definition import (
+    AutomationRuleValidationError,
+    get_automation_rule_catalog,
+)
 from app.services.knowledge_service import KnowledgeError
 from app.services.internal_notification_service import InternalNotificationNotFoundError
 from app.services.organization_service import OrganizationError, OrganizationPermissionError
@@ -720,6 +724,12 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                     )
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
+
+            if path == "/api/automations/catalog":
+                user = self._require_capability_user(AUTOMATION_READ_CAPABILITY)
+                if not user:
+                    return
+                return self._send_json(get_automation_rule_catalog())
 
             if path == "/api/automation/rules":
                 user = self._require_capability_user(AUTOMATION_READ_CAPABILITY)
@@ -2585,6 +2595,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         actor=self._actor_label(user),
                         organization_id=organization_id,
                     )
+                except AutomationRuleValidationError as error:
+                    return self._send_json(error.as_response(), status=400)
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 return self._send_json(created, status=201)
@@ -2606,6 +2618,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         actor=self._actor_label(user),
                         organization_id=organization_id,
                     )
+                except AutomationRuleValidationError as error:
+                    return self._send_json(error.as_response(), status=400)
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 if result is None:
@@ -4451,6 +4465,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         actor=self._actor_label(user),
                         organization_id=organization_id,
                     )
+                except AutomationRuleValidationError as error:
+                    return self._send_json(error.as_response(), status=400)
                 except ValueError as error:
                     return self._send_json({"error": str(error)}, status=400)
                 if not updated:

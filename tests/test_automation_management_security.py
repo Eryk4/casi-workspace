@@ -217,9 +217,13 @@ class AutomationManagementSecurityTests(HttpServerTestCase):
             ("POST", "/api/automation/rules", lambda role: json.dumps({
                 "rule_name": f"Created {role}",
                 "rule_slug": f"created-{role}",
-                "trigger_event_type": f"synthetic.created.{role}",
-                "conditions_json": {},
-                "actions_json": [],
+                "trigger_event_type": "work_item_created",
+                "conditions_json": {"status_after": "nowe"},
+                "actions_json": [{
+                    "type": "create_inbox_item",
+                    "title": f"Created {role}",
+                    "description": "Synthetic security fixture",
+                }],
             })),
             ("PATCH", f"/api/automation/rules/{self.rule_id}", lambda role: json.dumps({"description": f"Updated {role}"})),
             ("DELETE", f"/api/automation/rules/{self.rule_id}", lambda role: None),
@@ -241,6 +245,11 @@ class AutomationManagementSecurityTests(HttpServerTestCase):
                         headers=headers,
                     )
                     if role in MANAGE_ALLOWED:
+                        if method == "POST" and route.endswith("/run"):
+                            self.assertEqual(response.status, 400, payload.decode())
+                            parsed = json.loads(payload)
+                            self.assertEqual(parsed["code"], "automation_rule.unknown_condition")
+                            continue
                         self.assertIn(response.status, {200, 201}, payload.decode())
                         parsed = json.loads(payload)
                         if "automation_rule_id" in parsed:

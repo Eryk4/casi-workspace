@@ -11,6 +11,16 @@ from app.services.automation_public_projection import (
     project_public_automation_execution,
     project_public_automation_rule,
 )
+from app.services.automation_rule_definition import (
+    AutomationRuleValidationError,
+    get_condition_definition,
+    get_execution_action_definition,
+    normalize_active_flag,
+    validate_execution_rule_definition,
+    validate_management_rule_definition,
+    validate_rule_metadata,
+    validate_rule_payload_keys,
+)
 from app.services.intake_service import IntakeService
 from app.utils import json_dumps, now_iso
 
@@ -79,24 +89,29 @@ class AutomationService:
     ) -> dict[str, Any]:
         if organization_id is None:
             raise ValueError("Wybierz organizacje przed dodaniem automatyzacji.")
-        rule_name = self._normalize_required_text(payload.get("rule_name"), "Nazwa reguły")
+        validate_rule_payload_keys(payload, partial=False)
+        metadata = validate_rule_metadata(payload, partial=False)
+        definition = validate_management_rule_definition(
+            payload.get("trigger_event_type"),
+            payload.get("conditions_json", {}),
+            payload.get("actions_json") if "actions_json" in payload else payload.get("actions", []),
+        )
+        rule_name = self._normalize_required_text(metadata.get("rule_name"), "Nazwa reguły")
         rule_slug = self._normalize_slug(payload.get("rule_slug") or rule_name)
+        validate_rule_metadata({"rule_slug": rule_slug}, partial=True)
         if self.automation_repository.get_by_slug(organization_id, rule_slug):
             raise ValueError("Reguła automatyzacji o tym identyfikatorze juz istnieje.")
 
-        trigger_event_type = self._normalize_required_text(payload.get("trigger_event_type"), "Zdarzenie wyzwalające")
-        conditions_json = self._normalize_json_text(payload.get("conditions_json") or {})
-        actions_json = self._normalize_actions(payload.get("actions_json") or payload.get("actions") or [])
         rule_id = self.automation_repository.create(
             {
                 "organization_id": organization_id,
                 "rule_slug": rule_slug,
                 "rule_name": rule_name,
-                "description": self._normalize_optional_text(payload.get("description")),
-                "trigger_event_type": trigger_event_type,
-                "conditions_json": conditions_json,
-                "actions_json": actions_json,
-                "is_active": 1 if payload.get("is_active", True) not in {False, 0, "0", "false"} else 0,
+                "description": metadata.get("description"),
+                "trigger_event_type": definition.trigger_event_type,
+                "conditions_json": json_dumps(definition.conditions),
+                "actions_json": json_dumps(definition.actions),
+                "is_active": normalize_active_flag(payload.get("is_active", True)),
                 "created_by_user_id": int(actor_user["user_id"]),
             }
         )
@@ -133,21 +148,48 @@ class AutomationService:
         if not current:
             return None
 
+        validate_rule_payload_keys(payload, partial=True)
+        metadata = validate_rule_metadata(payload, partial=True)
         updates: dict[str, Any] = {}
         if "rule_name" in payload:
-            updates["rule_name"] = self._normalize_required_text(payload.get("rule_name"), "Nazwa reguły")
+            updates["rule_name"] = self._normalize_required_text(metadata.get("rule_name"), "Nazwa reguły")
         if "rule_slug" in payload:
-            updates["rule_slug"] = self._normalize_slug(payload.get("rule_slug"))
+            updates["rule_slug"] = self._normalize_slug(metadata.get("rule_slug"))
         if "description" in payload:
-            updates["description"] = self._normalize_optional_text(payload.get("description"))
-        if "trigger_event_type" in payload:
-            updates["trigger_event_type"] = self._normalize_required_text(payload.get("trigger_event_type"), "Zdarzenie wyzwalające")
-        if "conditions_json" in payload:
-            updates["conditions_json"] = self._normalize_json_text(payload.get("conditions_json") or {})
-        if "actions_json" in payload or "actions" in payload:
-            updates["actions_json"] = self._normalize_actions(payload.get("actions_json") or payload.get("actions") or [])
+            updates["description"] = metadata.get("description")
+
+        config_fields = {"trigger_event_type", "conditions_json", "actions_json", "actions"}
+        changes_config = bool(config_fields.intersection(payload))
+        resulting_trigger = payload.get("trigger_event_type", current.get("trigger_event_type"))
+        resulting_conditions = payload.get("conditions_json", current.get("conditions_json"))
+        resulting_actions = (
+            payload.get("actions_json")
+            if "actions_json" in payload
+            else payload.get("actions")
+            if "actions" in payload
+            else current.get("actions_json")
+        )
+        if changes_config:
+            definition = validate_management_rule_definition(
+                resulting_trigger,
+                resulting_conditions,
+                resulting_actions,
+            )
+            if "trigger_event_type" in payload:
+                updates["trigger_event_type"] = definition.trigger_event_type
+            if "conditions_json" in payload:
+                updates["conditions_json"] = json_dumps(definition.conditions)
+            if "actions_json" in payload or "actions" in payload:
+                updates["actions_json"] = json_dumps(definition.actions)
+
         if "is_active" in payload:
-            updates["is_active"] = 1 if payload.get("is_active") not in {False, 0, "0", "false"} else 0
+            updates["is_active"] = normalize_active_flag(payload.get("is_active"))
+            if not int(current.get("is_active") or 0) and updates["is_active"] and not changes_config:
+                validate_execution_rule_definition(
+                    current.get("trigger_event_type"),
+                    current.get("conditions_json"),
+                    current.get("actions_json"),
+                )
         if updates:
             self.automation_repository.update(automation_rule_id, updates)
             refreshed = self.automation_repository.get_by_id(automation_rule_id, organization_id=organization_id)
@@ -232,6 +274,16 @@ class AutomationService:
     ) -> dict[str, Any]:
         rule_id = int(rule["automation_rule_id"])
         organization_id = int(rule["organization_id"])
+        try:
+            definition = validate_execution_rule_definition(
+                rule.get("trigger_event_type"),
+                rule.get("conditions_json"),
+                rule.get("actions_json"),
+            )
+        except AutomationRuleValidationError:
+            if manual:
+                raise
+            return {"processed": False, "executions": 0, "errors": 1}
         last_cursor = int(rule.get("last_processed_event_log_id") or 0)
         events = self.event_repository.list_logs_after(last_cursor, organization_id=organization_id, limit=limit)
         if not events:
@@ -254,11 +306,17 @@ class AutomationService:
                 continue
             if str(event.get("source") or "").strip().upper() == "AUTOMATION":
                 continue
-            if not self._event_matches_conditions(event, rule):
+            if not self._event_matches_conditions(event, definition.conditions):
                 continue
 
             try:
-                execution_result = self._execute_actions(rule, event, actor_user=actor_user, actor=actor)
+                execution_result = self._execute_actions(
+                    rule,
+                    event,
+                    definition.actions,
+                    actor_user=actor_user,
+                    actor=actor,
+                )
                 matches += 1
                 self.automation_repository.create_execution(
                     {
@@ -310,48 +368,24 @@ class AutomationService:
         self,
         rule: dict[str, Any],
         event: dict[str, Any],
+        actions: list[dict[str, str]],
         *,
         actor_user: dict[str, Any] | None,
         actor: str,
     ) -> dict[str, Any]:
-        actions_raw = rule.get("actions_json") or "[]"
-        actions = json.loads(actions_raw) if isinstance(actions_raw, str) else actions_raw
-        if not isinstance(actions, list):
-            raise ValueError("Lista akcji musi byc tablica JSON.")
-
         results: list[dict[str, Any]] = []
         for action in actions:
-            if not isinstance(action, dict):
-                continue
-            action_type = str(action.get("type") or "").strip().lower()
-            if action_type == "create_inbox_item":
-                if not self.intake_service:
-                    raise ValueError("Modul skrzynki spraw nie jest dostepny.")
-                created = self.intake_service.create_item(
-                    {
-                        "title": action.get("title") or event.get("decision_reason") or str(event.get("event_type") or ""),
-                        "description": action.get("description") or self._event_excerpt(event),
-                        "priority": action.get("priority") or "normalny",
-                        "requester_name": action.get("requester_name"),
-                        "requester_email": action.get("requester_email"),
-                        "source_reference": action.get("source_reference") or str(event.get("id") or ""),
-                        "metadata_json": {
-                            "rule_id": rule.get("automation_rule_id"),
-                            "rule_slug": rule.get("rule_slug"),
-                            "trigger_event_id": event.get("id"),
-                            "trigger_event_type": event.get("event_type"),
-                        },
-                        "source_kind": "automation",
-                    },
+            action_definition = get_execution_action_definition(action["type"])
+            executor = getattr(self, f"_execute_{action_definition.executor}_action")
+            results.append(
+                executor(
+                    action,
+                    rule=rule,
+                    event=event,
                     actor_user=actor_user,
                     actor=actor,
-                    organization_id=int(rule["organization_id"]),
                 )
-                results.append({"type": action_type, "created_intake_item_id": created["intake_item_id"]})
-            elif action_type == "log":
-                results.append({"type": action_type, "message": str(action.get("message") or "")})
-            else:
-                raise ValueError(f"Nieznany typ akcji automatyzacji: {action_type}")
+            )
 
         self.event_repository.log(
             event_type="automation_rule_executed",
@@ -370,33 +404,63 @@ class AutomationService:
         )
         return {"results": results}
 
-    def _event_matches_conditions(self, event: dict[str, Any], rule: dict[str, Any]) -> bool:
-        raw_conditions = rule.get("conditions_json") or "{}"
-        conditions = json.loads(raw_conditions) if isinstance(raw_conditions, str) else raw_conditions
-        if not isinstance(conditions, dict):
-            return True
-
-        source = conditions.get("source")
-        if source and str(event.get("source") or "").strip().lower() != str(source).strip().lower():
-            return False
-
-        status_after = conditions.get("status_after")
-        if status_after and str(event.get("status_after") or "").strip().lower() != str(status_after).strip().lower():
-            return False
-
-        status_before = conditions.get("status_before")
-        if status_before and str(event.get("status_before") or "").strip().lower() != str(status_before).strip().lower():
-            return False
-
-        decision_contains = conditions.get("decision_reason_contains")
-        if decision_contains and str(decision_contains).strip().lower() not in str(event.get("decision_reason") or "").lower():
-            return False
-
-        details_contains = conditions.get("details_contains")
-        if details_contains and str(details_contains).strip().lower() not in str(event.get("details") or "").lower():
-            return False
-
+    def _event_matches_conditions(self, event: dict[str, Any], conditions: dict[str, str]) -> bool:
+        for key, expected in conditions.items():
+            definition = get_condition_definition(key)
+            actual = str(event.get(definition.event_field) or "").strip().lower()
+            normalized_expected = expected.strip().lower()
+            if definition.operator == "equals" and actual != normalized_expected:
+                return False
+            if definition.operator == "contains" and normalized_expected not in actual:
+                return False
         return True
+
+    def _execute_create_inbox_item_action(
+        self,
+        action: dict[str, str],
+        *,
+        rule: dict[str, Any],
+        event: dict[str, Any],
+        actor_user: dict[str, Any] | None,
+        actor: str,
+    ) -> dict[str, Any]:
+        if not self.intake_service:
+            raise ValueError("Modul skrzynki spraw nie jest dostepny.")
+        title = action["title"] if "title" in action else event.get("decision_reason") or str(event.get("event_type") or "")
+        description = action["description"] if "description" in action else self._event_excerpt(event)
+        created = self.intake_service.create_item(
+            {
+                "title": title,
+                "description": description,
+                "priority": action.get("priority") or "normalny",
+                "requester_name": action.get("requester_name"),
+                "requester_email": action.get("requester_email"),
+                "source_reference": action.get("source_reference") or str(event.get("id") or ""),
+                "metadata_json": {
+                    "rule_id": rule.get("automation_rule_id"),
+                    "rule_slug": rule.get("rule_slug"),
+                    "trigger_event_id": event.get("id"),
+                    "trigger_event_type": event.get("event_type"),
+                },
+                "source_kind": "automation",
+            },
+            actor_user=actor_user,
+            actor=actor,
+            organization_id=int(rule["organization_id"]),
+        )
+        return {"type": action["type"], "created_intake_item_id": created["intake_item_id"]}
+
+    def _execute_log_action(
+        self,
+        action: dict[str, str],
+        *,
+        rule: dict[str, Any],
+        event: dict[str, Any],
+        actor_user: dict[str, Any] | None,
+        actor: str,
+    ) -> dict[str, Any]:
+        del rule, event, actor_user, actor
+        return {"type": action["type"], "message": action.get("message", "")}
 
     def _decorate_rule(self, rule: dict[str, Any]) -> dict[str, Any]:
         result = dict(rule)

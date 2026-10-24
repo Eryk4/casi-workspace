@@ -109,13 +109,25 @@ Importer i korekty KSeF pozostają niezależne od `automation_rules` i `automati
 
 `automation_rule` reprezentuje organizacyjną definicję dopasowania typu zdarzenia, warunków i listy akcji. Jedynym trwałym stanem konfiguracji jest `is_active`, prezentowany jako enabled/disabled. `automation_execution` jest trwałym zapisem zakończonej próby obsługi jednego dopasowanego eventu przez regułę. Obecny writer zapisuje wyłącznie `success` albo `failed`; nie istnieją statusy pending, running ani partial success.
 
-Silnik jest event-driven. Ręczne/API `run` przetwarza oczekujące eventy, ale nie tworzy wykonania bez dopasowanego zdarzenia. Nie ma źródła scheduled ani automatycznie uruchamianej pętli/worker callera. Dwie jawne akcje to `create_inbox_item` i `log`; typy są sprawdzane przez centralny dispatcher dopiero podczas wykonania. Wyspecjalizowane subsystemy Centrum nie korzystają z generic engine.
+Silnik jest event-driven. Ręczne/API `run` przetwarza oczekujące eventy, ale nie tworzy wykonania bez dopasowanego zdarzenia. Nie ma źródła scheduled ani automatycznie uruchamianej pętli/worker callera. Wykonawczo obsługiwane akcje to `create_inbox_item` i `log`; ich definicje, pola oraz dispatcher korzystają ze wspólnego registry. Wyspecjalizowane subsystemy Centrum nie korzystają z generic engine.
 
 Reguła ma organizacyjny scope; `created_by_user_id` jest metadanymi, a nie zakresem widoczności. Centrum nie pokazuje reguł ani wykonań innych organizacji. Nie eksponuje nazwy, opisu, trigger type, conditions, actions, input/result JSON, event payloadu ani surowego `error_message`. Nazwa UI jest neutralna (`Reguła #ID`), a błąd ma stały kod i polskie, sanitarne podsumowanie.
 
 Health jest deterministyczny: brak aktywnych reguł daje `disabled`; aktywne reguły bez wykonania dają `never_run`; ostatnie wykonanie aktywnej reguły `success` daje `healthy`, a `failed` daje `attention`. Wiek wykonania nie tworzy SLA. Brak heartbeat, lease i TTL oznacza zawsze `runtime_status=unknown`.
 
 Silnik nie ma retry, max attempts ani idempotency key. Kursor `last_processed_event_log_id` ogranicza zwykłe ponowne przetworzenie, lecz nie ma unikalności `(rule,event)`; awaria pomiędzy akcją i zapisem kursora lub konkurencyjne wywołania mogą powielić wykonanie. Kilka akcji nie jest objętych wspólną transakcją, więc wcześniejsza akcja może zostać wykonana przed późniejszym błędem. Centrum nie zmienia tych zachowań i nie dodaje Run now, Retry, enable/disable, edycji ani usuwania.
+
+### Automation Rule Catalog i walidacja definicji
+
+Kanoniczne registry backendowe jest wspólnym źródłem prawdy dla `GET /api/automations/catalog`, walidacji zapisów management, walidacji bezpieczeństwa wykonania, matchera warunków i wyboru handlera akcji. Katalog ma wersję `1`, jest globalny i deterministyczny, nie wykonuje zapytań do danych tenantów, a odczyt wymaga `automation.read`.
+
+Management-visible triggery to `invoice_status_changed`, `work_item_created` i `work_item_updated`. Pierwszy udostępnia warunki `source`, `status_before` i `status_after`; utworzenie pozycji pracy udostępnia `status_after`, a aktualizacja pozycji pracy `status_before` i `status_after`. Operatorem jest case-insensitive `equals`. `details_contains` i `decision_reason_contains` pozostają zgodnością legacy execution i nie są widoczne w katalogu.
+
+Management może tworzyć wyłącznie jedną akcję `create_inbox_item` z literalnym `title` oraz opcjonalnym literalnym `description`. Pola techniczne `priority`, `requester_name`, `requester_email` i `source_reference` nie są wystawiane. Akcja `log` pozostaje execution-supported dla istniejących reguł, ale nie jest management-creatable. Nowy zapis wymaga dokładnie jednej akcji i maksymalnie trzech warunków; unknown triggery, warunki, akcje, pola i nieprawidłowe typy są odrzucane przed zapisem.
+
+Zmiana triggera, warunków lub akcji waliduje pełną wynikową definicję. Aktualizacja samej nazwy lub opisu nie wymusza migracji bezpiecznej reguły legacy do katalogu. Aktywacja istniejącej reguły przechodzi execution-safety validation, natomiast wyłączenie wadliwej reguły pozostaje możliwe. Manual run i automatyczny procesor walidują konfigurację przed pierwszym handlerem; wadliwe warunki nie mogą zostać potraktowane jako match-all.
+
+Ten etap nie dodaje idempotencji `(rule,event)`, unique indexu, claim/lease, retry, workera, runtime schedulera, atomiczności wielu akcji ani UI do zarządzania regułami. Te ryzyka pozostają odłożone do kolejnych etapów.
 
 Dashboard używa stałej liczby zapytań agregujących bez pobierania historii. Detail zwraca domyślnie 20, maksymalnie 50 neutralnych reguł oraz wykonań. Automation Operations jest read-only względem danych domenowych i operacyjnych, a bezpośrednie read-modele nie wykonują żadnego write. Pełne uwierzytelnione żądanie HTTP może aktualizować wyłącznie istniejące `user_sessions.last_seen_at` jako niezależny efekt warstwy uwierzytelniania. Wyjątek nie obejmuje żadnej innej tabeli ani kolumny i nie jest częścią logiki Automation Operations.
 
@@ -143,7 +155,7 @@ Endpointy `/api/automations/operations` i `/api/automations/operations/{automati
 
 Legacy API `/api/automation/rules` i `/api/automation/executions` ma tę samą granicę organizacyjną, ale osobne capability. Odczyt wymaga `automation.read`, a tworzenie, aktualizacja, miękkie wyłączenie i ręczne uruchomienie reguły wymagają `automation.manage`. Capability są wyliczane z roli: właściciel systemu i administrator organizacji mogą zarządzać, koordynator może wyłącznie czytać, a operator i gość nie mają dostępu. Publiczne DTO używają centralnej allowlisty i nie zwracają `conditions_json`, `actions_json`, `input_json`, `result_json`, surowego `error_message` ani `last_result`.
 
-Ta granica autoryzacji nie zmienia semantyki silnika. W szczególności `automation.manage` nie jest gwarancją walidacji katalogu akcji, idempotencji, retry, claim/lease ani bezpieczeństwa współbieżnego uruchomienia. Pełny management UI i edycja surowej konfiguracji wymagają osobnego, kanonicznie walidowanego kontraktu.
+Ta granica autoryzacji jest uzupełniona kanoniczną walidacją definicji dla create i zmian konfiguracji. Nie zapewnia jednak idempotencji, retry, claim/lease ani bezpieczeństwa współbieżnego uruchomienia. Pełny management UI pozostaje poza zakresem.
 
 ## Sekcja „Ostatnia aktywność”
 
