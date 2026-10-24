@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
 from uuid import uuid4
 
 from app.repositories.automation_repository import AutomationRepository
@@ -22,7 +23,21 @@ from app.services.automation_rule_definition import (
     validate_rule_payload_keys,
 )
 from app.services.intake_service import IntakeService
-from app.utils import json_dumps, now_iso
+from app.utils import json_dumps
+
+
+AUTOMATION_RULE_LEASE_SECONDS = 60
+
+
+class AutomationRuleBusyError(ValueError):
+    code = "automation_rule_busy"
+    safe_message = "Reguła automatyzacji jest obecnie przetwarzana."
+
+    def __init__(self) -> None:
+        super().__init__(self.safe_message)
+
+    def as_response(self) -> dict[str, str]:
+        return {"error": self.safe_message, "code": self.code}
 
 
 class AutomationService:
@@ -31,10 +46,12 @@ class AutomationService:
         automation_repository: AutomationRepository,
         event_repository: EventRepository,
         intake_service: IntakeService | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.automation_repository = automation_repository
         self.event_repository = event_repository
         self.intake_service = intake_service
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def list_rules(self, organization_id: int | None = None, *, include_inactive: bool = False) -> list[dict[str, Any]]:
         return self.automation_repository.list_rules(organization_id=organization_id, include_inactive=include_inactive)
@@ -274,95 +291,176 @@ class AutomationService:
     ) -> dict[str, Any]:
         rule_id = int(rule["automation_rule_id"])
         organization_id = int(rule["organization_id"])
-        try:
-            definition = validate_execution_rule_definition(
-                rule.get("trigger_event_type"),
-                rule.get("conditions_json"),
-                rule.get("actions_json"),
-            )
-        except AutomationRuleValidationError:
+        claim_token = uuid4().hex
+        claimed_at, lease_until = self._lease_window()
+        acquired = self.automation_repository.acquire_rule_claim(
+            automation_rule_id=rule_id,
+            organization_id=organization_id,
+            claim_token=claim_token,
+            claimed_at=claimed_at,
+            lease_until=lease_until,
+        )
+        if not acquired:
             if manual:
-                raise
-            return {"processed": False, "executions": 0, "errors": 1}
-        last_cursor = int(rule.get("last_processed_event_log_id") or 0)
-        events = self.event_repository.list_logs_after(last_cursor, organization_id=organization_id, limit=limit)
-        if not events:
-            if manual:
-                self.automation_repository.update(
-                    rule_id,
-                    {
-                        "last_run_at": now_iso(),
-                        "last_result": "Brak nowych zdarzen do przetworzenia.",
-                    },
-                )
+                raise AutomationRuleBusyError()
             return {"processed": False, "executions": 0, "errors": 0}
 
-        matches = 0
-        errors = 0
-        latest_event_id = last_cursor
-        for event in events:
-            latest_event_id = max(latest_event_id, int(event.get("id") or 0))
-            if str(event.get("event_type") or "") != str(rule.get("trigger_event_type") or ""):
-                continue
-            if str(event.get("source") or "").strip().upper() == "AUTOMATION":
-                continue
-            if not self._event_matches_conditions(event, definition.conditions):
-                continue
-
+        try:
             try:
-                execution_result = self._execute_actions(
-                    rule,
-                    event,
-                    definition.actions,
-                    actor_user=actor_user,
-                    actor=actor,
+                definition = validate_execution_rule_definition(
+                    rule.get("trigger_event_type"),
+                    rule.get("conditions_json"),
+                    rule.get("actions_json"),
                 )
+            except AutomationRuleValidationError:
+                if manual:
+                    raise
+                return {"processed": False, "executions": 0, "errors": 1}
+
+            last_cursor = int(rule.get("last_processed_event_log_id") or 0)
+            events = self.event_repository.list_logs_after(last_cursor, organization_id=organization_id, limit=limit)
+            if not events:
+                if manual:
+                    progress_at, renewed_until = self._lease_window()
+                    if self.automation_repository.renew_rule_claim(
+                        automation_rule_id=rule_id,
+                        organization_id=organization_id,
+                        claim_token=claim_token,
+                        now=progress_at,
+                        lease_until=renewed_until,
+                    ):
+                        self.automation_repository.update_rule_progress(
+                            automation_rule_id=rule_id,
+                            organization_id=organization_id,
+                            claim_token=claim_token,
+                            now=progress_at,
+                            last_processed_event_log_id=last_cursor,
+                            last_run_at=progress_at,
+                            last_result="Brak nowych zdarzen do przetworzenia.",
+                            execution_count_increment=0,
+                        )
+                return {"processed": False, "executions": 0, "errors": 0}
+
+            matches = 0
+            errors = 0
+            latest_event_id = last_cursor
+            lease_lost = False
+            for event in events:
+                checkpoint_at, renewed_until = self._lease_window()
+                if not self.automation_repository.renew_rule_claim(
+                    automation_rule_id=rule_id,
+                    organization_id=organization_id,
+                    claim_token=claim_token,
+                    now=checkpoint_at,
+                    lease_until=renewed_until,
+                ):
+                    lease_lost = True
+                    break
+
+                latest_event_id = max(latest_event_id, int(event.get("id") or 0))
+                if str(event.get("event_type") or "") != str(rule.get("trigger_event_type") or ""):
+                    continue
+                if str(event.get("source") or "").strip().upper() == "AUTOMATION":
+                    continue
+                if not self._event_matches_conditions(event, definition.conditions):
+                    continue
+
+                execution_claim = self.automation_repository.try_claim_execution(
+                    {
+                        "automation_rule_id": rule_id,
+                        "organization_id": organization_id,
+                        "event_log_id": event.get("id"),
+                        "trigger_event_type": definition.trigger_event_type,
+                        "input_json": json_dumps(event),
+                        "executed_at": checkpoint_at,
+                    }
+                )
+                if not execution_claim["claimed"]:
+                    continue
+                execution_id = int(execution_claim["automation_execution_id"])
+
+                try:
+                    execution_result = self._execute_actions(
+                        rule,
+                        event,
+                        definition.actions,
+                        actor_user=actor_user,
+                        actor=actor,
+                    )
+                except Exception as error:
+                    completed = self.automation_repository.complete_execution(
+                        execution_id,
+                        execution_status="failed",
+                        error_message=str(error),
+                        executed_at=self._now_iso(),
+                    )
+                    if completed:
+                        errors += 1
+                        self.event_repository.log(
+                            event_type="automation_rule_failed",
+                            invoice_id=None,
+                            organization_id=organization_id,
+                            source="AUTOMATION",
+                            status_before=None,
+                            status_after=None,
+                            decision_reason=str(error),
+                            actor=actor,
+                            details={"automation_rule_id": rule_id, "event_log_id": event.get("id")},
+                        )
+                    continue
+
+                completed = self.automation_repository.complete_execution(
+                    execution_id,
+                    execution_status="success",
+                    result_json=json_dumps(execution_result),
+                    executed_at=self._now_iso(),
+                )
+                if not completed:
+                    continue
                 matches += 1
-                self.automation_repository.create_execution(
-                    {
-                        "automation_rule_id": rule_id,
-                        "organization_id": organization_id,
-                        "event_log_id": event.get("id"),
-                        "trigger_event_type": str(rule.get("trigger_event_type") or ""),
-                        "execution_status": "success",
-                        "input_json": json_dumps(event),
-                        "result_json": json_dumps(execution_result),
-                    }
-                )
-            except Exception as error:
-                errors += 1
-                self.automation_repository.create_execution(
-                    {
-                        "automation_rule_id": rule_id,
-                        "organization_id": organization_id,
-                        "event_log_id": event.get("id"),
-                        "trigger_event_type": str(rule.get("trigger_event_type") or ""),
-                        "execution_status": "failed",
-                        "input_json": json_dumps(event),
-                        "error_message": str(error),
-                    }
-                )
                 self.event_repository.log(
-                    event_type="automation_rule_failed",
+                    event_type="automation_rule_executed",
                     invoice_id=None,
                     organization_id=organization_id,
                     source="AUTOMATION",
                     status_before=None,
                     status_after=None,
-                    decision_reason=str(error),
+                    decision_reason=str(rule.get("rule_name") or ""),
                     actor=actor,
-                    details={"automation_rule_id": rule_id, "event_log_id": event.get("id")},
+                    details={
+                        "automation_rule_id": rule_id,
+                        "trigger_event_id": event.get("id"),
+                        "results": execution_result["results"],
+                    },
                 )
-        self.automation_repository.update(
-            rule_id,
-            {
-                "last_processed_event_log_id": latest_event_id,
-                "last_run_at": now_iso(),
-                "last_result": f"Przetworzono {matches} zdarzen, bledow: {errors}.",
-                "execution_count": int(rule.get("execution_count") or 0) + matches + errors,
-            },
-        )
-        return {"processed": True, "executions": matches, "errors": errors}
+
+            if not lease_lost:
+                progress_at, renewed_until = self._lease_window()
+                renewed = self.automation_repository.renew_rule_claim(
+                    automation_rule_id=rule_id,
+                    organization_id=organization_id,
+                    claim_token=claim_token,
+                    now=progress_at,
+                    lease_until=renewed_until,
+                )
+                if renewed:
+                    self.automation_repository.update_rule_progress(
+                        automation_rule_id=rule_id,
+                        organization_id=organization_id,
+                        claim_token=claim_token,
+                        now=progress_at,
+                        last_processed_event_log_id=latest_event_id,
+                        last_run_at=progress_at,
+                        last_result=f"Przetworzono {matches} zdarzen, bledow: {errors}.",
+                        execution_count_increment=matches + errors,
+                    )
+            return {"processed": True, "executions": matches, "errors": errors}
+        finally:
+            self.automation_repository.release_rule_claim(
+                automation_rule_id=rule_id,
+                organization_id=organization_id,
+                claim_token=claim_token,
+            )
 
     def _execute_actions(
         self,
@@ -387,22 +485,20 @@ class AutomationService:
                 )
             )
 
-        self.event_repository.log(
-            event_type="automation_rule_executed",
-            invoice_id=None,
-            organization_id=int(rule["organization_id"]),
-            source="AUTOMATION",
-            status_before=None,
-            status_after=None,
-            decision_reason=str(rule.get("rule_name") or ""),
-            actor=actor,
-            details={
-                "automation_rule_id": rule.get("automation_rule_id"),
-                "trigger_event_id": event.get("id"),
-                "results": results,
-            },
-        )
         return {"results": results}
+
+    def _now_iso(self) -> str:
+        current = self._clock()
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        return current.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+    def _lease_window(self) -> tuple[str, str]:
+        current = self._clock()
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        current = current.astimezone(timezone.utc).replace(microsecond=0)
+        return current.isoformat(), (current + timedelta(seconds=AUTOMATION_RULE_LEASE_SECONDS)).isoformat()
 
     def _event_matches_conditions(self, event: dict[str, Any], conditions: dict[str, str]) -> bool:
         for key, expected in conditions.items():

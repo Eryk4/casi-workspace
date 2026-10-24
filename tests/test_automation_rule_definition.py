@@ -155,6 +155,16 @@ class AutomationRuleCatalogTests(unittest.TestCase):
 class AutomationExecutionSafetyTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repository = Mock()
+        self.repository.acquire_rule_claim.return_value = True
+        self.repository.renew_rule_claim.return_value = True
+        self.repository.try_claim_execution.return_value = {
+            "claimed": True,
+            "reason": "claimed",
+            "automation_execution_id": 101,
+        }
+        self.repository.complete_execution.return_value = True
+        self.repository.update_rule_progress.return_value = True
+        self.repository.release_rule_claim.return_value = True
         self.events = Mock()
         self.service = AutomationService(self.repository, self.events)
         self.base_rule = {
@@ -196,7 +206,7 @@ class AutomationExecutionSafetyTests(unittest.TestCase):
                 result = self.service._process_rule(rule)
                 self.assertEqual(result, {"processed": False, "executions": 0, "errors": 1})
                 self.events.list_logs_after.assert_not_called()
-                self.repository.create_execution.assert_not_called()
+                self.repository.try_claim_execution.assert_not_called()
                 self.repository.update.assert_not_called()
 
     def test_manual_invalid_rule_returns_controlled_validation_error(self) -> None:
@@ -214,8 +224,7 @@ class AutomationExecutionSafetyTests(unittest.TestCase):
         self.events.list_logs_after.return_value = [self.event]
         result = self.service._process_rule(rule)
         self.assertEqual(result, {"processed": True, "executions": 1, "errors": 0})
-        execution = self.repository.create_execution.call_args.args[0]
-        parsed_result = json.loads(execution["result_json"])
+        parsed_result = json.loads(self.repository.complete_execution.call_args.kwargs["result_json"])
         self.assertEqual([item["message"] for item in parsed_result["results"]], ["one", "two"])
 
     def test_valid_create_inbox_action_uses_literal_management_fields(self) -> None:
@@ -561,6 +570,29 @@ class AutomationRuleDefinitionHttpTests(HttpServerTestCase):
             automation_rule_id=log_id,
         )
         self.assertEqual(executions[0]["execution_status"], "success")
+
+    def test_manual_run_busy_is_a_safe_conflict(self) -> None:
+        rule_id = self._create_raw_rule(
+            slug="busy-rule",
+            trigger="work_item_created",
+            conditions={"status_after": "nowe"},
+            actions=[valid_action()],
+        )
+        repository = self.services["automation_service"].automation_repository
+        with patch.object(repository, "acquire_rule_claim", return_value=False):
+            response, body = self._request(
+                "POST",
+                f"/api/automation/rules/{rule_id}/run",
+                headers={"Cookie": self.cookies["organization_admin"]},
+            )
+        self.assertEqual(response.status, 409, body.decode())
+        self.assertEqual(
+            json.loads(body),
+            {
+                "error": "Reguła automatyzacji jest obecnie przetwarzana.",
+                "code": "automation_rule_busy",
+            },
+        )
 
 
 if __name__ == "__main__":

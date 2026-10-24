@@ -135,6 +135,7 @@ class AutomationRepository:
     ) -> list[dict[str, Any]]:
         params: list[Any] = []
         conditions = []
+        conditions.append("e.execution_status IN ('success', 'failed')")
         if organization_id is not None:
             conditions.append("e.organization_id = ?")
             params.append(organization_id)
@@ -306,4 +307,222 @@ class AutomationRepository:
                 ),
                 "automation_execution_id",
             )
+
+    def try_claim_execution(self, payload: dict[str, Any]) -> dict[str, Any]:
+        query = """
+            INSERT INTO automation_executions (
+                automation_rule_id, organization_id, event_log_id, trigger_event_type, execution_status,
+                input_json, result_json, error_message, executed_at
+            )
+            SELECT
+                r.automation_rule_id, r.organization_id, ?, ?, 'processing', ?, NULL, NULL, ?
+            FROM automation_rules r
+            WHERE r.automation_rule_id = ?
+              AND r.organization_id = ?
+        """
+        params = (
+            payload.get("event_log_id"),
+            payload["trigger_event_type"],
+            payload.get("input_json"),
+            payload.get("executed_at") or now_iso(),
+            payload["automation_rule_id"],
+            payload["organization_id"],
+        )
+        with get_connection() as connection:
+            try:
+                if connection.backend == "sqlite":
+                    cursor = connection.execute(query, params)
+                    if not cursor.rowcount:
+                        raise ValueError("Automation rule does not belong to the requested organization.")
+                    execution_id = int(cursor.lastrowid)
+                else:
+                    cursor = connection.execute(
+                        f"{query.rstrip().rstrip(';')} RETURNING automation_execution_id",
+                        params,
+                    )
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise ValueError("Automation rule does not belong to the requested organization.")
+                    execution_id = int(row["automation_execution_id"])
+            except Exception as error:
+                if self._is_execution_identity_conflict(error):
+                    return {"claimed": False, "reason": "already_claimed", "automation_execution_id": None}
+                raise
+        return {"claimed": True, "reason": "claimed", "automation_execution_id": execution_id}
+
+    def complete_execution(
+        self,
+        automation_execution_id: int,
+        *,
+        execution_status: str,
+        result_json: str | None = None,
+        error_message: str | None = None,
+        executed_at: str | None = None,
+    ) -> bool:
+        if execution_status not in {"success", "failed"}:
+            raise ValueError("Execution can only be completed with a terminal status.")
+        with get_connection() as connection:
+            updated = connection.execute(
+                """
+                UPDATE automation_executions
+                SET execution_status = ?,
+                    result_json = ?,
+                    error_message = ?,
+                    executed_at = ?
+                WHERE automation_execution_id = ?
+                  AND execution_status = 'processing'
+                """,
+                (
+                    execution_status,
+                    result_json,
+                    error_message,
+                    executed_at or now_iso(),
+                    automation_execution_id,
+                ),
+            )
+            return bool(updated.rowcount)
+
+    def get_execution_by_id(self, automation_execution_id: int) -> dict[str, Any] | None:
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_executions WHERE automation_execution_id = ?",
+                (automation_execution_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def acquire_rule_claim(
+        self,
+        *,
+        automation_rule_id: int,
+        organization_id: int,
+        claim_token: str,
+        claimed_at: str,
+        lease_until: str,
+    ) -> bool:
+        with get_connection() as connection:
+            updated = connection.execute(
+                """
+                UPDATE automation_rules
+                SET processing_claim_token = ?,
+                    processing_claimed_at = ?,
+                    processing_lease_until = ?
+                WHERE automation_rule_id = ?
+                  AND organization_id = ?
+                  AND (
+                      processing_claim_token IS NULL
+                      OR processing_lease_until IS NULL
+                      OR processing_lease_until <= ?
+                  )
+                """,
+                (
+                    claim_token,
+                    claimed_at,
+                    lease_until,
+                    automation_rule_id,
+                    organization_id,
+                    claimed_at,
+                ),
+            )
+            return bool(updated.rowcount)
+
+    def renew_rule_claim(
+        self,
+        *,
+        automation_rule_id: int,
+        organization_id: int,
+        claim_token: str,
+        now: str,
+        lease_until: str,
+    ) -> bool:
+        with get_connection() as connection:
+            updated = connection.execute(
+                """
+                UPDATE automation_rules
+                SET processing_lease_until = ?
+                WHERE automation_rule_id = ?
+                  AND organization_id = ?
+                  AND processing_claim_token = ?
+                  AND processing_lease_until > ?
+                """,
+                (lease_until, automation_rule_id, organization_id, claim_token, now),
+            )
+            return bool(updated.rowcount)
+
+    def release_rule_claim(
+        self,
+        *,
+        automation_rule_id: int,
+        organization_id: int,
+        claim_token: str,
+    ) -> bool:
+        with get_connection() as connection:
+            updated = connection.execute(
+                """
+                UPDATE automation_rules
+                SET processing_claim_token = NULL,
+                    processing_claimed_at = NULL,
+                    processing_lease_until = NULL
+                WHERE automation_rule_id = ?
+                  AND organization_id = ?
+                  AND processing_claim_token = ?
+                """,
+                (automation_rule_id, organization_id, claim_token),
+            )
+            return bool(updated.rowcount)
+
+    def update_rule_progress(
+        self,
+        *,
+        automation_rule_id: int,
+        organization_id: int,
+        claim_token: str,
+        now: str,
+        last_processed_event_log_id: int,
+        last_run_at: str,
+        last_result: str,
+        execution_count_increment: int,
+    ) -> bool:
+        with get_connection() as connection:
+            updated = connection.execute(
+                """
+                UPDATE automation_rules
+                SET last_processed_event_log_id = CASE
+                        WHEN last_processed_event_log_id < ? THEN ?
+                        ELSE last_processed_event_log_id
+                    END,
+                    last_run_at = ?,
+                    last_result = ?,
+                    execution_count = execution_count + ?,
+                    updated_at = ?
+                WHERE automation_rule_id = ?
+                  AND organization_id = ?
+                  AND processing_claim_token = ?
+                  AND processing_lease_until > ?
+                """,
+                (
+                    last_processed_event_log_id,
+                    last_processed_event_log_id,
+                    last_run_at,
+                    last_result,
+                    max(0, int(execution_count_increment)),
+                    now,
+                    automation_rule_id,
+                    organization_id,
+                    claim_token,
+                    now,
+                ),
+            )
+            return bool(updated.rowcount)
+
+    @staticmethod
+    def _is_execution_identity_conflict(error: Exception) -> bool:
+        message = str(error).lower()
+        return (
+            "idx_automation_executions_rule_event_unique" in message
+            or "automation_executions.automation_rule_id, automation_executions.event_log_id" in message
+            or (
+                "duplicate key value violates unique constraint" in message
+                and "automation_executions" in message
+            )
+        )
 

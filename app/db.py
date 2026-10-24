@@ -1427,6 +1427,9 @@ CREATE TABLE IF NOT EXISTS automation_rules (
     last_run_at TEXT,
     last_result TEXT,
     execution_count INTEGER NOT NULL DEFAULT 0,
+    processing_claim_token TEXT,
+    processing_claimed_at TEXT,
+    processing_lease_until TEXT,
     created_by_user_id INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -1462,6 +1465,9 @@ CREATE INDEX IF NOT EXISTS idx_automation_executions_event_log_id
     ON automation_executions(event_log_id);
 CREATE INDEX IF NOT EXISTS idx_automation_executions_org_executed
     ON automation_executions(organization_id, executed_at DESC, automation_execution_id DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_automation_executions_rule_event_unique
+    ON automation_executions(automation_rule_id, event_log_id)
+    WHERE event_log_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS knowledge_documents (
     knowledge_document_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3052,6 +3058,9 @@ CREATE TABLE IF NOT EXISTS automation_rules (
     last_run_at TEXT,
     last_result TEXT,
     execution_count INTEGER NOT NULL DEFAULT 0,
+    processing_claim_token TEXT,
+    processing_claimed_at TEXT,
+    processing_lease_until TEXT,
     created_by_user_id BIGINT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -3091,6 +3100,9 @@ CREATE INDEX IF NOT EXISTS idx_automation_executions_event_log_id
     ON automation_executions(event_log_id);
 CREATE INDEX IF NOT EXISTS idx_automation_executions_org_executed
     ON automation_executions(organization_id, executed_at DESC, automation_execution_id DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_automation_executions_rule_event_unique
+    ON automation_executions(automation_rule_id, event_log_id)
+    WHERE event_log_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS knowledge_documents (
     knowledge_document_id BIGSERIAL PRIMARY KEY,
@@ -3438,6 +3450,11 @@ ADDITIVE_COLUMNS = {
     },
     "event_logs": {
         "organization_id": "INTEGER",
+    },
+    "automation_rules": {
+        "processing_claim_token": "TEXT",
+        "processing_claimed_at": "TEXT",
+        "processing_lease_until": "TEXT",
     },
     "invoice_handoff_batches": {
         "export_format": "TEXT",
@@ -4531,6 +4548,45 @@ def _list_table_columns(connection: DatabaseConnection, table_name: str) -> set[
     return {row["column_name"] for row in rows}
 
 
+def _table_exists(connection: DatabaseConnection, table_name: str) -> bool:
+    if connection.backend == "sqlite":
+        row = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table_name,),
+        ).fetchone()
+    else:
+        row = connection.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = current_schema()
+              AND table_name = ?
+            """,
+            (table_name,),
+        ).fetchone()
+    return row is not None
+
+
+def _preflight_automation_execution_identity(connection: DatabaseConnection) -> None:
+    if not _table_exists(connection, "automation_executions"):
+        return
+    duplicate = connection.execute(
+        """
+        SELECT automation_rule_id, event_log_id, COUNT(*) AS duplicate_count
+        FROM automation_executions
+        WHERE event_log_id IS NOT NULL
+        GROUP BY automation_rule_id, event_log_id
+        HAVING COUNT(*) > 1
+        LIMIT 1
+        """
+    ).fetchone()
+    if duplicate is not None:
+        raise RuntimeError(
+            "Duplicate automation executions block schema upgrade. "
+            "Resolve duplicate (automation_rule_id, event_log_id) history in a separate controlled operation."
+        )
+
+
 def _ensure_additive_columns(connection: DatabaseConnection) -> None:
     for table_name, columns in ADDITIVE_COLUMNS.items():
         existing = _list_table_columns(connection, table_name)
@@ -5597,6 +5653,7 @@ def _ensure_sqlite_multi_org_contractors(connection: DatabaseConnection) -> None
 
 
 def _apply_database_schema_bootstrap(connection: DatabaseConnection) -> None:
+    _preflight_automation_execution_identity(connection)
     _run_schema_script(
         connection,
         SQLITE_SCHEMA if connection.backend == "sqlite" else POSTGRES_SCHEMA,

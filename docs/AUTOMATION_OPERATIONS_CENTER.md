@@ -107,15 +107,23 @@ Importer i korekty KSeF pozostają niezależne od `automation_rules` i `automati
 
 ## Generic Automation Engine
 
-`automation_rule` reprezentuje organizacyjną definicję dopasowania typu zdarzenia, warunków i listy akcji. Jedynym trwałym stanem konfiguracji jest `is_active`, prezentowany jako enabled/disabled. `automation_execution` jest trwałym zapisem zakończonej próby obsługi jednego dopasowanego eventu przez regułę. Obecny writer zapisuje wyłącznie `success` albo `failed`; nie istnieją statusy pending, running ani partial success.
+`automation_rule` reprezentuje organizacyjną definicję dopasowania typu zdarzenia, warunków i listy akcji. Jedynym trwałym stanem konfiguracji jest `is_active`, prezentowany jako enabled/disabled. `automation_execution` jest trwałą tożsamością próby obsługi jednego dopasowanego eventu przez regułę. Wewnętrzny status `processing` jest claimem zapisanym przed pierwszym side effectem; publiczne read-modele pokazują wyłącznie terminalne `success` i `failed`.
 
 Silnik jest event-driven. Ręczne/API `run` przetwarza oczekujące eventy, ale nie tworzy wykonania bez dopasowanego zdarzenia. Nie ma źródła scheduled ani automatycznie uruchamianej pętli/worker callera. Wykonawczo obsługiwane akcje to `create_inbox_item` i `log`; ich definicje, pola oraz dispatcher korzystają ze wspólnego registry. Wyspecjalizowane subsystemy Centrum nie korzystają z generic engine.
 
 Reguła ma organizacyjny scope; `created_by_user_id` jest metadanymi, a nie zakresem widoczności. Centrum nie pokazuje reguł ani wykonań innych organizacji. Nie eksponuje nazwy, opisu, trigger type, conditions, actions, input/result JSON, event payloadu ani surowego `error_message`. Nazwa UI jest neutralna (`Reguła #ID`), a błąd ma stały kod i polskie, sanitarne podsumowanie.
 
-Health jest deterministyczny: brak aktywnych reguł daje `disabled`; aktywne reguły bez wykonania dają `never_run`; ostatnie wykonanie aktywnej reguły `success` daje `healthy`, a `failed` daje `attention`. Wiek wykonania nie tworzy SLA. Brak heartbeat, lease i TTL oznacza zawsze `runtime_status=unknown`.
+Health jest deterministyczny: brak aktywnych reguł daje `disabled`; aktywne reguły bez wykonania daje `never_run`; ostatnie terminalne wykonanie aktywnej reguły `success` daje `healthy`, a `failed` daje `attention`. Wewnętrzny claim `processing` nie jest aktywnością ani alarmem. Wiek wykonania nie tworzy SLA, a brak heartbeat runtime nadal oznacza `runtime_status=unknown`.
 
-Silnik nie ma retry, max attempts ani idempotency key. Kursor `last_processed_event_log_id` ogranicza zwykłe ponowne przetworzenie, lecz nie ma unikalności `(rule,event)`; awaria pomiędzy akcją i zapisem kursora lub konkurencyjne wywołania mogą powielić wykonanie. Kilka akcji nie jest objętych wspólną transakcją, więc wcześniejsza akcja może zostać wykonana przed późniejszym błędem. Centrum nie zmienia tych zachowań i nie dodaje Run now, Retry, enable/disable, edycji ani usuwania.
+Silnik nie ma retry ani max attempts. Kursor `last_processed_event_log_id` ogranicza zwykłe ponowne skanowanie, a trwała tożsamość `(automation_rule_id,event_log_id)` zapobiega ponownemu claimowi tego samego eventu. Kilka akcji nie jest objętych wspólną transakcją, więc wcześniejsza akcja może zostać wykonana przed późniejszym błędem. Centrum nie dodaje Run now, Retry, enable/disable, edycji ani usuwania.
+
+### Idempotency i rule lease
+
+Dla niepustego `event_log_id` częściowy unikalny indeks gwarantuje najwyżej jeden rekord `automation_executions` dla pary `(automation_rule_id,event_log_id)`. Dopasowany event najpierw atomowo tworzy rekord `processing`; dopiero właściciel udanego claimu może wywołać handler. Sukces lub błąd aktualizuje ten sam rekord warunkowym przejściem `processing` → `success`/`failed`. Kolizja claimu jest kontrolowanym skipem bez handlera, fałszywego audytu i automatycznego retry. Historyczne duplikaty blokują upgrade schematu i wymagają osobnej, kontrolowanej decyzji — bootstrap niczego nie usuwa.
+
+Każda reguła ma mały prywatny lease: losowy token, czas przejęcia i `lease_until`. Atomowy warunkowy UPDATE pozwala tylko jednemu processorowi skanować regułę; lease trwa 60 sekund i jest odnawiany przed kolejnymi eventami. Renew, przesunięcie kursora i release są chronione aktualnym tokenem, więc stary właściciel nie może zmienić stanu nowego. Manual run zajętej reguły zwraca bezpieczny konflikt `automation_rule_busy`, a processor pomija ją bez blokowania innych reguł. Token i czasy lease nie są częścią publicznych DTO, katalogu ani audytu.
+
+To nie jest pełna gwarancja exactly-once. Crash po claimie, ale przed handlerem, może pozostawić niewykonany side effect; crash po side effekcie, lecz przed terminalnym update, może pozostawić rekord `processing`. Po wygaśnięciu rule lease inny proces może przejąć regułę, ale nie może ponownie claimować ani wykonać tego samego eventu. System świadomie preferuje brak automatycznego powtórzenia nad ryzyko duplikatu. Nie ma automatycznego ani ręcznego retry niejednoznacznych wykonań.
 
 ### Automation Rule Catalog i walidacja definicji
 
@@ -127,7 +135,7 @@ Management może tworzyć wyłącznie jedną akcję `create_inbox_item` z litera
 
 Zmiana triggera, warunków lub akcji waliduje pełną wynikową definicję. Aktualizacja samej nazwy lub opisu nie wymusza migracji bezpiecznej reguły legacy do katalogu. Aktywacja istniejącej reguły przechodzi execution-safety validation, natomiast wyłączenie wadliwej reguły pozostaje możliwe. Manual run i automatyczny procesor walidują konfigurację przed pierwszym handlerem; wadliwe warunki nie mogą zostać potraktowane jako match-all.
 
-Ten etap nie dodaje idempotencji `(rule,event)`, unique indexu, claim/lease, retry, workera, runtime schedulera, atomiczności wielu akcji ani UI do zarządzania regułami. Te ryzyka pozostają odłożone do kolejnych etapów.
+Ten etap nie dodaje retry, workera, runtime schedulera, recovery utkniętych wykonań, activation cursora, atomiczności wielu akcji ani UI do zarządzania regułami. Polityka cursor/failure, recovery stale executions, rule revisions, dedupe/caps i pełny runtime pozostają odłożone do v1B-3 lub późniejszych etapów.
 
 Dashboard używa stałej liczby zapytań agregujących bez pobierania historii. Detail zwraca domyślnie 20, maksymalnie 50 neutralnych reguł oraz wykonań. Automation Operations jest read-only względem danych domenowych i operacyjnych, a bezpośrednie read-modele nie wykonują żadnego write. Pełne uwierzytelnione żądanie HTTP może aktualizować wyłącznie istniejące `user_sessions.last_seen_at` jako niezależny efekt warstwy uwierzytelniania. Wyjątek nie obejmuje żadnej innej tabeli ani kolumny i nie jest częścią logiki Automation Operations.
 
@@ -155,7 +163,7 @@ Endpointy `/api/automations/operations` i `/api/automations/operations/{automati
 
 Legacy API `/api/automation/rules` i `/api/automation/executions` ma tę samą granicę organizacyjną, ale osobne capability. Odczyt wymaga `automation.read`, a tworzenie, aktualizacja, miękkie wyłączenie i ręczne uruchomienie reguły wymagają `automation.manage`. Capability są wyliczane z roli: właściciel systemu i administrator organizacji mogą zarządzać, koordynator może wyłącznie czytać, a operator i gość nie mają dostępu. Publiczne DTO używają centralnej allowlisty i nie zwracają `conditions_json`, `actions_json`, `input_json`, `result_json`, surowego `error_message` ani `last_result`.
 
-Ta granica autoryzacji jest uzupełniona kanoniczną walidacją definicji dla create i zmian konfiguracji. Nie zapewnia jednak idempotencji, retry, claim/lease ani bezpieczeństwa współbieżnego uruchomienia. Pełny management UI pozostaje poza zakresem.
+Ta granica autoryzacji jest uzupełniona kanoniczną walidacją definicji, trwałym execution claimem oraz prywatnym rule lease. Nie zapewnia jednak automatycznego retry, recovery utkniętych claimów ani pełnego exactly-once dla przyszłych integracji zewnętrznych. Pełny management UI pozostaje poza zakresem.
 
 ## Sekcja „Ostatnia aktywność”
 

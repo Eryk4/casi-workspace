@@ -84,6 +84,7 @@ from app.services.automation_rule_definition import (
     AutomationRuleValidationError,
     get_automation_rule_catalog,
 )
+from app.services.automation_service import AutomationRuleBusyError
 from app.services.knowledge_service import KnowledgeError
 from app.services.internal_notification_service import InternalNotificationNotFoundError
 from app.services.organization_service import OrganizationError, OrganizationPermissionError
@@ -2618,6 +2619,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         actor=self._actor_label(user),
                         organization_id=organization_id,
                     )
+                except AutomationRuleBusyError as error:
+                    return self._send_json(error.as_response(), status=409)
                 except AutomationRuleValidationError as error:
                     return self._send_json(error.as_response(), status=400)
                 except ValueError as error:
