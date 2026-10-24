@@ -594,6 +594,41 @@ class AutomationRuleDefinitionHttpTests(HttpServerTestCase):
             },
         )
 
+    def test_enable_with_active_lease_is_a_safe_conflict_without_partial_update(self) -> None:
+        rule_id = self._create_raw_rule(
+            slug="busy-enable",
+            trigger="work_item_created",
+            conditions={"status_after": "nowe"},
+            actions=[valid_action()],
+            active=0,
+        )
+        repository = self.services["automation_service"].automation_repository
+        self.assertTrue(
+            repository.acquire_rule_claim(
+                automation_rule_id=rule_id,
+                organization_id=self.organization_id,
+                claim_token="busy-enable-owner",
+                claimed_at="2026-10-25T10:00:00+00:00",
+                lease_until="2999-10-25T10:05:00+00:00",
+            )
+        )
+        before = self._automation_snapshot()
+        response, body = self._request(
+            "PATCH",
+            f"/api/automation/rules/{rule_id}",
+            body=json.dumps({"rule_name": "Must not persist", "is_active": True}),
+            headers={"Cookie": self.cookies["organization_admin"], "Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 409, body.decode())
+        self.assertEqual(
+            json.loads(body),
+            {
+                "error": "Reguła automatyzacji jest obecnie przetwarzana.",
+                "code": "automation_rule_busy",
+            },
+        )
+        self.assertEqual(before, self._automation_snapshot())
+
 
 if __name__ == "__main__":
     unittest.main()

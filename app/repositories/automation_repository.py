@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from app.db import execute_insert_returning_id, get_connection, get_read_only_connection
 from app.utils import now_iso
+
+
+_ActivationResult = TypeVar("_ActivationResult")
+AUTOMATION_ACTIVATION_SERIALIZATION_ATTEMPTS = 3
 
 
 class AutomationRepository:
@@ -69,34 +74,167 @@ class AutomationRepository:
     def create(self, payload: dict[str, Any]) -> int:
         timestamp = now_iso()
         with get_connection() as connection:
-            return execute_insert_returning_id(
+            return self._insert_rule(connection, payload, timestamp=timestamp)
+
+    def create_active_from_now(self, payload: dict[str, Any], *, activated_at: str) -> int:
+        """Create an active rule behind the current organization event watermark."""
+
+        def operation(connection: Any) -> int:
+            watermark = self._organization_event_watermark(
                 connection,
+                organization_id=int(payload["organization_id"]),
+            )
+            return self._insert_rule(
+                connection,
+                {**payload, "is_active": 1, "last_processed_event_log_id": watermark},
+                timestamp=activated_at,
+            )
+
+        return self._run_activation_transaction(operation)
+
+    def activate_rule_from_now(
+        self,
+        automation_rule_id: int,
+        *,
+        organization_id: int,
+        fields: dict[str, Any],
+        activated_at: str,
+    ) -> dict[str, Any]:
+        """Atomically persist requested fields and activate a rule from the current org watermark."""
+
+        allowed = {
+            "rule_slug",
+            "rule_name",
+            "description",
+            "trigger_event_type",
+            "conditions_json",
+            "actions_json",
+        }
+        activation_fields = {key: value for key, value in fields.items() if key in allowed}
+
+        def operation(connection: Any) -> dict[str, Any]:
+            row = connection.execute(
                 """
+                SELECT automation_rule_id, is_active,
+                       CASE
+                           WHEN processing_claim_token IS NOT NULL
+                            AND processing_lease_until IS NOT NULL
+                            AND processing_lease_until > ?
+                           THEN 1 ELSE 0
+                       END AS has_active_lease
+                FROM automation_rules
+                WHERE automation_rule_id = ?
+                  AND organization_id = ?
+                """,
+                (activated_at, automation_rule_id, organization_id),
+            ).fetchone()
+            if row is None:
+                return {"status": "not_found", "watermark": None}
+            if int(row["is_active"] or 0):
+                return {"status": "already_active", "watermark": None}
+            if int(row["has_active_lease"] or 0):
+                return {"status": "busy", "watermark": None}
+
+            watermark = self._organization_event_watermark(
+                connection,
+                organization_id=organization_id,
+            )
+            update_fields = {
+                **activation_fields,
+                "is_active": 1,
+                "last_processed_event_log_id": watermark,
+                "updated_at": activated_at,
+            }
+            assignments = ", ".join(f"{key} = ?" for key in update_fields)
+            updated = connection.execute(
+                f"""
+                UPDATE automation_rules
+                SET {assignments}
+                WHERE automation_rule_id = ?
+                  AND organization_id = ?
+                  AND COALESCE(is_active, 0) = 0
+                """,
+                [*update_fields.values(), automation_rule_id, organization_id],
+            )
+            if not updated.rowcount:
+                return {"status": "not_found", "watermark": None}
+            return {"status": "activated", "watermark": watermark}
+
+        return self._run_activation_transaction(operation)
+
+    def _insert_rule(self, connection: Any, payload: dict[str, Any], *, timestamp: str) -> int:
+        return execute_insert_returning_id(
+            connection,
+            """
                 INSERT INTO automation_rules (
                     organization_id, rule_slug, rule_name, description, trigger_event_type, conditions_json,
                     actions_json, is_active, last_processed_event_log_id, last_run_at, last_result,
                     execution_count, created_by_user_id, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    payload["organization_id"],
-                    payload["rule_slug"],
-                    payload["rule_name"],
-                    payload.get("description"),
-                    payload["trigger_event_type"],
-                    payload.get("conditions_json") or "{}",
-                    payload.get("actions_json") or "[]",
-                    int(payload.get("is_active", 1)),
-                    int(payload.get("last_processed_event_log_id") or 0),
-                    payload.get("last_run_at"),
-                    payload.get("last_result"),
-                    int(payload.get("execution_count") or 0),
-                    payload.get("created_by_user_id"),
-                    timestamp,
-                    timestamp,
-                ),
-                "automation_rule_id",
-            )
+            """,
+            (
+                payload["organization_id"],
+                payload["rule_slug"],
+                payload["rule_name"],
+                payload.get("description"),
+                payload["trigger_event_type"],
+                payload.get("conditions_json") or "{}",
+                payload.get("actions_json") or "[]",
+                int(payload.get("is_active", 1)),
+                int(payload.get("last_processed_event_log_id") or 0),
+                payload.get("last_run_at"),
+                payload.get("last_result"),
+                int(payload.get("execution_count") or 0),
+                payload.get("created_by_user_id"),
+                timestamp,
+                timestamp,
+            ),
+            "automation_rule_id",
+        )
+
+    @staticmethod
+    def _organization_event_watermark(connection: Any, *, organization_id: int) -> int:
+        row = connection.execute(
+            "SELECT COALESCE(MAX(id), 0) AS watermark FROM event_logs WHERE organization_id = ?",
+            (organization_id,),
+        ).fetchone()
+        return int(row["watermark"] or 0)
+
+    def _run_activation_transaction(
+        self,
+        operation: Callable[[Any], _ActivationResult],
+    ) -> _ActivationResult:
+        for attempt in range(AUTOMATION_ACTIVATION_SERIALIZATION_ATTEMPTS):
+            try:
+                with get_connection() as connection:
+                    self._begin_activation_transaction(connection)
+                    return operation(connection)
+            except Exception as error:
+                if (
+                    attempt + 1 >= AUTOMATION_ACTIVATION_SERIALIZATION_ATTEMPTS
+                    or not self._is_serialization_conflict(error)
+                ):
+                    raise
+        raise RuntimeError("Activation transaction retry loop exhausted unexpectedly.")
+
+    @staticmethod
+    def _begin_activation_transaction(connection: Any) -> None:
+        if connection.backend == "sqlite":
+            connection.execute("BEGIN IMMEDIATE")
+            return
+        # Opening a PostgreSQL connection applies session settings in an initial transaction.
+        # Commit those settings before starting the short serializable activation boundary.
+        connection.commit()
+        connection.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+
+    @staticmethod
+    def _is_serialization_conflict(error: Exception) -> bool:
+        current: BaseException | None = error
+        while current is not None:
+            if getattr(current, "sqlstate", None) == "40001" or getattr(current, "pgcode", None) == "40001":
+                return True
+            current = current.__cause__ or current.__context__
+        return "could not serialize access" in str(error).lower()
 
     def update(self, automation_rule_id: int, fields: dict[str, Any]) -> None:
         if not fields:
@@ -398,10 +536,12 @@ class AutomationRepository:
         claim_token: str,
         claimed_at: str,
         lease_until: str,
+        require_active: bool = False,
     ) -> bool:
+        active_guard = "AND COALESCE(is_active, 1) = 1" if require_active else ""
         with get_connection() as connection:
             updated = connection.execute(
-                """
+                f"""
                 UPDATE automation_rules
                 SET processing_claim_token = ?,
                     processing_claimed_at = ?,
@@ -413,6 +553,7 @@ class AutomationRepository:
                       OR processing_lease_until IS NULL
                       OR processing_lease_until <= ?
                   )
+                  {active_guard}
                 """,
                 (
                     claim_token,
@@ -433,16 +574,19 @@ class AutomationRepository:
         claim_token: str,
         now: str,
         lease_until: str,
+        require_active: bool = False,
     ) -> bool:
+        active_guard = "AND COALESCE(is_active, 1) = 1" if require_active else ""
         with get_connection() as connection:
             updated = connection.execute(
-                """
+                f"""
                 UPDATE automation_rules
                 SET processing_lease_until = ?
                 WHERE automation_rule_id = ?
                   AND organization_id = ?
                   AND processing_claim_token = ?
                   AND processing_lease_until > ?
+                  {active_guard}
                 """,
                 (lease_until, automation_rule_id, organization_id, claim_token, now),
             )
@@ -481,10 +625,12 @@ class AutomationRepository:
         last_run_at: str,
         last_result: str,
         execution_count_increment: int,
+        require_inactive: bool = False,
     ) -> bool:
+        inactive_guard = "AND COALESCE(is_active, 0) = 0" if require_inactive else ""
         with get_connection() as connection:
             updated = connection.execute(
-                """
+                f"""
                 UPDATE automation_rules
                 SET last_processed_event_log_id = CASE
                         WHEN last_processed_event_log_id < ? THEN ?
@@ -498,6 +644,7 @@ class AutomationRepository:
                   AND organization_id = ?
                   AND processing_claim_token = ?
                   AND processing_lease_until > ?
+                  {inactive_guard}
                 """,
                 (
                     last_processed_event_log_id,

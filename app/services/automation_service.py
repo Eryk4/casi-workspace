@@ -119,18 +119,25 @@ class AutomationService:
         if self.automation_repository.get_by_slug(organization_id, rule_slug):
             raise ValueError("Reguła automatyzacji o tym identyfikatorze juz istnieje.")
 
-        rule_id = self.automation_repository.create(
-            {
-                "organization_id": organization_id,
-                "rule_slug": rule_slug,
-                "rule_name": rule_name,
-                "description": metadata.get("description"),
-                "trigger_event_type": definition.trigger_event_type,
-                "conditions_json": json_dumps(definition.conditions),
-                "actions_json": json_dumps(definition.actions),
-                "is_active": normalize_active_flag(payload.get("is_active", True)),
-                "created_by_user_id": int(actor_user["user_id"]),
-            }
+        is_active = normalize_active_flag(payload.get("is_active", False))
+        create_payload = {
+            "organization_id": organization_id,
+            "rule_slug": rule_slug,
+            "rule_name": rule_name,
+            "description": metadata.get("description"),
+            "trigger_event_type": definition.trigger_event_type,
+            "conditions_json": json_dumps(definition.conditions),
+            "actions_json": json_dumps(definition.actions),
+            "is_active": is_active,
+            "created_by_user_id": int(actor_user["user_id"]),
+        }
+        rule_id = (
+            self.automation_repository.create_active_from_now(
+                create_payload,
+                activated_at=self._now_iso(),
+            )
+            if is_active
+            else self.automation_repository.create(create_payload)
         )
         created = self.automation_repository.get_by_id(rule_id, organization_id=organization_id)
         assert created is not None
@@ -208,7 +215,26 @@ class AutomationService:
                     current.get("actions_json"),
                 )
         if updates:
-            self.automation_repository.update(automation_rule_id, updates)
+            activates_from_inactive = (
+                "is_active" in updates
+                and bool(updates["is_active"])
+                and not bool(int(current.get("is_active") or 0))
+            )
+            if activates_from_inactive:
+                activation = self.automation_repository.activate_rule_from_now(
+                    automation_rule_id,
+                    organization_id=int(current["organization_id"]),
+                    fields={key: value for key, value in updates.items() if key != "is_active"},
+                    activated_at=self._now_iso(),
+                )
+                if activation["status"] == "busy":
+                    raise AutomationRuleBusyError()
+                if activation["status"] == "already_active":
+                    raise AutomationRuleBusyError()
+                if activation["status"] == "not_found":
+                    return None
+            else:
+                self.automation_repository.update(automation_rule_id, updates)
             refreshed = self.automation_repository.get_by_id(automation_rule_id, organization_id=organization_id)
             assert refreshed is not None
             self.event_repository.log(
@@ -299,6 +325,7 @@ class AutomationService:
             claim_token=claim_token,
             claimed_at=claimed_at,
             lease_until=lease_until,
+            require_active=not manual,
         )
         if not acquired:
             if manual:
@@ -353,6 +380,7 @@ class AutomationService:
                     claim_token=claim_token,
                     now=checkpoint_at,
                     lease_until=renewed_until,
+                    require_active=not manual,
                 ):
                     lease_lost = True
                     break
@@ -434,26 +462,30 @@ class AutomationService:
                     },
                 )
 
+            progress_at, renewed_until = self._lease_window()
             if not lease_lost:
-                progress_at, renewed_until = self._lease_window()
-                renewed = self.automation_repository.renew_rule_claim(
+                self.automation_repository.renew_rule_claim(
                     automation_rule_id=rule_id,
                     organization_id=organization_id,
                     claim_token=claim_token,
                     now=progress_at,
                     lease_until=renewed_until,
+                    require_active=not manual,
                 )
-                if renewed:
-                    self.automation_repository.update_rule_progress(
-                        automation_rule_id=rule_id,
-                        organization_id=organization_id,
-                        claim_token=claim_token,
-                        now=progress_at,
-                        last_processed_event_log_id=latest_event_id,
-                        last_run_at=progress_at,
-                        last_result=f"Przetworzono {matches} zdarzen, bledow: {errors}.",
-                        execution_count_increment=matches + errors,
-                    )
+            # This update remains ownership/lease guarded. It lets an in-flight event
+            # finish its cursor/statistics after disable, while a stale owner still
+            # cannot write after losing or expiring its lease.
+            self.automation_repository.update_rule_progress(
+                automation_rule_id=rule_id,
+                organization_id=organization_id,
+                claim_token=claim_token,
+                now=progress_at,
+                last_processed_event_log_id=latest_event_id,
+                last_run_at=progress_at,
+                last_result=f"Przetworzono {matches} zdarzen, bledow: {errors}.",
+                execution_count_increment=matches + errors,
+                require_inactive=lease_lost,
+            )
             return {"processed": True, "executions": matches, "errors": errors}
         finally:
             self.automation_repository.release_rule_claim(

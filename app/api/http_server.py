@@ -4468,6 +4468,8 @@ def create_server(host: str, port: int, services: dict[str, object]) -> Threadin
                         actor=self._actor_label(user),
                         organization_id=organization_id,
                     )
+                except AutomationRuleBusyError as error:
+                    return self._send_json(error.as_response(), status=409)
                 except AutomationRuleValidationError as error:
                     return self._send_json(error.as_response(), status=400)
                 except ValueError as error:
