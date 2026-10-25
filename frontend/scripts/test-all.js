@@ -26,6 +26,8 @@ const tests = [
   "test-automation-operations-dom.js",
   "test-automation-recent-activity.js",
   "test-automation-recent-activity-dom.js",
+  "test-automation-management.js",
+  "test-automation-management-dom.js",
   "test-boss-assistant.js",
   "test-company-assistant.js",
   "test-crm.js",

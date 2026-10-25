@@ -25,6 +25,7 @@ Module._resolveFilename = function resolveAlias(request, parent, isMain, options
 };
 
 let organizationId = "42";
+let capabilities = ["automation.read", "automation.manage"];
 let failDashboard = false;
 let detailNotFound = false;
 let emptyAttention = false;
@@ -120,7 +121,7 @@ const originalLoad = Module._load;
 Module._load = function loadWithMocks(request, parent, isMain) {
   if (request === "next/link") return function Link({ children, href, ...props }) { const React = require("react"); return React.createElement("a", { ...props, href }, children); };
   if (request === "lucide-react") { const React = require("react"); const Icon = (props) => React.createElement("svg", props); return { ArrowLeft: Icon, RefreshCw: Icon, Workflow: Icon }; }
-  if (request === "@/context/ActiveOrganizationContext" || request.endsWith(`${path.sep}context${path.sep}ActiveOrganizationContext.tsx`)) return { useActiveOrganization: () => ({ selectedOrganizationId: organizationId, status: "ready" }) };
+  if (request === "@/context/ActiveOrganizationContext" || request.endsWith(`${path.sep}context${path.sep}ActiveOrganizationContext.tsx`)) return { useActiveOrganization: () => ({ capabilities, selectedOrganizationId: organizationId, status: "ready" }) };
   if (request === "@/lib/api" || request.endsWith(`${path.sep}lib${path.sep}api.ts`)) return { ApiError, api, withOrganizationQuery: (id, query = {}) => ({ ...query, organization_id: id }) };
   return originalLoad.call(this, request, parent, isMain);
 };
@@ -219,10 +220,11 @@ async function run() {
   }
   await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "automation_engine" }))); await settle();
   assert.match(container.textContent, /Reguły automatyzacji/); assert.match(container.textContent, /Reguła #12/); assert.match(container.textContent, /Ostatnie wykonania/);
-  assert.match(container.textContent, /Brak monitoringu procesu/); assert.equal(container.querySelectorAll(".automation-card__links a").length, 0);
+  assert.match(container.textContent, /Brak monitoringu procesu/); assert.equal(container.querySelector('a[href="/automatyzacje/reguly"]').textContent, "Zarządzaj regułami");
   for (const forbidden of ["automation_engine", "trigger", "actions_json", "input_json", "result_json", "traceback", "token", "Uruchom teraz", "Ponów", "Edytuj", "Usuń"]) {
     assert.ok(!container.textContent.toLowerCase().includes(forbidden.toLowerCase()), `UI ujawnia zakazany tekst silnika: ${forbidden}`);
   }
+  capabilities = ["automation.read"]; await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "automation_engine" }))); await settle(); assert.equal(container.querySelector('a[href="/automatyzacje/reguly"]'), null);
   detailNotFound = true; await act(async () => root.render(React.createElement(AutomationOperationDetailPage, { automationKey: "unknown" }))); await settle(); assert.match(container.textContent, /Nie znaleziono automatyzacji/);
   await act(async () => root.unmount());
   console.log("Automation operations DOM tests passed.");

@@ -141,7 +141,15 @@ Management może tworzyć wyłącznie jedną akcję `create_inbox_item` z litera
 
 Zmiana triggera, warunków lub akcji waliduje pełną wynikową definicję. Aktualizacja samej nazwy lub opisu nie wymusza migracji bezpiecznej reguły legacy do katalogu. Aktywacja istniejącej reguły przechodzi execution-safety validation, natomiast wyłączenie wadliwej reguły pozostaje możliwe. Manual run i automatyczny procesor walidują konfigurację przed pierwszym handlerem; wadliwe warunki nie mogą zostać potraktowane jako match-all.
 
-Ten etap nie dodaje retry, workera, runtime schedulera, recovery utkniętych wykonań, atomiczności wielu akcji ani UI do zarządzania regułami. Fresh activation cursor oraz zatrzymanie przed kolejnym eventem po disable są wdrożone; recovery stale executions, rule revisions, dedupe/caps i pełny runtime pozostają odłożone do późniejszych etapów.
+Ten etap nie dodaje retry, workera, runtime schedulera, recovery utkniętych wykonań ani atomiczności wielu akcji. Fresh activation cursor oraz zatrzymanie przed kolejnym eventem po disable są wdrożone; recovery stale executions, rule revisions, dedupe/caps i pełny runtime pozostają odłożone do późniejszych etapów.
+
+### Management UI v1
+
+Frontend udostępnia pod `/automatyzacje/reguly` listę publicznych podsumowań reguł, a pod `/automatyzacje/reguly/nowa` prosty kreator „Gdy → Jeśli → Zrób”. Oba widoki wymagają effective capability `automation.manage`; koordynator zachowuje monitoring read-only, ale nie widzi CTA ani nie wykonuje requestów management. Lista i formularz używają wyłącznie kanonicznego katalogu, publicznego Rules DTO oraz istniejących POST/PATCH.
+
+Kreator pozwala na nazwę, opcjonalny opis, trigger i warunki wystawione przez katalog oraz dokładnie jedną akcję `create_inbox_item`. Reguła jest zawsze zapisywana jako wyłączona. Włączenie jest osobnym, potwierdzonym działaniem i zaczyna obsługę nowych zdarzeń od chwili aktywacji bez historycznego replayu. Wyłączenie nie rozpoczyna kolejnego eventu, ale trwająca akcja może się zakończyć.
+
+UI v1 nie udostępnia edycji zapisanej definicji, usuwania, Manual Run, retry, testowania ani raw JSON. Nie pokazuje conditions/actions, cursora, lease, payloadów ani surowych błędów. Produkcyjny runtime worker pozostaje osobnym etapem, co interfejs komunikuje neutralną informacją zamiast fałszywego statusu online/offline.
 
 Dashboard używa stałej liczby zapytań agregujących bez pobierania historii. Detail zwraca domyślnie 20, maksymalnie 50 neutralnych reguł oraz wykonań. Automation Operations jest read-only względem danych domenowych i operacyjnych, a bezpośrednie read-modele nie wykonują żadnego write. Pełne uwierzytelnione żądanie HTTP może aktualizować wyłącznie istniejące `user_sessions.last_seen_at` jako niezależny efekt warstwy uwierzytelniania. Wyjątek nie obejmuje żadnej innej tabeli ani kolumny i nie jest częścią logiki Automation Operations.
 
@@ -169,7 +177,7 @@ Endpointy `/api/automations/operations` i `/api/automations/operations/{automati
 
 Legacy API `/api/automation/rules` i `/api/automation/executions` ma tę samą granicę organizacyjną, ale osobne capability. Odczyt wymaga `automation.read`, a tworzenie, aktualizacja, miękkie wyłączenie i ręczne uruchomienie reguły wymagają `automation.manage`. Capability są wyliczane z roli: właściciel systemu i administrator organizacji mogą zarządzać, koordynator może wyłącznie czytać, a operator i gość nie mają dostępu. Publiczne DTO używają centralnej allowlisty i nie zwracają `conditions_json`, `actions_json`, `input_json`, `result_json`, surowego `error_message` ani `last_result`.
 
-Ta granica autoryzacji jest uzupełniona kanoniczną walidacją definicji, trwałym execution claimem oraz prywatnym rule lease. Nie zapewnia jednak automatycznego retry, recovery utkniętych claimów ani pełnego exactly-once dla przyszłych integracji zewnętrznych. Pełny management UI pozostaje poza zakresem.
+Ta granica autoryzacji jest uzupełniona kanoniczną walidacją definicji, trwałym execution claimem oraz prywatnym rule lease. Nie zapewnia jednak automatycznego retry, recovery utkniętych claimów ani pełnego exactly-once dla przyszłych integracji zewnętrznych. Management UI v1 zachowuje tę granicę i nie rozszerza backendowego kontraktu ani capability matrix.
 
 ## Sekcja „Ostatnia aktywność”
 

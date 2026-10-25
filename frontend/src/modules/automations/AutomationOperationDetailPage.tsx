@@ -32,7 +32,7 @@ function dateTime(value: string | null): string {
 }
 
 export function AutomationOperationDetailPage({ automationKey }: Props) {
-  const { selectedOrganizationId, status: organizationStatus } = useActiveOrganization();
+  const { capabilities, selectedOrganizationId, status: organizationStatus } = useActiveOrganization();
   const [detail, setDetail] = useState<AutomationOperationDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -118,7 +118,10 @@ export function AutomationOperationDetailPage({ automationKey }: Props) {
               </>}
             </dl>
             {detail.item.lastErrorSummary ? <p className="automation-card__error">{!(["email_import", "ksef_import"].includes(detail.item.automationType)) && detail.item.lastErrorCode ? `${detail.item.lastErrorCode}: ` : ""}{detail.item.lastErrorSummary}</p> : null}
-            <div className="automation-card__links">{automationNavigationLinks(detail.item.automationKey).map((link) => <Link href={link.href} key={link.href}>{link.label}</Link>)}</div>
+            <div className="automation-card__links">
+              {detail.item.automationType === "automation_engine" && capabilities.includes("automation.manage") ? <Link href="/automatyzacje/reguly">Zarządzaj regułami</Link> : null}
+              {automationNavigationLinks(detail.item.automationKey).map((link) => <Link href={link.href} key={link.href}>{link.label}</Link>)}
+            </div>
           </article>
           {detail.item.automationType === "automation_engine" ? <section className="automation-history"><h3>Reguły</h3>{detail.rules.length === 0 ? <div className="empty-state"><p>Brak reguł automatyzacji.</p></div> : <div className="table-shell"><table><thead><tr><th>ID</th><th>Nazwa</th><th>Stan</th><th>Wykonania</th><th>Utworzono</th><th>Zaktualizowano</th></tr></thead><tbody>{detail.rules.map((rule) => <tr key={rule.ruleId}><td>{rule.ruleId}</td><td>{rule.title}</td><td>{rule.enabled ? "Włączona" : "Wyłączona"}</td><td>{rule.executionCount}</td><td>{dateTime(rule.createdAt)}</td><td>{dateTime(rule.updatedAt)}</td></tr>)}</tbody></table></div>}</section> : null}
           <section className="automation-history" aria-labelledby="automation-history-title"><h3 id="automation-history-title">{detail.item.automationType === "automation_engine" ? "Ostatnie wykonania" : detail.item.automationType === "task_reminders" ? "Ostatnie próby" : detail.item.automationType === "knowledge_processing" ? "Ostatnie zadania przetwarzania" : "Historia ostatnich uruchomień"}</h3>

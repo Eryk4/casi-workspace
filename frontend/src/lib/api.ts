@@ -262,6 +262,24 @@ export const api = {
     apiRequest<Record<string, unknown>>("/automations/operations/activity", { query }),
   automationOperationDetail: (automationKey: string, query?: ApiQuery) =>
     apiRequest<Record<string, unknown>>(`/automations/operations/${encodeURIComponent(automationKey)}`, { query }),
+  automationCatalog: () => apiRequest<unknown>("/automations/catalog"),
+  automationRules: (query?: ApiQuery) => apiRequest<unknown>("/automation/rules", { query }),
+  createAutomationRule: (payload: Record<string, unknown>, organizationId?: string | null) =>
+    apiRequest<unknown>("/automation/rules", {
+      method: "POST",
+      body: payload,
+      query: withOrganizationQuery(organizationId),
+    }),
+  updateAutomationRule: (
+    automationRuleId: number | string,
+    payload: Record<string, unknown>,
+    organizationId?: string | null,
+  ) =>
+    apiRequest<unknown>(`/automation/rules/${automationRuleId}`, {
+      method: "PATCH",
+      body: payload,
+      query: withOrganizationQuery(organizationId),
+    }),
   saveInternalNotificationSchedule: (
     payload: { enabled: boolean; local_time: string; timezone_name: string; cadence: "daily" },
     organizationId?: string | null,
